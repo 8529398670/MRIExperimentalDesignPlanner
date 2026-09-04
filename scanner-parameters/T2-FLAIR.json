@@ -1,0 +1,524 @@
+{
+    "_meta": {
+        "label": "T2 FLAIR",
+        "role": "structural",
+        "note": ""
+    },
+    "INFO PAGE": [
+        {
+            "parameter": "Total scan duration",
+            "value": "02:15.9",
+            "indent": 0
+        },
+        {
+            "parameter": "Rel. SNR",
+            "value": "1",
+            "indent": 0
+        },
+        {
+            "parameter": "ACQ matrix M x P",
+            "value": "256 x 192",
+            "indent": 0
+        },
+        {
+            "parameter": "ACQ voxel MPS (mm)",
+            "value": "0.98 / 1.30 / 4.00",
+            "indent": 0
+        },
+        {
+            "parameter": "REC voxel MPS (mm)",
+            "value": "0.49 / 0.49 / 4.00",
+            "indent": 0
+        },
+        {
+            "parameter": "Scan percentage (%)",
+            "value": "75",
+            "indent": 0
+        },
+        {
+            "parameter": "Packages",
+            "value": "1",
+            "indent": 0
+        },
+        {
+            "parameter": "Min. slice gap (mm)",
+            "value": "0.4",
+            "indent": 0
+        },
+        {
+            "parameter": "TSE factor",
+            "value": "35",
+            "indent": 0
+        },
+        {
+            "parameter": "Act. WFS (pix) / BW (Hz)",
+            "value": "1.996 / 217.4",
+            "indent": 0
+        },
+        {
+            "parameter": "Min. WFS (pix) / Max. BW (Hz)",
+            "value": "1.483 / 292.6",
+            "indent": 0
+        },
+        {
+            "parameter": "Local torso SAR",
+            "value": "< 62 %",
+            "indent": 0
+        },
+        {
+            "parameter": "Whole body SAR / level",
+            "value": "< 1.6 W/kg / normal",
+            "indent": 0
+        },
+        {
+            "parameter": "SED",
+            "value": "< 0.3 kJ/kg",
+            "indent": 0
+        },
+        {
+            "parameter": "Coil Power",
+            "value": "62 %",
+            "indent": 0
+        },
+        {
+            "parameter": "Max B1+rms",
+            "value": "2.14 uT",
+            "indent": 0
+        },
+        {
+            "parameter": "PNS / level",
+            "value": "28 % / normal",
+            "indent": 0
+        },
+        {
+            "parameter": "dB/dt",
+            "value": "36.4 T/s",
+            "indent": 0
+        },
+        {
+            "parameter": "Sound Pressure Level (dB)",
+            "value": "12.7740",
+            "indent": 0
+        }
+    ],
+    "GEOMETRY": [
+        {
+            "parameter": "Nucleus",
+            "value": "1H",
+            "indent": 0
+        },
+        {
+            "parameter": "Coils",
+            "value": "Q-Body, dS-Head1-32ch, dS-Head2-32ch, Posterior, (8)None",
+            "indent": 0
+        },
+        {
+            "parameter": "Uniformity",
+            "value": "CLEAR",
+            "indent": 0
+        },
+        {
+            "parameter": "FOV RL (mm)",
+            "value": "158.4",
+            "indent": 0
+        },
+        {
+            "parameter": "AP (mm)",
+            "value": "250",
+            "indent": 1
+        },
+        {
+            "parameter": "FH (mm)",
+            "value": "250",
+            "indent": 1
+        },
+        {
+            "parameter": "ACQ voxel size AP (mm)",
+            "value": "0.977",
+            "indent": 0
+        },
+        {
+            "parameter": "FH (mm)",
+            "value": "1.302",
+            "indent": 1
+        },
+        {
+            "parameter": "Slice thickness (mm)",
+            "value": "4",
+            "indent": 0
+        },
+        {
+            "parameter": "Recon voxel size AP (mm)",
+            "value": "0.488",
+            "indent": 0
+        },
+        {
+            "parameter": "FH (mm)",
+            "value": "0.488",
+            "indent": 1
+        },
+        {
+            "parameter": "Fold-over suppression",
+            "value": "no",
+            "indent": 0
+        },
+        {
+            "parameter": "Reconstruction matrix",
+            "value": "512",
+            "indent": 0
+        },
+        {
+            "parameter": "Acceleration",
+            "value": "SENSE",
+            "indent": 0
+        },
+        {
+            "parameter": "P reduction (AP)",
+            "value": "2",
+            "indent": 1
+        },
+        {
+            "parameter": "Stacks",
+            "value": "1",
+            "indent": 0
+        },
+        {
+            "parameter": "type",
+            "value": "parallel",
+            "indent": 1
+        },
+        {
+            "parameter": "slices",
+            "value": "36",
+            "indent": 1
+        },
+        {
+            "parameter": "slice gap",
+            "value": "user defined",
+            "indent": 1
+        },
+        {
+            "parameter": "gap (mm)",
+            "value": "0.4",
+            "indent": 2
+        },
+        {
+            "parameter": "slice orientation",
+            "value": "sagittal",
+            "indent": 1
+        },
+        {
+            "parameter": "fold-over direction",
+            "value": "AP",
+            "indent": 1
+        },
+        {
+            "parameter": "fat shift direction",
+            "value": "P",
+            "indent": 1
+        },
+        {
+            "parameter": "Minimum number of packages",
+            "value": "1",
+            "indent": 0
+        },
+        {
+            "parameter": "Slice scan order",
+            "value": "default",
+            "indent": 0
+        },
+        {
+            "parameter": "PlanAlign",
+            "value": "no",
+            "indent": 0
+        },
+        {
+            "parameter": "REST slabs",
+            "value": "0",
+            "indent": 0
+        }
+    ],
+    "CONTRAST": [
+        {
+            "parameter": "Scan type",
+            "value": "Imaging",
+            "indent": 0
+        },
+        {
+            "parameter": "Scan mode",
+            "value": "MS",
+            "indent": 0
+        },
+        {
+            "parameter": "technique",
+            "value": "IR",
+            "indent": 1
+        },
+        {
+            "parameter": "Contrast enhancement",
+            "value": "no",
+            "indent": 0
+        },
+        {
+            "parameter": "Acquisition mode",
+            "value": "cartesian",
+            "indent": 0
+        },
+        {
+            "parameter": "Fast Imaging mode",
+            "value": "TSE",
+            "indent": 0
+        },
+        {
+            "parameter": "shot mode",
+            "value": "multishot",
+            "indent": 1
+        },
+        {
+            "parameter": "TSE factor",
+            "value": "35",
+            "indent": 1
+        },
+        {
+            "parameter": "startup echoes",
+            "value": "default",
+            "indent": 1
+        },
+        {
+            "parameter": "profile order",
+            "value": "linear",
+            "indent": 1
+        },
+        {
+            "parameter": "Echoes",
+            "value": "1",
+            "indent": 0
+        },
+        {
+            "parameter": "TE",
+            "value": "user defined",
+            "indent": 0
+        },
+        {
+            "parameter": "(ms)",
+            "value": "125",
+            "indent": 1
+        },
+        {
+            "parameter": "Flip angle (deg)",
+            "value": "90",
+            "indent": 0
+        },
+        {
+            "parameter": "refocusing control",
+            "value": "yes",
+            "indent": 1
+        },
+        {
+            "parameter": "angle (deg)",
+            "value": "120",
+            "indent": 2
+        },
+        {
+            "parameter": "TR",
+            "value": "user defined",
+            "indent": 0
+        },
+        {
+            "parameter": "(ms)",
+            "value": "11000",
+            "indent": 1
+        },
+        {
+            "parameter": "IR",
+            "value": "user defined",
+            "indent": 0
+        },
+        {
+            "parameter": "TI (ms)",
+            "value": "2800",
+            "indent": 1
+        },
+        {
+            "parameter": "IR pulse",
+            "value": "non-selective",
+            "indent": 1
+        },
+        {
+            "parameter": "Halfscan",
+            "value": "no",
+            "indent": 0
+        },
+        {
+            "parameter": "Water-fat shift",
+            "value": "minimum",
+            "indent": 0
+        },
+        {
+            "parameter": "(pixels)",
+            "value": "2.0",
+            "indent": 1
+        },
+        {
+            "parameter": "RF Shims",
+            "value": "adaptive",
+            "indent": 0
+        },
+        {
+            "parameter": "Shim",
+            "value": "PB-volume",
+            "indent": 0
+        },
+        {
+            "parameter": "Fat suppression",
+            "value": "no",
+            "indent": 0
+        },
+        {
+            "parameter": "Water suppression",
+            "value": "no",
+            "indent": 0
+        },
+        {
+            "parameter": "MTC",
+            "value": "no",
+            "indent": 0
+        },
+        {
+            "parameter": "Multi-transmit",
+            "value": "yes",
+            "indent": 0
+        },
+        {
+            "parameter": "SAR mode",
+            "value": "high",
+            "indent": 0
+        },
+        {
+            "parameter": "B1 mode",
+            "value": "default",
+            "indent": 0
+        },
+        {
+            "parameter": "PNS mode",
+            "value": "high",
+            "indent": 0
+        },
+        {
+            "parameter": "Gradient mode",
+            "value": "maximum",
+            "indent": 0
+        },
+        {
+            "parameter": "SoftTone mode",
+            "value": "no",
+            "indent": 0
+        }
+    ],
+    "POST/PROC": [
+        {
+            "parameter": "Preparation phases",
+            "value": "auto",
+            "indent": 0
+        },
+        {
+            "parameter": "Images",
+            "value": "M, (3)no",
+            "indent": 0
+        },
+        {
+            "parameter": "Autoview image",
+            "value": "M",
+            "indent": 0
+        },
+        {
+            "parameter": "Preset window contrast",
+            "value": "soft",
+            "indent": 0
+        },
+        {
+            "parameter": "Reconstruction mode",
+            "value": "immediate",
+            "indent": 0
+        },
+        {
+            "parameter": "Save raw data",
+            "value": "no",
+            "indent": 0
+        },
+        {
+            "parameter": "Hardcopy protocol",
+            "value": "no",
+            "indent": 0
+        },
+        {
+            "parameter": "Image filter",
+            "value": "system default",
+            "indent": 0
+        },
+        {
+            "parameter": "Uniformity correction",
+            "value": "no",
+            "indent": 0
+        },
+        {
+            "parameter": "Geometry correction",
+            "value": "default",
+            "indent": 0
+        },
+        {
+            "parameter": "Act. TR/TE (ms)",
+            "value": "11000 / 125",
+            "indent": 0
+        },
+        {
+            "parameter": "Min. TR/TE (ms)",
+            "value": "9843 / 96",
+            "indent": 0
+        }
+    ],
+    "MOTION": [
+        {
+            "parameter": "Cardiac synchronization",
+            "value": "no",
+            "indent": 0
+        },
+        {
+            "parameter": "Respiratory compensation",
+            "value": "no",
+            "indent": 0
+        },
+        {
+            "parameter": "Flow compensation",
+            "value": "no",
+            "indent": 0
+        },
+        {
+            "parameter": "NSA",
+            "value": "2",
+            "indent": 0
+        }
+    ],
+    "DYN/ANG": [
+        {
+            "parameter": "Angio / Contrast enh",
+            "value": "no",
+            "indent": 0
+        },
+        {
+            "parameter": "Quantitative flow",
+            "value": "no",
+            "indent": 0
+        },
+        {
+            "parameter": "Manual start",
+            "value": "no",
+            "indent": 0
+        },
+        {
+            "parameter": "Dynamic study",
+            "value": "no",
+            "indent": 0
+        }
+    ]
+}

@@ -1,0 +1,551 @@
+{
+  "version": 2,
+  "meta": {
+    "studyTitle": "MRI Experimental Design",
+    "investigator": "",
+    "institution": "Wright State University",
+    "participantId": "SUB-01",
+    "designId": "DESIGN-001",
+    "notes": ""
+  },
+  "budget": {
+    "totalScannerHours": 120,
+    "contingencyPct": 8,
+    "solveMode": "budget",
+    "targetUnitsTotal": 3000,
+    "allocationUnit": "percent",
+    "sessionsPerWeek": 3,
+    "weeksAvailable": 30,
+    "countOverheadAgainstBudget": true,
+    "autoClamp": true
+  },
+  "caps": {
+    "applyTo": "expected",
+    "maxRunMinutes": 20,
+    "maxSessionMinutes": 120,
+    "maxRunsPerSession": 8,
+    "maxSessionsTotal": 100,
+    "maxContinuousMinutes": 25,
+    "minUnitsPerExperiment": 50
+  },
+  "hrf": {
+    "peakDelay": 6,
+    "peakDispersion": 1,
+    "undershootDelay": 16,
+    "undershootDispersion": 1,
+    "undershootRatio": 6,
+    "spanSeconds": 40,
+    "readLagSeconds": 5,
+    "objectives": {
+      "detection": {
+        "label": "Detection (saturating)",
+        "blurb": "Stack same-condition responses so the BOLD level never settles; maximises univariate contrast power per minute.",
+        "tolerancePct": 45,
+        "separationSeconds": 0
+      },
+      "estimation": {
+        "label": "Single-trial estimation",
+        "blurb": "Maximises the estimability of individual trial betas, which is what linear multivariate decoding is actually trained on.",
+        "tolerancePct": 12,
+        "separationSeconds": 0
+      },
+      "separation": {
+        "label": "Full HRF separation",
+        "blurb": "Returns to baseline between trials and resolves the stimulus response from the response window, giving clean event-aligned clips.",
+        "tolerancePct": 4,
+        "separationSeconds": 0
+      }
+    }
+  },
+  "trials": [
+    {
+      "id": "trial-mtmfi9kd-1",
+      "name": "Blocked detection trial",
+      "note": "",
+      "objective": "detection",
+      "phases": [
+        {
+          "name": "Fixation",
+          "min": 2,
+          "max": 6,
+          "jitter": true,
+          "role": "baseline"
+        },
+        {
+          "name": "Stimulus",
+          "min": 4,
+          "max": 4,
+          "jitter": false,
+          "role": "stimulus"
+        },
+        {
+          "name": "Delay",
+          "min": 1,
+          "max": 2,
+          "jitter": true,
+          "role": "delay"
+        },
+        {
+          "name": "Response",
+          "min": 3,
+          "max": 3,
+          "jitter": false,
+          "role": "response"
+        },
+        {
+          "name": "Fixation",
+          "min": 2,
+          "max": 6,
+          "jitter": true,
+          "role": "baseline"
+        }
+      ],
+      "conditions": {
+        "a": "Condition A",
+        "b": "Condition B"
+      },
+      "conditionBalance": 50,
+      "controlPct": 0,
+      "separationTolerancePct": 45,
+      "seed": 20260823
+    },
+    {
+      "id": "trial-mtmfi9kd-2",
+      "name": "Event-related trial",
+      "note": "",
+      "objective": "estimation",
+      "phases": [
+        {
+          "name": "Fixation",
+          "min": 2,
+          "max": 6,
+          "jitter": true,
+          "role": "baseline"
+        },
+        {
+          "name": "Stimulus",
+          "min": 4,
+          "max": 4,
+          "jitter": false,
+          "role": "stimulus"
+        },
+        {
+          "name": "Delay",
+          "min": 6,
+          "max": 10,
+          "jitter": true,
+          "role": "delay"
+        },
+        {
+          "name": "Response cue",
+          "min": 3,
+          "max": 3,
+          "jitter": false,
+          "role": "response"
+        },
+        {
+          "name": "Fixation",
+          "min": 10,
+          "max": 14,
+          "jitter": true,
+          "role": "baseline"
+        }
+      ],
+      "conditions": {
+        "a": "Condition A",
+        "b": "Condition B"
+      },
+      "conditionBalance": 50,
+      "controlPct": 0,
+      "separationTolerancePct": 12,
+      "seed": 20260823
+    },
+    {
+      "id": "trial-mtmfi9kd-3",
+      "name": "Fully separated trial",
+      "note": "",
+      "objective": "separation",
+      "phases": [
+        {
+          "name": "Fixation",
+          "min": 2,
+          "max": 6,
+          "jitter": true,
+          "role": "baseline"
+        },
+        {
+          "name": "Stimulus",
+          "min": 4,
+          "max": 4,
+          "jitter": false,
+          "role": "stimulus"
+        },
+        {
+          "name": "Delay",
+          "min": 14,
+          "max": 16,
+          "jitter": true,
+          "role": "delay"
+        },
+        {
+          "name": "Response cue",
+          "min": 3,
+          "max": 3,
+          "jitter": false,
+          "role": "response"
+        },
+        {
+          "name": "Fixation",
+          "min": 24,
+          "max": 28,
+          "jitter": true,
+          "role": "baseline"
+        }
+      ],
+      "conditions": {
+        "a": "Condition A",
+        "b": "Condition B"
+      },
+      "conditionBalance": 50,
+      "controlPct": 0,
+      "separationTolerancePct": 4,
+      "seed": 20260823
+    }
+  ],
+  "runs": [
+    {
+      "id": "run-mtmfi9kd-4",
+      "name": "Blocked detection run",
+      "note": "",
+      "trial": "trial-mtmfi9kd-1",
+      "protocol": "EPI-TR2000-Task",
+      "trialsPerBlock": 12,
+      "blocksPerRun": 4,
+      "interTrialGap": 0,
+      "interBlockRest": 20,
+      "dummyVolumes": 6,
+      "leadIn": 12,
+      "leadOut": 12,
+      "labelOrder": "blocked",
+      "labelRunLength": 12
+    },
+    {
+      "id": "run-mtmfi9kd-5",
+      "name": "Event-related run",
+      "note": "",
+      "trial": "trial-mtmfi9kd-2",
+      "protocol": "EPI-TR1000-Task",
+      "trialsPerBlock": 10,
+      "blocksPerRun": 3,
+      "interTrialGap": 0,
+      "interBlockRest": 12,
+      "dummyVolumes": 12,
+      "leadIn": 12,
+      "leadOut": 12,
+      "labelOrder": "intermixed",
+      "labelRunLength": 1
+    },
+    {
+      "id": "run-mtmfi9kd-6",
+      "name": "Separated run",
+      "note": "",
+      "trial": "trial-mtmfi9kd-3",
+      "protocol": "EPI-TR800-Task",
+      "trialsPerBlock": 10,
+      "blocksPerRun": 2,
+      "interTrialGap": 0,
+      "interBlockRest": 12,
+      "dummyVolumes": 12,
+      "leadIn": 12,
+      "leadOut": 12,
+      "labelOrder": "intermixed",
+      "labelRunLength": 1
+    }
+  ],
+  "sessions": [
+    {
+      "id": "session-mtmfi9kd-7",
+      "name": "Detection session",
+      "note": "",
+      "screeningMinutes": 6,
+      "positioningMinutes": 5,
+      "practiceMinutes": 4,
+      "breakMinutes": 3,
+      "structurals": [
+        {
+          "protocol": "Survey-Localizer",
+          "enabled": true,
+          "count": 1
+        },
+        {
+          "protocol": "SENSE-Reference",
+          "enabled": true,
+          "count": 1
+        },
+        {
+          "protocol": "T1-Anatomical-MPRAGE",
+          "enabled": true,
+          "count": 1
+        },
+        {
+          "protocol": "T2-FLAIR",
+          "enabled": false,
+          "count": 1
+        },
+        {
+          "protocol": "EPI-SBRef",
+          "enabled": true,
+          "count": 1
+        },
+        {
+          "protocol": "Field-Map-Reverse-PE",
+          "enabled": true,
+          "count": 1
+        },
+        {
+          "protocol": "EPI-Dummy-Prescan",
+          "enabled": false,
+          "count": 1
+        }
+      ],
+      "items": [
+        {
+          "run": "run-mtmfi9kd-4",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "id": "session-mtmfi9kd-8",
+      "name": "Event-related session",
+      "note": "",
+      "screeningMinutes": 6,
+      "positioningMinutes": 5,
+      "practiceMinutes": 4,
+      "breakMinutes": 3,
+      "structurals": [
+        {
+          "protocol": "Survey-Localizer",
+          "enabled": true,
+          "count": 1
+        },
+        {
+          "protocol": "SENSE-Reference",
+          "enabled": true,
+          "count": 1
+        },
+        {
+          "protocol": "T1-Anatomical-MPRAGE",
+          "enabled": true,
+          "count": 1
+        },
+        {
+          "protocol": "T2-FLAIR",
+          "enabled": false,
+          "count": 1
+        },
+        {
+          "protocol": "EPI-SBRef",
+          "enabled": true,
+          "count": 1
+        },
+        {
+          "protocol": "Field-Map-Reverse-PE",
+          "enabled": true,
+          "count": 1
+        },
+        {
+          "protocol": "EPI-Dummy-Prescan",
+          "enabled": false,
+          "count": 1
+        }
+      ],
+      "items": [
+        {
+          "run": "run-mtmfi9kd-5",
+          "count": 3
+        }
+      ]
+    },
+    {
+      "id": "session-mtmfi9kd-9",
+      "name": "Separation session",
+      "note": "",
+      "screeningMinutes": 6,
+      "positioningMinutes": 5,
+      "practiceMinutes": 4,
+      "breakMinutes": 3,
+      "structurals": [
+        {
+          "protocol": "Survey-Localizer",
+          "enabled": true,
+          "count": 1
+        },
+        {
+          "protocol": "SENSE-Reference",
+          "enabled": true,
+          "count": 1
+        },
+        {
+          "protocol": "T1-Anatomical-MPRAGE",
+          "enabled": true,
+          "count": 1
+        },
+        {
+          "protocol": "T2-FLAIR",
+          "enabled": false,
+          "count": 1
+        },
+        {
+          "protocol": "EPI-SBRef",
+          "enabled": true,
+          "count": 1
+        },
+        {
+          "protocol": "Field-Map-Reverse-PE",
+          "enabled": true,
+          "count": 1
+        },
+        {
+          "protocol": "EPI-Dummy-Prescan",
+          "enabled": false,
+          "count": 1
+        }
+      ],
+      "items": [
+        {
+          "run": "run-mtmfi9kd-6",
+          "count": 4
+        }
+      ]
+    },
+    {
+      "id": "session-mtmfi9kd-a",
+      "name": "Mixed session",
+      "note": "One session carrying runs from more than one experiment.",
+      "screeningMinutes": 6,
+      "positioningMinutes": 5,
+      "practiceMinutes": 4,
+      "breakMinutes": 3,
+      "structurals": [
+        {
+          "protocol": "Survey-Localizer",
+          "enabled": true,
+          "count": 1
+        },
+        {
+          "protocol": "SENSE-Reference",
+          "enabled": true,
+          "count": 1
+        },
+        {
+          "protocol": "T1-Anatomical-MPRAGE",
+          "enabled": true,
+          "count": 1
+        },
+        {
+          "protocol": "T2-FLAIR",
+          "enabled": false,
+          "count": 1
+        },
+        {
+          "protocol": "EPI-SBRef",
+          "enabled": true,
+          "count": 1
+        },
+        {
+          "protocol": "Field-Map-Reverse-PE",
+          "enabled": true,
+          "count": 1
+        },
+        {
+          "protocol": "EPI-Dummy-Prescan",
+          "enabled": false,
+          "count": 1
+        }
+      ],
+      "items": [
+        {
+          "run": "run-mtmfi9kd-5",
+          "count": 2
+        },
+        {
+          "run": "run-mtmfi9kd-6",
+          "count": 2
+        }
+      ]
+    }
+  ],
+  "experiments": [
+    {
+      "id": "exp-mtmfi9kd-b",
+      "name": "Detection experiment",
+      "short": "DET",
+      "note": "",
+      "enabled": true,
+      "unit": {
+        "noun": "trial",
+        "plural": "trials",
+        "short": "tr"
+      },
+      "requestedPct": 12,
+      "locked": false,
+      "lockPlan": false,
+      "plan": [
+        {
+          "session": "session-mtmfi9kd-7",
+          "count": 1
+        }
+      ],
+      "targetUnits": 400,
+      "manualSessions": 10
+    },
+    {
+      "id": "exp-mtmfi9kd-c",
+      "name": "Estimation experiment",
+      "short": "EST",
+      "note": "",
+      "enabled": true,
+      "unit": {
+        "noun": "trial",
+        "plural": "trials",
+        "short": "tr"
+      },
+      "requestedPct": 28,
+      "locked": false,
+      "lockPlan": false,
+      "plan": [
+        {
+          "session": "session-mtmfi9kd-8",
+          "count": 1
+        }
+      ],
+      "targetUnits": 900,
+      "manualSessions": 10
+    },
+    {
+      "id": "exp-mtmfi9kd-d",
+      "name": "Separation experiment",
+      "short": "SEP",
+      "note": "",
+      "enabled": true,
+      "unit": {
+        "noun": "trial",
+        "plural": "trials",
+        "short": "tr"
+      },
+      "requestedPct": 60,
+      "locked": false,
+      "lockPlan": false,
+      "plan": [
+        {
+          "session": "session-mtmfi9kd-9",
+          "count": 1
+        }
+      ],
+      "targetUnits": 2000,
+      "manualSessions": 10
+    }
+  ],
+  "dynScansFrom": "max"
+}

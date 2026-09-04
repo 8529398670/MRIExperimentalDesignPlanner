@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MRI Experimental Design Planner | Wright State University</title>
+<link rel="icon" href="{{ asset('wsu-mark.svg') }}" type="image/svg+xml">
+<link rel="stylesheet" href="{{ asset('css/app.css') }}">
+</head>
+<body>
+
+<div class="loading-veil" id="veil">Loading acquisition cards</div>
+
+<header class="masthead">
+  <div class="brand">
+    <div class="brand-mark">W</div>
+    <div class="brand-text">
+      <span class="org">Wright State University</span>
+      <span class="app">MRI Experimental Design Planner</span>
+    </div>
+  </div>
+
+  <div class="metrics" id="metrics"></div>
+
+  <div class="mast-actions">
+    <button class="btn quiet sm" id="btn-save-design" type="button">Save design</button>
+    <button class="btn gold" id="btn-export-bundle" type="button">Download everything</button>
+  </div>
+</header>
+
+<div class="shell">
+  <nav class="rail" id="rail"></nav>
+  <main class="workspace" id="workspace"></main>
+</div>
+
+<div class="toast-host" id="toasts"></div>
+
+<script src="{{ asset('js/efficiency.js') }}"></script>
+<script src="{{ asset('js/model.js') }}"></script>
+<script src="{{ asset('js/ui.js') }}"></script>
+<script src="{{ asset('js/library.js') }}"></script>
+<script src="{{ asset('js/protocols.js') }}"></script>
+<script src="{{ asset('js/export.js') }}"></script>
+<script>window.addEventListener('DOMContentLoaded', function () { window.PlannerApp.start(); });</script>
+</body>
+</html>

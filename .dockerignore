@@ -1,0 +1,27 @@
+# Build context: ship the application, nothing else.
+.git
+.gitignore
+.DS_Store
+.venv
+venv
+__pycache__
+**/__pycache__
+*.py[cod]
+.claude
+.pytest_cache
+
+# Runtime state lives in bind-mounted volumes, never baked into the image.
+exports/*
+presets/*
+scanner-parameters/.backups
+
+# Container tooling itself.  docker-entrypoint.sh is NOT listed here: the
+# Dockerfile copies it into the image.
+Dockerfile
+.dockerignore
+dockerRun.sh
+
+# Notes and generated documents
+*.md
+!README.md
+prompt.txt
