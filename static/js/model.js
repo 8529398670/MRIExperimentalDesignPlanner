@@ -198,12 +198,6 @@
     { id: 'sessions', label: 'Sessions', unit: 'sess' }
   ];
 
-  var LABEL_ORDERS = [
-    { id: 'blocked', label: 'Blocked by condition' },
-    { id: 'alternating', label: 'Strict alternation' },
-    { id: 'intermixed', label: 'Intermixed and balanced' }
-  ];
-
   /* Recommended trial timing per objective.
    *   detection  - saturating: minimal delay so successive same-condition
    *                responses stack instead of returning to baseline
@@ -418,13 +412,10 @@
       note: '',
       objective: objective,
       phases: deepCopy(RECOMMENDED_TIMING[objective] || RECOMMENDED_TIMING.estimation),
-      conditions: { a: 'Condition A', b: 'Condition B' },
-      conditionBalance: 50,
       controlPct: 0,
       separationTolerancePct: (OBJECTIVES.filter(function (o) {
         return o.id === objective;
-      })[0] || OBJECTIVES[1]).tolerancePct,
-      seed: 20260823
+      })[0] || OBJECTIVES[1]).tolerancePct
     };
   }
 
@@ -441,9 +432,7 @@
       interBlockRest: 12,
       dummyVolumes: 8,
       leadIn: 12,
-      leadOut: 12,
-      labelOrder: 'intermixed',
-      labelRunLength: 1
+      leadOut: 12
     };
   }
 
@@ -501,8 +490,6 @@
     runDetection.blocksPerRun = 4;
     runDetection.interBlockRest = 20;
     runDetection.dummyVolumes = 6;
-    runDetection.labelOrder = 'blocked';
-    runDetection.labelRunLength = 12;
 
     var runEstimation = defaultRun(estimation.id, 'EPI-TR1000-Task', 'Event-related run');
     runEstimation.trialsPerBlock = 10;
@@ -608,12 +595,7 @@
       id: run.id,
       name: run.name,
       phases: (trial && trial.phases) || [],
-      seed: (trial && trial.seed) || 20260823,
-      trial: trial,
-      decode: {
-        labelOrder: run.labelOrder || 'intermixed',
-        labelRunLength: Math.max(1, Math.round(num(run.labelRunLength, 1)))
-      }
+      trial: trial
     };
   }
 
@@ -810,7 +792,6 @@
     /* The old vocabulary: goals were denominated in questions. */
     var unit = { noun: 'question', plural: 'questions', short: 'q' };
     var controlPct = clamp(num((old.questionBank || {}).controlPct), 0, 100);
-    var balance = clamp(num((old.questionBank || {}).yesPct, 50), 0, 100);
 
     /* Card slugs were renamed when the planner became generic. */
     var CARD_MAP = {
@@ -849,11 +830,8 @@
           role: normaliseRole(phase.role)
         };
       });
-      trial.conditions = { a: 'Yes', b: 'No' };
-      trial.conditionBalance = balance;
       trial.controlPct = controlPct;
       trial.separationTolerancePct = num(aim.separationTolerancePct, 4);
-      trial.seed = num(aim.seed, 20260823);
       state.trials.push(trial);
 
       var structure = aim.structure || {};
@@ -865,8 +843,6 @@
       run.dummyVolumes = num(structure.dummyVolumes, 8);
       run.leadIn = num(structure.leadIn, 12);
       run.leadOut = num(structure.leadOut, 12);
-      run.labelOrder = decode.labelOrder || 'intermixed';
-      run.labelRunLength = num(decode.labelRunLength, 1);
       state.runs.push(run);
 
       var perAim = ((shared.perAim || {})[aimId]) || {};
@@ -931,15 +907,20 @@
           role: normaliseRole(phase.role)
         };
       });
-      if (!trial.conditions) trial.conditions = { a: 'Condition A', b: 'Condition B' };
-      if (trial.conditionBalance === undefined) trial.conditionBalance = 50;
       if (trial.controlPct === undefined) trial.controlPct = 0;
       if (!trial.objective) trial.objective = 'estimation';
+      /* What the participant is shown, and in what order, belongs to the
+       * presentation software.  Designs saved before that split carry the
+       * fields anyway, so drop them on the way in. */
+      delete trial.conditions;
+      delete trial.conditionBalance;
+      delete trial.seed;
     });
     state.runs.forEach(function (run) {
       if (!run.id) run.id = makeId('run');
       if (!trialById(state, run.trial) && state.trials.length) run.trial = state.trials[0].id;
-      if (!run.labelOrder) run.labelOrder = 'intermixed';
+      delete run.labelOrder;
+      delete run.labelRunLength;
     });
     state.sessions.forEach(function (session) {
       if (!session.id) session.id = makeId('session');
@@ -1612,8 +1593,6 @@
         objective: trial.objective,
         objectiveLabel: objective.label,
         phases: deepCopy(trial.phases),
-        conditions: deepCopy(trial.conditions || {}),
-        conditionBalance: num(trial.conditionBalance, 50),
         controlPct: num(trial.controlPct),
         separationTolerancePct: num(trial.separationTolerancePct, objective.tolerancePct),
         timing: {
@@ -1670,8 +1649,6 @@
         protocolMissing: ctx.missing,
         trMs: ctx.trMs,
         teMs: ctx.teMs,
-        decode: info.design.decode,
-        conditions: deepCopy((trial && trial.conditions) || {}),
         structure: {
           trialsPerBlock: geometry.trialsPerBlock,
           blocksPerRun: geometry.blocksPerRun,
@@ -1917,19 +1894,10 @@
   }
 
   function blockWording(info, geometry) {
-    var decode = info.design.decode;
-    var conditions = (info.trial && info.trial.conditions) || {};
-    var a = conditions.a || 'A';
-    var b = conditions.b || 'B';
-    if (decode.labelOrder === 'blocked') {
-      var runLength = Math.max(1, Math.round(num(decode.labelRunLength, 1)));
-      return geometry.trialsPerBlock + ' trials in same-condition runs of ' + runLength
-        + ' (' + a + ' and ' + b + ' blocks alternate, no baseline recovery between them)';
-    }
-    if (decode.labelOrder === 'alternating') {
-      return geometry.trialsPerBlock + ' strictly alternating ' + a + '/' + b + ' trials';
-    }
-    return geometry.trialsPerBlock + ' intermixed, condition-balanced trials';
+    return geometry.trialsPerBlock + ' '
+      + plural(geometry.trialsPerBlock, 'trial')
+      + (geometry.interTrialGap > 0
+        ? ' with ' + round(geometry.interTrialGap, 1) + ' s gaps' : '');
   }
 
   function runWording(geometry) {
@@ -2131,19 +2099,19 @@
 
     tables['Efficiency diagnostics'] = mdTable(
       ['Run design', 'Duty cycle', 'Stacking', 'Single-trial eff.', 'Carryover',
-        'Stimulus bleed', 'A vs B', 'Response vs base', 'Stim/resp r', 'Max VIF'],
+        'Stimulus bleed', 'Response vs base', 'Stim/resp r', 'Max VIF'],
       report.runs.filter(function (run) { return !run.missing && run.efficiency; })
         .map(function (run) {
           var e = run.efficiency;
           return [
             run.name, round(e.sustainPct, 1) + ' %', round(e.saturationIndex, 2) + ' x',
             round(e.singleTrialEff, 3), round(e.carryoverPct, 1) + ' %',
-            round(e.stimulusBleedPct, 1) + ' %', round(e.effAvsB, 3),
+            round(e.stimulusBleedPct, 1) + ' %',
             round(e.effResponseVsBaseline, 3), round(e.corrStimulusResponse, 3),
             round(e.maxVif, 2)
           ];
         }),
-      ['left', 'right', 'right', 'right', 'right', 'right', 'right', 'right', 'right', 'right']
+      ['left', 'right', 'right', 'right', 'right', 'right', 'right', 'right', 'right']
     );
 
     tables['Data volume'] = mdTable(
@@ -2303,10 +2271,9 @@
   function psychopyYaml(report, runReport) {
     var structure = runReport.structure || {};
     var derived = runReport.derived || {};
-    var decode = runReport.decode || {};
     var trial = (report.trials || []).filter(function (item) {
       return item.id === runReport.trialId;
-    })[0] || { phases: [], conditions: {}, conditionBalance: 50, controlPct: 0 };
+    })[0] || { phases: [], controlPct: 0 };
     var usedIn = (report.experiments || []).filter(function (experiment) {
       return experiment.runs.some(function (row) { return row.runId === runReport.id; });
     });
@@ -2315,12 +2282,9 @@
     var trialsPerBlock = Math.max(1, Math.round(num(structure.trialsPerBlock, 1)));
     var trialsPerRun = blocksPerRun * trialsPerBlock;
     var dummyVolumes = Math.max(0, Math.round(num(structure.dummyVolumes)));
-    var balance = round(clamp(num(trial.conditionBalance, 50), 0, 100), 1);
     var controlPct = round(clamp(num(trial.controlPct), 0, 100), 1);
     var controlTrials = Math.min(trialsPerRun, Math.round(trialsPerRun * controlPct / 100));
     var primaryTrials = trialsPerRun - controlTrials;
-    var conditionA = trial.conditions.a || 'condition_a';
-    var conditionB = trial.conditions.b || 'condition_b';
 
     var phases = trial.phases || [];
     var names = psychopyPhaseNames(phases);
@@ -2350,7 +2314,7 @@
     lines.push('# The plan calls for ' + fmtNumber(derived.totalRuns) + ' '
       + plural(derived.totalRuns, 'run') + ' in total, '
       + fmtNumber(derived.totalRuns * trialsPerRun) + ' trials.');
-    lines.push('# The scanner, run, trial and conditions blocks are filled in from the solved');
+    lines.push('# The scanner, run and trial blocks are filled in from the solved');
     lines.push('# design. Everything else is the lab template, unchanged.');
     lines.push('');
     lines.push('experiment: ' + yamlSlug(runReport.name));
@@ -2377,13 +2341,6 @@
       'rest between blocks, inside the run'));
     lines.push(yamlSetting('inter_trial_gap', yamlSeconds(structure.interTrialGap),
       'dead time between successive trials'));
-    lines.push(yamlSetting('condition_order', decode.labelOrder || 'intermixed',
-      'how the two conditions are sequenced'));
-    lines.push(yamlSetting('condition_run_length',
-      Math.max(1, Math.round(num(decode.labelRunLength, 1))),
-      'same-condition run length (blocked ordering only)'));
-    lines.push(yamlSetting('condition_balance_pct', balance,
-      'share of primary trials assigned to ' + yamlComment(conditionA)));
 
     lines.push('');
     lines.push('trial:');
@@ -2403,22 +2360,14 @@
     });
 
     lines.push('');
-    lines.push('# Trial conditions. `per_run` must sum to n_blocks * trials_per_block ('
-      + trialsPerRun + ').');
-    lines.push('# The control share is the trial design\'s embedded control share ('
-      + controlPct + '%).');
-    lines.push('conditions:');
-    var aTrials = Math.round(primaryTrials * balance / 100);
-    var keyA = yamlSlug(conditionA);
-    var keyB = yamlSlug(conditionB);
-    var keyWidth = Math.max(keyA.length, keyB.length, 'control'.length) + 1;
-    lines.push('  ' + padRight(keyA + ':', keyWidth + 1)
-      + '{per_run: ' + aTrials + ', label: "' + conditionA + '"}');
-    lines.push('  ' + padRight(keyB + ':', keyWidth + 1)
-      + '{per_run: ' + (primaryTrials - aTrials) + ', label: "' + conditionB + '"}');
+    lines.push('# How many trials a run holds. What is presented in each of them, and in');
+    lines.push('# what order, is this file\'s business - the planner only sizes the run.');
+    lines.push('trials:');
+    lines.push('  ' + padRight('per_run:', 14) + trialsPerRun);
+    lines.push('  ' + padRight('primary:', 14) + primaryTrials);
     if (controlTrials > 0) {
-      lines.push('  ' + padRight('control:', keyWidth + 1)
-        + '{per_run: ' + controlTrials + ', label: "Control / null"}');
+      lines.push('  ' + padRight('control:', 14) + controlTrials
+        + '   # embedded control / null trials (' + controlPct + '%)');
     }
 
     lines.push('');
@@ -2632,6 +2581,129 @@
     };
   }
 
+  /* Every phase whose role carries a regressor drives its own haemodynamic
+   * response.  This builds those responses for the trial on its own - no TR,
+   * no blocks, no run - so the Trials panel can show what one trial predicts
+   * and where each peak lands.  Repeats are laid back to back at the trial's
+   * mean length, which is the worst case for carryover: any gap or rest a run
+   * adds on top only ever helps. */
+  function trialHrfSeries(state, trial, options) {
+    if (!global.PlannerEfficiency || !trial) return null;
+    applyHrf(state);
+    var E = global.PlannerEfficiency;
+    var opts = options || {};
+    var repeats = Math.max(1, Math.round(num(opts.repeats, 2)));
+    var dt = 0.1;
+
+    /* Phase onsets from the mean durations, and which of them are regressors. */
+    var events = [];
+    var cursor = 0;
+    (trial.phases || []).forEach(function (phase, position) {
+      var duration = phaseMean(phase);
+      var role = normaliseRole(phase.role);
+      var def = PHASE_ROLES.filter(function (entry) { return entry.id === role; })[0];
+      if (def && def.regressor && duration > 0) {
+        events.push({
+          phaseIndex: position,
+          label: phase.name || def.label,
+          roleLabel: def.label,
+          role: role,
+          onset: cursor,
+          duration: duration
+        });
+      }
+      cursor += duration;
+    });
+
+    var period = cursor;
+    var base = {
+      traces: [], t: [], period: round(period, 2), repeats: repeats, total: 0,
+      trialName: trial.name
+    };
+    if (!events.length || !(period > 0)) return base;
+
+    var total = period * repeats + E.span();
+    var steps = Math.round(total / dt) + 1;
+    var times = new Array(steps);
+    var step;
+    for (step = 0; step < steps; step += 1) times[step] = round(step * dt, 2);
+
+    var traces = events.map(function (event) {
+      var values = new Array(steps);
+      var index;
+      for (index = 0; index < steps; index += 1) {
+        var time = index * dt;
+        var stacked = 0;
+        for (var repeat = 0; repeat < repeats; repeat += 1) {
+          stacked += E.boxcarResponse(time, event.onset + repeat * period, event.duration);
+        }
+        values[index] = stacked;
+      }
+
+      /* The peak a reader actually sees: the highest point this trace reaches
+       * inside the first occurrence's own response span. */
+      var from = Math.round(event.onset / dt);
+      var to = Math.min(steps - 1, Math.round((event.onset + E.span()) / dt));
+      var peak = values[from];
+      var peakIndex = from;
+      for (index = from; index <= to; index += 1) {
+        if (values[index] > peak) { peak = values[index]; peakIndex = index; }
+      }
+
+      var windows = [];
+      for (var occurrence = 0; occurrence < repeats; occurrence += 1) {
+        windows.push({
+          onset: event.onset + occurrence * period,
+          duration: event.duration
+        });
+      }
+
+      return {
+        key: 'phase-' + event.phaseIndex,
+        label: event.label,
+        roleLabel: event.roleLabel,
+        role: event.role,
+        phaseIndex: event.phaseIndex,
+        onset: round(event.onset, 2),
+        duration: round(event.duration, 2),
+        values: values,
+        windows: windows,
+        isolatedPeak: E.singleEventPeak(event.duration),
+        peak: peak,
+        peakTime: round(peakIndex * dt, 2),
+        /* How much of this response is left when the next trial starts. */
+        carryoverPct: round(E.residualAt(event.duration, period - event.onset) * 100, 2)
+      };
+    });
+
+    /* Separation, phase by phase: how far apart the peaks sit and how much of
+     * each response is still standing underneath the one that follows it. */
+    traces.forEach(function (trace, position) {
+      var next = traces[position + 1];
+      trace.peakGap = next ? round(next.peakTime - trace.peakTime, 2) : null;
+      trace.bleedPct = next && next.isolatedPeak > 0
+        ? round(Math.abs(E.boxcarResponse(next.peakTime, trace.onset, trace.duration))
+          / next.isolatedPeak * 100, 2)
+        : null;
+    });
+
+    var gaps = traces.map(function (trace) { return trace.peakGap; })
+      .filter(function (gap) { return gap !== null; });
+    var bleeds = traces.map(function (trace) { return trace.bleedPct; })
+      .filter(function (bleed) { return bleed !== null; });
+
+    base.traces = traces;
+    base.t = times;
+    base.total = round(total, 2);
+    base.dt = dt;
+    base.closestPeakGap = gaps.length ? round(Math.min.apply(null, gaps), 2) : null;
+    base.worstBleedPct = bleeds.length ? round(Math.max.apply(null, bleeds), 2) : null;
+    base.worstCarryoverPct = round(Math.max.apply(null, traces.map(function (trace) {
+      return trace.carryoverPct;
+    })), 2);
+    return base;
+  }
+
   function applySeparationTiming(state, trialId, tolerancePct) {
     var draft = deepCopy(state);
     var trial = byId(draft.trials, trialId);
@@ -2675,12 +2747,7 @@
     draft.runs.forEach(function (run) {
       if (run.trial !== trial.id) return;
       if (trial.objective === 'detection') {
-        run.labelOrder = 'blocked';
-        run.labelRunLength = Math.max(1, Math.round(num(run.trialsPerBlock, 12)));
         run.interBlockRest = Math.max(num(run.interBlockRest), 20);
-      } else {
-        run.labelOrder = 'intermixed';
-        run.labelRunLength = 1;
       }
     });
     return draft;
@@ -2720,18 +2787,10 @@
         var candidate = deepCopy(run);
         candidate.trialsPerBlock = trialsPerBlock;
         candidate.blocksPerRun = blocksPerRun;
-        if (candidate.labelOrder === 'blocked') candidate.labelRunLength = trialsPerBlock;
         var geometry = runGeometry(candidate, trial, ctx.trSeconds);
         if (geometry.run[basis] / 60 > num(caps.maxRunMinutes)) continue;
 
-        var probe = {
-          phases: (trial && trial.phases) || [],
-          seed: (trial && trial.seed) || 20260823,
-          decode: {
-            labelOrder: candidate.labelOrder,
-            labelRunLength: candidate.labelRunLength
-          }
-        };
+        var probe = { phases: (trial && trial.phases) || [] };
         var metrics = objective === 'trials' ? {} : metricsFor(probe, geometry);
         var trialsPerHour = geometry.run.mean > 0
           ? geometry.trialsPerRun / (geometry.run.mean / 3600) : 0;
@@ -2749,7 +2808,6 @@
     if (best) {
       run.trialsPerBlock = best.trialsPerBlock;
       run.blocksPerRun = best.blocksPerRun;
-      if (run.labelOrder === 'blocked') run.labelRunLength = best.trialsPerBlock;
     }
     return draft;
   }
@@ -2792,9 +2850,7 @@
             if (geometry.run[basis] / 60 > num(draft.caps.maxRunMinutes)) return;
 
             var metrics = global.PlannerEfficiency.evaluate({
-              phases: probeTrial.phases,
-              seed: probeTrial.seed,
-              decode: { labelOrder: run.labelOrder, labelRunLength: run.labelRunLength }
+              phases: probeTrial.phases
             }, ctx.trSeconds, geometry, { maxTrials: 16 });
             var trialsPerHour = 3600 / Math.max(1, geometry.trial.mean);
             var score = global.PlannerEfficiency.objectiveScore(
@@ -2981,7 +3037,6 @@
     OBJECTIVES: OBJECTIVES,
     SOLVE_MODES: SOLVE_MODES,
     ALLOCATION_UNITS: ALLOCATION_UNITS,
-    LABEL_ORDERS: LABEL_ORDERS,
     RECOMMENDED_TIMING: RECOMMENDED_TIMING,
     STRUCTURAL_DEFAULTS: STRUCTURAL_DEFAULTS,
     DEFAULT_UNIT: DEFAULT_UNIT,
@@ -3027,6 +3082,7 @@
     applyRecommendedTiming: applyRecommendedTiming,
     applyObjectiveDefaults: applyObjectiveDefaults,
     separationTiming: separationTiming,
+    trialHrfSeries: trialHrfSeries,
     applySeparationTiming: applySeparationTiming,
     phaseIndices: phaseIndices,
     balanceToTarget: balanceToTarget,

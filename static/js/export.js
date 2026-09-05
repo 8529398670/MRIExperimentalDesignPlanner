@@ -474,10 +474,11 @@
         class: 'notice',
         text: 'Each file is the lab template with the scanner block (TR, dummy volumes), '
           + 'run: (lead-in and lead-out, blocks per run, trials per block, inter-block rest, '
-          + 'condition ordering), trial.phases: (the trial design\'s phase list, durations and '
-          + 'jitter) and conditions: (per-run counts split between the two conditions and the '
-          + 'trial design\'s control share) filled in. Window, text, keys and instructions are '
-          + 'passed through unchanged.'
+          + 'inter-trial gap), trial.phases: (the trial design\'s phase list, durations and '
+          + 'jitter) and trials: (how many trials a run holds, and how many of them are '
+          + 'control) filled in. What is presented in each trial, and in what order, stays '
+          + 'this file\'s business. Window, text, keys and instructions are passed through '
+          + 'unchanged.'
       }),
       psychopyButtons,
       App.h('div', { class: 'split-inline mt mb' }, [

@@ -257,44 +257,6 @@
       App.h('div', { class: 'notice', text: M.objectiveDef(App.state, trial.objective).blurb })
     ]));
 
-    /* --- conditions ---------------------------------------------------- */
-    host.appendChild(App.card('Conditions', 'The two levels the response window is split by', [
-      App.field({
-        owner: owner, label: 'Condition A', stack: true,
-        get: function () { return (trial.conditions || {}).a || ''; },
-        set: function (value) {
-          if (!trial.conditions) trial.conditions = {};
-          trial.conditions.a = value;
-        }
-      }),
-      App.field({
-        owner: owner, label: 'Condition B', stack: true,
-        get: function () { return (trial.conditions || {}).b || ''; },
-        set: function (value) {
-          if (!trial.conditions) trial.conditions = {};
-          trial.conditions.b = value;
-        }
-      }),
-      App.slider({
-        owner: owner, label: 'Share assigned to condition A', min: 0, max: 100, step: 1, unit: '%',
-        get: function () { return H.num(trial.conditionBalance, 50); },
-        set: function (value) { trial.conditionBalance = value; }
-      }),
-      App.slider({
-        owner: owner, label: 'Embedded control / null trials',
-        min: 0, max: 60, step: 1, unit: '%',
-        hint: 'Subtracted from the trial count to give the primary event count',
-        get: function () { return H.num(trial.controlPct); },
-        set: function (value) { trial.controlPct = value; }
-      }),
-      App.slider({
-        owner: owner, label: 'Jitter seed', min: 1, max: 99999999, step: 1, unit: '',
-        hint: 'Same seed, same simulated run',
-        get: function () { return H.num(trial.seed, 20260823); },
-        set: function (value) { trial.seed = Math.round(value); }
-      })
-    ]));
-
     /* --- phases -------------------------------------------------------- */
     var phaseHost = App.h('div', {});
     function renderPhases() {
@@ -431,8 +393,15 @@
 
     host.appendChild(App.card('Trial phases',
       'Order, duration and jitter; roles drive the regressor model',
-      [timingReadout, phaseHost]));
+      [timingReadout, phaseHost, App.slider({
+        owner: owner, label: 'Embedded control / null trials',
+        min: 0, max: 60, step: 1, unit: '%',
+        hint: 'Subtracted from the trial count to give the primary event count',
+        get: function () { return H.num(trial.controlPct); },
+        set: function (value) { trial.controlPct = value; }
+      })]));
 
+    host.appendChild(buildTrialHrfCard(trial, owner));
     host.appendChild(buildSeparationCard(trial, owner));
 
     host.appendChild(App.figureCard('Trial timeline', '', function () {
@@ -446,6 +415,80 @@
         App.copy(trial.phases.map(H.phaseLabel).join(' -> '), 'Trial sequence');
       })
     ], owner));
+  }
+
+  /* What every regressor phase in the trial predicts, and whether those
+   * predictions actually come apart.  Nothing here needs a run: the responses
+   * come from the trial's own phases, laid back to back at the trial's mean
+   * length, which is the tightest spacing any run could ever give them - a
+   * gap, a rest or jitter only pushes them further apart. */
+  function buildTrialHrfCard(trial, owner) {
+    var plot = App.trialHrfPlot();
+    var readout = App.h('div', { class: 'readout' });
+    var caption = App.h('div', { class: 'plot-caption' });
+    var tableHost = App.h('div', { class: 'mt' });
+
+    function swatch(colour) {
+      return '<span style="display:inline-block;width:9px;height:9px;border-radius:2px;'
+        + 'margin-right:7px;vertical-align:middle;background:' + colour + '"></span>';
+    }
+
+    App.registerView(function () {
+      var model = M.trialHrfSeries(App.state, trial, { repeats: 2 });
+      App.clear(readout);
+      App.clear(tableHost);
+      plot.render(model);
+
+      if (!model || !model.traces.length) {
+        caption.textContent = 'Nothing in this trial drives a response yet. Give a phase the '
+          + 'Stimulus / cue or Response / probe window role above and its HRF is drawn here.';
+        return;
+      }
+
+      var colours = App.hrfTraceColours(model.traces);
+      var span = global.PlannerEfficiency.span();
+
+      [
+        ['Responses', String(model.traces.length)],
+        ['Trial length', H.round(model.period, 1) + ' s'],
+        ['Closest peak gap', model.closestPeakGap === null
+          ? '—' : H.round(model.closestPeakGap, 1) + ' s'],
+        ['Overlap at a peak', model.worstBleedPct === null
+          ? '—' : H.round(model.worstBleedPct, 1) + ' %'],
+        ['Left at next trial', H.round(model.worstCarryoverPct, 1) + ' %'],
+        ['Response span', H.round(span, 0) + ' s']
+      ].forEach(function (pair) {
+        readout.appendChild(App.readoutCell(pair[0], pair[1]));
+      });
+
+      tableHost.appendChild(App.dataTable(
+        [{ label: 'Phase' }, { label: 'Role' }, { label: 'Window', num: true },
+          { label: 'Peaks at', num: true }, { label: 'Peak', num: true },
+          { label: 'Under next peak', num: true }, { label: 'Left at next trial', num: true }],
+        model.traces.map(function (trace, index) {
+          return [
+            { html: swatch(colours[index]) + App.escapeHtml(trace.label), copy: trace.label },
+            trace.roleLabel,
+            { text: H.round(trace.onset, 1) + ' - ' + H.round(trace.onset + trace.duration, 1)
+              + ' s', num: true },
+            { text: H.round(trace.peakTime, 1) + ' s', num: true },
+            { text: H.round(trace.peak, 3), num: true },
+            { text: trace.bleedPct === null ? '—' : H.round(trace.bleedPct, 1) + ' %', num: true },
+            { text: H.round(trace.carryoverPct, 1) + ' %', num: true }
+          ];
+        }),
+        { caption: trial.name + ' - response peaks' }
+      ));
+
+      caption.textContent = 'Two trials back to back at the mean phase durations, with no '
+        + 'inter-trial gap. "Under next peak" is how much of a response is still standing '
+        + 'when the next one peaks; "left at next trial" is what it has when trial 2 opens. '
+        + 'Both fall as you lengthen the delay and the tail fixation above.';
+    }, owner);
+
+    return App.card('Trial responses',
+      'Every phase that drives an HRF, and how far apart the peaks land',
+      [plot.node, caption, readout, tableHost]);
   }
 
   /* The separation solver: one slider that solves the delay and the tail from
@@ -602,10 +645,7 @@
       App.slider({
         owner: owner, label: 'Trials per block', min: 1, max: 60, step: 1, unit: 'tr',
         get: function () { return H.num(run.trialsPerBlock, 1); },
-        set: function (value) {
-          run.trialsPerBlock = Math.max(1, Math.round(value));
-          if (run.labelOrder === 'blocked') run.labelRunLength = run.trialsPerBlock;
-        }
+        set: function (value) { run.trialsPerBlock = Math.max(1, Math.round(value)); }
       }),
       App.slider({
         owner: owner, label: 'Blocks per run', min: 1, max: 30, step: 1, unit: 'bl',
@@ -637,28 +677,6 @@
         owner: owner, label: 'Lead-out', min: 0, max: 60, step: 1, unit: 's',
         get: function () { return H.num(run.leadOut); },
         set: function (value) { run.leadOut = value; }
-      })
-    ]));
-
-    host.appendChild(App.card('Condition ordering', 'How the two conditions are sequenced', [
-      App.segmented({
-        owner: owner, label: 'Ordering',
-        options: M.LABEL_ORDERS.map(function (order) {
-          return { value: order.id, label: order.label };
-        }),
-        get: function () { return run.labelOrder || 'intermixed'; },
-        set: function (value) {
-          run.labelOrder = value;
-          run.labelRunLength = value === 'blocked'
-            ? Math.max(1, Math.round(H.num(run.trialsPerBlock, 1))) : 1;
-        }
-      }),
-      App.slider({
-        owner: owner, label: 'Same-condition run length', min: 1, max: 60, step: 1, unit: 'tr',
-        hint: 'Blocked ordering only',
-        get: function () { return H.num(run.labelRunLength, 1); },
-        set: function (value) { run.labelRunLength = Math.max(1, Math.round(value)); },
-        disabledWhen: function () { return run.labelOrder !== 'blocked'; }
       }),
       App.h('div', { class: 'btn-row mt' }, [
         App.iconButton('Optimise blocks and trials',
@@ -747,17 +765,12 @@
         return;
       }
       var trial = M.trialById(App.state, run.trial);
-      var conditions = (trial && trial.conditions) || {};
       var ctx = M.protocolContext(App.boot, run.protocol);
       var geometry = M.runGeometry(run, trial, ctx.trSeconds);
       var series = global.PlannerEfficiency.evaluate(
         M.runDesign(App.state, run), ctx.trSeconds, geometry, { series: true, singleTrial: false }
       );
-      plot.render(series, {
-        stimulus: 'Stimulus',
-        a: conditions.a || 'Condition A',
-        b: conditions.b || 'Condition B'
-      });
+      plot.render(series, { stimulus: 'Stimulus', response: 'Response window' });
 
       var e = record.efficiency;
       [
@@ -766,7 +779,6 @@
         ['Single-trial efficiency', H.round(e.singleTrialEff, 3)],
         ['Carryover', H.round(e.carryoverPct, 1) + ' %'],
         ['Stimulus bleed', H.round(e.stimulusBleedPct, 1) + ' %'],
-        [(conditions.a || 'A') + ' vs ' + (conditions.b || 'B'), H.round(e.effAvsB, 3)],
         ['Response vs baseline', H.round(e.effResponseVsBaseline, 3)],
         ['Stimulus vs response', H.round(e.effStimulusVsResponse, 3)],
         ['Stimulus / response r', H.round(e.corrStimulusResponse, 3)],

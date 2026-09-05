@@ -538,7 +538,7 @@
     return TICK_STEPS[TICK_STEPS.length - 1];
   }
 
-  var TRACE_COLOURS = { stimulus: '#00482B', a: '#CBA052', b: '#719949' };
+  var TRACE_COLOURS = { stimulus: '#00482B', response: '#CBA052' };
 
   /* HRF regressor trace.  `view` carries the visible window so the same draw
    * routine serves the fitted plot and any zoomed or panned state. */
@@ -578,8 +578,7 @@
 
     var maxValue = 0;
     for (var i = first; i <= last; i += 1) {
-      maxValue = Math.max(maxValue, Math.abs(series.stimulus[i]),
-        Math.abs(series.responseA[i]), Math.abs(series.responseB[i]));
+      maxValue = Math.max(maxValue, Math.abs(series.stimulus[i]), Math.abs(series.response[i]));
     }
     if (!(maxValue > 0)) maxValue = 1;
     maxValue *= 1.08;
@@ -599,8 +598,7 @@
       });
     }
     band(events.stimulus, 'rgba(0, 72, 43, .10)');
-    band(events.responseA, 'rgba(203, 160, 82, .22)');
-    band(events.responseB, 'rgba(113, 153, 73, .20)');
+    band(events.response, 'rgba(203, 160, 82, .22)');
 
     /* Horizontal gridlines and value labels. */
     context.font = '9.5px "SF Mono", Menlo, monospace';
@@ -649,14 +647,12 @@
       context.stroke();
     }
     line(series.stimulus, TRACE_COLOURS.stimulus, 1.4);
-    line(series.responseB, TRACE_COLOURS.b, 1.8);
-    line(series.responseA, TRACE_COLOURS.a, 1.8);
+    line(series.response, TRACE_COLOURS.response, 1.8);
 
     /* Legend. */
     var legend = [
       [labels.stimulus, TRACE_COLOURS.stimulus],
-      [labels.a, TRACE_COLOURS.a],
-      [labels.b, TRACE_COLOURS.b]
+      [labels.response, TRACE_COLOURS.response]
     ];
     var lx = padLeft;
     context.font = '10px "Inter", sans-serif';
@@ -699,8 +695,7 @@
       context.stroke();
       context.setLineDash([]);
       [[series.stimulus[index], TRACE_COLOURS.stimulus],
-        [series.responseA[index], TRACE_COLOURS.a],
-        [series.responseB[index], TRACE_COLOURS.b]].forEach(function (pair) {
+        [series.response[index], TRACE_COLOURS.response]].forEach(function (pair) {
         context.fillStyle = pair[1];
         context.beginPath();
         context.arc(hx, yAt(pair[0]), 3, 0, Math.PI * 2);
@@ -709,8 +704,7 @@
       hover = {
         t: series.t[index],
         stimulus: series.stimulus[index],
-        a: series.responseA[index],
-        b: series.responseB[index],
+        response: series.response[index],
         x: hx
       };
     }
@@ -721,13 +715,239 @@
     };
   }
 
-  /* A pannable, zoomable regressor plot. */
-  function regressorPlot() {
-    var view = { start: 0, span: null, hoverX: null, height: 300 };
+  var HRF_TRACE_COLOURS = {
+    stimulus: ['#00482B', '#046A38', '#2E7D57', '#6F9E86'],
+    response: ['#AE8643', '#CBA052', '#7A5C2C', '#D9BC80'],
+    other: ['#719949', '#8FB06B', '#5C7F3E', '#B9C0B4']
+  };
+
+  /* One colour per regressor phase - greens for stimuli, golds for response
+   * windows - so the plot, its legend and the table underneath all agree. */
+  function hrfTraceColours(traces) {
+    var seen = {};
+    return (traces || []).map(function (trace) {
+      var role = HRF_TRACE_COLOURS[trace.role] ? trace.role : 'other';
+      var position = seen[role] || 0;
+      seen[role] = position + 1;
+      return HRF_TRACE_COLOURS[role][position % HRF_TRACE_COLOURS[role].length];
+    });
+  }
+
+  /* One HRF per regressor phase, drawn over a couple of back-to-back trials.
+   * This is the picture trial timing gets adjusted against: peaks that sit
+   * apart, and traces that reach the floor before the next trial opens. */
+  function drawTrialHrf(canvas, model, view) {
+    var height = view.height || 320;
+    var box = sizeCanvas(canvas, height);
+    var context = box.context;
+    context.clearRect(0, 0, box.width, height);
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, box.width, height);
+
+    var traces = (model && model.traces) || [];
+    if (!traces.length || !model.t.length) {
+      context.fillStyle = '#6b767b';
+      context.font = '12px "Inter", sans-serif';
+      context.fillText(model && model.period > 0
+        ? 'No phase in this trial carries a regressor - set a phase to Stimulus or Response'
+        : 'Give the trial at least one phase with a duration', 14, height / 2);
+      return null;
+    }
+
+    var colours = hrfTraceColours(traces);
+    var total = model.total || model.t[model.t.length - 1] || 1;
+    var minSpan = Math.min(total, 6);
+    var span = H.clamp(view.span || total, minSpan, total);
+    var start = H.clamp(view.start || 0, 0, Math.max(0, total - span));
+    var stop = start + span;
+
+    var padLeft = 46, padRight = 14, padTop = 34, padBottom = 26;
+    var plotWidth = Math.max(10, box.width - padLeft - padRight);
+    var plotHeight = Math.max(10, height - padTop - padBottom);
+
+    function xAt(t) { return padLeft + ((t - start) / span) * plotWidth; }
+
+    var first = 0, last = model.t.length - 1;
+    while (first < last && model.t[first + 1] < start) first += 1;
+    while (last > first && model.t[last - 1] > stop) last -= 1;
+
+    /* Only the visible window sets the vertical scale, so zooming in on a
+     * tail actually shows what is left there. */
+    var maxValue = 0;
+    traces.forEach(function (trace) {
+      for (var i = first; i <= last; i += 1) {
+        maxValue = Math.max(maxValue, Math.abs(trace.values[i]));
+      }
+    });
+    if (!(maxValue > 0)) maxValue = 1;
+    maxValue *= 1.12;
+
+    function yAt(value) { return padTop + plotHeight / 2 - (value / maxValue) * (plotHeight / 2); }
+
+    /* The window each phase actually occupies, in every repeat. */
+    traces.forEach(function (trace, index) {
+      context.fillStyle = colours[index];
+      context.globalAlpha = 0.13;
+      trace.windows.forEach(function (window) {
+        if (window.onset > stop || window.onset + window.duration < start) return;
+        var x1 = xAt(Math.max(start, window.onset));
+        var x2 = xAt(Math.min(stop, window.onset + window.duration));
+        context.fillRect(x1, padTop, Math.max(1.2, x2 - x1), plotHeight);
+      });
+      context.globalAlpha = 1;
+    });
+
+    /* Horizontal gridlines and value labels. */
+    context.font = '9.5px "SF Mono", Menlo, monospace';
+    [-1, -0.5, 0, 0.5, 1].forEach(function (level) {
+      var y = yAt(level * maxValue);
+      context.strokeStyle = level === 0 ? '#b9c0b4' : '#EFEEE9';
+      context.lineWidth = 1;
+      context.beginPath();
+      context.moveTo(padLeft, y);
+      context.lineTo(padLeft + plotWidth, y);
+      context.stroke();
+      context.fillStyle = '#6b767b';
+      context.fillText(H.round(level * maxValue, 2).toString(), 3, y + 3);
+    });
+
+    /* Time axis. */
+    var step = niceStep(span, 9);
+    var tick = Math.ceil(start / step) * step;
+    context.textAlign = 'center';
+    for (; tick <= stop + 0.001; tick += step) {
+      var x = xAt(tick);
+      context.strokeStyle = '#F2F1F0';
+      context.beginPath();
+      context.moveTo(x, padTop);
+      context.lineTo(x, padTop + plotHeight);
+      context.stroke();
+      context.fillStyle = '#6b767b';
+      context.fillText(H.round(tick, tick < 10 ? 1 : 0) + 's', x, height - 8);
+    }
+    context.textAlign = 'left';
+
+    context.strokeStyle = '#d8dcd5';
+    context.strokeRect(padLeft + 0.5, padTop + 0.5, plotWidth, plotHeight);
+
+    /* Where each repeat of the trial starts. */
+    context.setLineDash([4, 4]);
+    for (var repeat = 0; repeat <= model.repeats; repeat += 1) {
+      var boundary = repeat * model.period;
+      if (boundary < start || boundary > stop) continue;
+      var bx = xAt(boundary);
+      context.strokeStyle = 'rgba(16, 24, 32, .3)';
+      context.lineWidth = 1;
+      context.beginPath();
+      context.moveTo(bx, padTop);
+      context.lineTo(bx, padTop + plotHeight);
+      context.stroke();
+      if (repeat < model.repeats) {
+        context.fillStyle = '#6b767b';
+        context.font = '9.5px "Inter", sans-serif';
+        context.fillText('Trial ' + (repeat + 1), bx + 4, padTop + 11);
+      }
+    }
+    context.setLineDash([]);
+
+    traces.forEach(function (trace, index) {
+      context.strokeStyle = colours[index];
+      context.lineWidth = 1.8;
+      context.lineJoin = 'round';
+      context.beginPath();
+      var started = false;
+      for (var k = first; k <= last; k += 1) {
+        var px = xAt(model.t[k]);
+        var py = yAt(trace.values[k]);
+        if (!started) { context.moveTo(px, py); started = true; } else context.lineTo(px, py);
+      }
+      context.stroke();
+    });
+
+    /* The peaks themselves, dropped to the baseline so the spacing between
+     * them can be read straight off the plot. */
+    traces.forEach(function (trace, index) {
+      if (trace.peakTime < start || trace.peakTime > stop) return;
+      var px = xAt(trace.peakTime);
+      var py = yAt(trace.peak);
+      context.strokeStyle = colours[index];
+      context.lineWidth = 1;
+      context.setLineDash([2, 3]);
+      context.beginPath();
+      context.moveTo(px, py);
+      context.lineTo(px, yAt(0));
+      context.stroke();
+      context.setLineDash([]);
+      context.fillStyle = colours[index];
+      context.beginPath();
+      context.arc(px, py, 3.2, 0, Math.PI * 2);
+      context.fill();
+      context.font = '9.5px "SF Mono", Menlo, monospace';
+      context.textAlign = 'center';
+      context.fillText(H.round(trace.peakTime, 1) + 's', px, py - 8);
+      context.textAlign = 'left';
+    });
+
+    /* Legend, clipped at the right edge rather than wrapped. */
+    var lx = padLeft;
+    context.font = '10px "Inter", sans-serif';
+    traces.forEach(function (trace, index) {
+      var width = 26 + context.measureText(trace.label).width + 16;
+      if (lx + width > box.width - padRight) return;
+      context.strokeStyle = colours[index];
+      context.lineWidth = 2.4;
+      context.beginPath();
+      context.moveTo(lx, 14);
+      context.lineTo(lx + 16, 14);
+      context.stroke();
+      context.fillStyle = '#3d4a4f';
+      context.fillText(trace.label, lx + 21, 17);
+      lx += width;
+    });
+
+    /* Hover crosshair. */
+    var hover = null;
+    if (view.hoverX !== null && view.hoverX !== undefined
+      && view.hoverX >= padLeft && view.hoverX <= padLeft + plotWidth) {
+      var time = start + ((view.hoverX - padLeft) / plotWidth) * span;
+      var index = H.clamp(Math.round(time / (model.dt || 0.1)), first, last);
+      var hx = xAt(model.t[index]);
+      context.strokeStyle = 'rgba(16, 24, 32, .35)';
+      context.lineWidth = 1;
+      context.setLineDash([3, 3]);
+      context.beginPath();
+      context.moveTo(hx, padTop);
+      context.lineTo(hx, padTop + plotHeight);
+      context.stroke();
+      context.setLineDash([]);
+      traces.forEach(function (trace, position) {
+        context.fillStyle = colours[position];
+        context.beginPath();
+        context.arc(hx, yAt(trace.values[index]), 3, 0, Math.PI * 2);
+        context.fill();
+      });
+      hover = {
+        t: model.t[index],
+        readings: traces.map(function (trace, position) {
+          return { label: trace.label, colour: colours[position], value: trace.values[index] };
+        })
+      };
+    }
+
+    return {
+      start: start, span: span, total: total, hover: hover,
+      padLeft: padLeft, plotWidth: plotWidth, minSpan: minSpan
+    };
+  }
+
+  /* The pan-and-zoom shell both time-axis plots share.  The caller supplies a
+   * draw routine and what the reading strip should say; the draw routine hands
+   * back the geometry the shell needs to turn pointer positions into times. */
+  function zoomablePlot(config) {
+    var view = { start: 0, span: null, hoverX: null, height: config.height || 300 };
     var canvas = h('canvas', { class: 'zoomable' });
     var last = null;
-    var efficiency = null;
-    var labels = { stimulus: 'Stimulus', a: 'Condition A', b: 'Condition B' };
+    var data = null;
 
     var reading = h('div', { class: 'plot-reading' });
     var zoomRange = h('input', { type: 'range', min: 1, max: 60, step: 0.5, value: 1 });
@@ -738,7 +958,7 @@
     }
 
     function paint() {
-      last = drawRegressors(canvas, efficiency, labels, view);
+      last = config.draw(canvas, data, view);
       if (last) {
         view.start = last.start;
         view.span = last.span;
@@ -746,26 +966,11 @@
         paintRange(zoomRange);
       }
       clear(reading);
-      if (last && last.hover) {
-        reading.appendChild(h('span', {
-          class: 'mono', text: 't = ' + H.round(last.hover.t, 1) + ' s'
-        }));
-        reading.appendChild(h('span', {
-          style: 'color:' + TRACE_COLOURS.stimulus,
-          text: labels.stimulus + ' ' + H.round(last.hover.stimulus, 3)
-        }));
-        reading.appendChild(h('span', {
-          style: 'color:#AE8643', text: labels.a + ' ' + H.round(last.hover.a, 3)
-        }));
-        reading.appendChild(h('span', {
-          style: 'color:' + TRACE_COLOURS.b, text: labels.b + ' ' + H.round(last.hover.b, 3)
-        }));
+      var cells = last && last.hover ? config.reading(last.hover, data) : null;
+      if (cells && cells.length) {
+        cells.forEach(function (cell) { reading.appendChild(cell); });
       } else {
-        reading.appendChild(h('span', {
-          class: 'muted',
-          text: 'Scroll to zoom, drag to pan, double-click to fit. Shaded bands are the '
-            + 'stimulus and response windows.'
-        }));
+        reading.appendChild(h('span', { class: 'muted', text: config.hint }));
       }
     }
 
@@ -776,6 +981,20 @@
       var fraction = view.span > 0 ? (anchor - view.start) / view.span : 0.5;
       view.span = span;
       view.start = H.clamp(anchor - fraction * span, 0, Math.max(0, last.total - span));
+      paint();
+    }
+
+    function fit() {
+      view.start = 0;
+      view.span = last ? last.total : null;
+      paint();
+    }
+
+    /* Show the opening `1 / divisor` of the record, from the very start. */
+    function zoomToStart(divisor) {
+      if (!last) return;
+      view.span = H.clamp(last.total / Math.max(1, divisor), last.minSpan, last.total);
+      view.start = 0;
       paint();
     }
 
@@ -823,39 +1042,92 @@
       drag = null;
       canvas.classList.remove('grabbing');
     });
-    canvas.addEventListener('dblclick', function () {
-      view.start = 0;
-      view.span = last ? last.total : null;
-      paint();
-    });
+    canvas.addEventListener('dblclick', fit);
     zoomRange.addEventListener('input', function () { setZoom(H.num(zoomRange.value)); });
+
+    var api = { fit: fit, setZoom: setZoom, zoomToStart: zoomToStart, repaint: paint };
 
     var toolbar = h('div', { class: 'plot-toolbar' }, [
       h('span', { class: 'k', text: 'Zoom' }),
       zoomRange,
       iconButton('-', 'Zoom out', function () { setZoom(currentZoom() / 1.6); }),
       iconButton('+', 'Zoom in', function () { setZoom(currentZoom() * 1.6); }),
-      iconButton('Fit', 'Show the whole simulated run', function () {
-        view.start = 0;
-        view.span = last ? last.total : null;
-        paint();
-      }),
-      iconButton('First trial', 'Zoom to the opening trials', function () {
-        if (!last) return;
-        view.span = H.clamp(last.total / 8, last.minSpan, last.total);
-        view.start = 0;
-        paint();
-      })
-    ]);
+      iconButton('Fit', config.fitHint || 'Show the whole record', fit)
+    ].concat(config.buttons ? config.buttons(api) : []));
 
     return {
       node: h('div', {}, [toolbar, h('div', { class: 'plot-wrap tall' }, [canvas]), reading]),
-      render: function (nextEfficiency, nextLabels) {
-        efficiency = nextEfficiency;
-        if (nextLabels) labels = nextLabels;
+      render: function (next) {
+        data = next;
         paint();
       }
     };
+  }
+
+  /* A pannable, zoomable regressor plot. */
+  function regressorPlot() {
+    var labels = { stimulus: 'Stimulus', response: 'Response window' };
+    var plot = zoomablePlot({
+      height: 300,
+      hint: 'Scroll to zoom, drag to pan, double-click to fit. Shaded bands are the '
+        + 'stimulus and response windows.',
+      fitHint: 'Show the whole simulated run',
+      draw: function (canvas, efficiency, view) {
+        return drawRegressors(canvas, efficiency, labels, view);
+      },
+      reading: function (hover) {
+        return [
+          h('span', { class: 'mono', text: 't = ' + H.round(hover.t, 1) + ' s' }),
+          h('span', {
+            style: 'color:' + TRACE_COLOURS.stimulus,
+            text: labels.stimulus + ' ' + H.round(hover.stimulus, 3)
+          }),
+          h('span', {
+            style: 'color:#AE8643',
+            text: labels.response + ' ' + H.round(hover.response, 3)
+          })
+        ];
+      },
+      buttons: function (api) {
+        return [iconButton('First trial', 'Zoom to the opening trials', function () {
+          api.zoomToStart(8);
+        })];
+      }
+    });
+
+    return {
+      node: plot.node,
+      render: function (nextEfficiency, nextLabels) {
+        if (nextLabels) labels = nextLabels;
+        plot.render(nextEfficiency);
+      }
+    };
+  }
+
+  /* The same shell over one trial's own responses. */
+  function trialHrfPlot() {
+    var plot = zoomablePlot({
+      height: 320,
+      hint: 'Scroll to zoom, drag to pan, double-click to fit. Bands are the phase '
+        + 'windows; dropped lines mark each response peak.',
+      fitHint: 'Show both trials and the full decay',
+      draw: drawTrialHrf,
+      reading: function (hover) {
+        return [h('span', { class: 'mono', text: 't = ' + H.round(hover.t, 1) + ' s' })]
+          .concat(hover.readings.map(function (item) {
+            return h('span', {
+              style: 'color:' + item.colour,
+              text: item.label + ' ' + H.round(item.value, 3)
+            });
+          }));
+      },
+      buttons: function (api) {
+        return [iconButton('One trial', 'Zoom to the first trial', function () {
+          api.zoomToStart(2);
+        })];
+      }
+    });
+    return plot;
   }
 
   /* ------------------------------------------------------------ figures */
@@ -2456,6 +2728,8 @@
   App.dropViews = dropViews;
   App.syncOwner = syncOwner;
   App.regressorPlot = regressorPlot;
+  App.trialHrfPlot = trialHrfPlot;
+  App.hrfTraceColours = hrfTraceColours;
   App.trialFigureMarkup = trialFigureMarkup;
   App.assemblyFigureMarkup = assemblyFigureMarkup;
   App.studyFigureMarkup = studyFigureMarkup;

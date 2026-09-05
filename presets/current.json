@@ -9,7 +9,7 @@
     "notes": ""
   },
   "budget": {
-    "totalScannerHours": 120,
+    "totalScannerHours": 100,
     "contingencyPct": 8,
     "solveMode": "budget",
     "targetUnitsTotal": 3000,
@@ -100,14 +100,8 @@
           "role": "baseline"
         }
       ],
-      "conditions": {
-        "a": "Condition A",
-        "b": "Condition B"
-      },
-      "conditionBalance": 50,
       "controlPct": 0,
-      "separationTolerancePct": 45,
-      "seed": 20260823
+      "separationTolerancePct": 45
     },
     {
       "id": "trial-mtmfi9kd-2",
@@ -151,14 +145,8 @@
           "role": "baseline"
         }
       ],
-      "conditions": {
-        "a": "Condition A",
-        "b": "Condition B"
-      },
-      "conditionBalance": 50,
       "controlPct": 0,
-      "separationTolerancePct": 12,
-      "seed": 20260823
+      "separationTolerancePct": 12
     },
     {
       "id": "trial-mtmfi9kd-3",
@@ -202,70 +190,30 @@
           "role": "baseline"
         }
       ],
-      "conditions": {
-        "a": "Condition A",
-        "b": "Condition B"
-      },
-      "conditionBalance": 50,
       "controlPct": 0,
-      "separationTolerancePct": 4,
-      "seed": 20260823
+      "separationTolerancePct": 4
     }
   ],
   "runs": [
     {
       "id": "run-mtmfi9kd-4",
-      "name": "Blocked detection run",
+      "name": "Aim 1",
       "note": "",
       "trial": "trial-mtmfi9kd-1",
       "protocol": "EPI-TR2000-Task",
       "trialsPerBlock": 12,
-      "blocksPerRun": 4,
+      "blocksPerRun": 1,
       "interTrialGap": 0,
       "interBlockRest": 20,
       "dummyVolumes": 6,
       "leadIn": 12,
-      "leadOut": 12,
-      "labelOrder": "blocked",
-      "labelRunLength": 12
-    },
-    {
-      "id": "run-mtmfi9kd-5",
-      "name": "Event-related run",
-      "note": "",
-      "trial": "trial-mtmfi9kd-2",
-      "protocol": "EPI-TR1000-Task",
-      "trialsPerBlock": 10,
-      "blocksPerRun": 3,
-      "interTrialGap": 0,
-      "interBlockRest": 12,
-      "dummyVolumes": 12,
-      "leadIn": 12,
-      "leadOut": 12,
-      "labelOrder": "intermixed",
-      "labelRunLength": 1
-    },
-    {
-      "id": "run-mtmfi9kd-6",
-      "name": "Separated run",
-      "note": "",
-      "trial": "trial-mtmfi9kd-3",
-      "protocol": "EPI-TR800-Task",
-      "trialsPerBlock": 10,
-      "blocksPerRun": 2,
-      "interTrialGap": 0,
-      "interBlockRest": 12,
-      "dummyVolumes": 12,
-      "leadIn": 12,
-      "leadOut": 12,
-      "labelOrder": "intermixed",
-      "labelRunLength": 1
+      "leadOut": 12
     }
   ],
   "sessions": [
     {
       "id": "session-mtmfi9kd-7",
-      "name": "Detection session",
+      "name": "Aim 1",
       "note": "",
       "breakMinutes": 3,
       "blocks": [
@@ -344,272 +292,7 @@
           "kind": "run",
           "enabled": true,
           "run": "run-mtmfi9kd-4",
-          "count": 2
-        }
-      ],
-      "autoBreak": true
-    },
-    {
-      "id": "session-mtmfi9kd-8",
-      "name": "Event-related session",
-      "note": "",
-      "breakMinutes": 3,
-      "blocks": [
-        {
-          "id": "blk-mtoxivho-29",
-          "kind": "prep",
-          "enabled": true,
-          "label": "MRI safety screening and consent check",
-          "minutes": 6
-        },
-        {
-          "id": "blk-mtoxivho-2a",
-          "kind": "prep",
-          "enabled": true,
-          "label": "Positioning, coil placement, stabilisation",
-          "minutes": 5
-        },
-        {
-          "id": "blk-mtoxivho-2b",
-          "kind": "prep",
-          "enabled": true,
-          "label": "Task refresher and cadence practice",
-          "minutes": 4
-        },
-        {
-          "id": "blk-mtoxivho-2c",
-          "kind": "structural",
-          "enabled": true,
-          "protocol": "Survey-Localizer",
           "count": 1
-        },
-        {
-          "id": "blk-mtoxivho-2d",
-          "kind": "structural",
-          "enabled": true,
-          "protocol": "SENSE-Reference",
-          "count": 1
-        },
-        {
-          "id": "blk-mtoxivho-2e",
-          "kind": "structural",
-          "enabled": true,
-          "protocol": "T1-Anatomical-MPRAGE",
-          "count": 1
-        },
-        {
-          "id": "blk-mtoxivho-2f",
-          "kind": "structural",
-          "enabled": false,
-          "protocol": "T2-FLAIR",
-          "count": 1
-        },
-        {
-          "id": "blk-mtoxivho-2g",
-          "kind": "structural",
-          "enabled": true,
-          "protocol": "EPI-SBRef",
-          "count": 1
-        },
-        {
-          "id": "blk-mtoxivho-2h",
-          "kind": "structural",
-          "enabled": true,
-          "protocol": "Field-Map-Reverse-PE",
-          "count": 1
-        },
-        {
-          "id": "blk-mtoxivho-2i",
-          "kind": "structural",
-          "enabled": false,
-          "protocol": "EPI-Dummy-Prescan",
-          "count": 1
-        },
-        {
-          "id": "blk-mtoxivho-2j",
-          "kind": "run",
-          "enabled": true,
-          "run": "run-mtmfi9kd-5",
-          "count": 3
-        }
-      ],
-      "autoBreak": true
-    },
-    {
-      "id": "session-mtmfi9kd-9",
-      "name": "Separation session",
-      "note": "",
-      "breakMinutes": 3,
-      "blocks": [
-        {
-          "id": "blk-mtoxivho-2v",
-          "kind": "prep",
-          "enabled": true,
-          "label": "MRI safety screening and consent check",
-          "minutes": 6
-        },
-        {
-          "id": "blk-mtoxivho-2w",
-          "kind": "prep",
-          "enabled": true,
-          "label": "Positioning, coil placement, stabilisation",
-          "minutes": 5
-        },
-        {
-          "id": "blk-mtoxivho-2x",
-          "kind": "prep",
-          "enabled": true,
-          "label": "Task refresher and cadence practice",
-          "minutes": 4
-        },
-        {
-          "id": "blk-mtoxivho-2y",
-          "kind": "structural",
-          "enabled": true,
-          "protocol": "Survey-Localizer",
-          "count": 1
-        },
-        {
-          "id": "blk-mtoxivho-2z",
-          "kind": "structural",
-          "enabled": true,
-          "protocol": "SENSE-Reference",
-          "count": 1
-        },
-        {
-          "id": "blk-mtoxivho-30",
-          "kind": "structural",
-          "enabled": true,
-          "protocol": "T1-Anatomical-MPRAGE",
-          "count": 1
-        },
-        {
-          "id": "blk-mtoxivho-31",
-          "kind": "structural",
-          "enabled": false,
-          "protocol": "T2-FLAIR",
-          "count": 1
-        },
-        {
-          "id": "blk-mtoxivho-32",
-          "kind": "structural",
-          "enabled": true,
-          "protocol": "EPI-SBRef",
-          "count": 1
-        },
-        {
-          "id": "blk-mtoxivho-33",
-          "kind": "structural",
-          "enabled": true,
-          "protocol": "Field-Map-Reverse-PE",
-          "count": 1
-        },
-        {
-          "id": "blk-mtoxivho-34",
-          "kind": "structural",
-          "enabled": false,
-          "protocol": "EPI-Dummy-Prescan",
-          "count": 1
-        },
-        {
-          "id": "blk-mtoxivho-35",
-          "kind": "run",
-          "enabled": true,
-          "run": "run-mtmfi9kd-6",
-          "count": 4
-        }
-      ],
-      "autoBreak": true
-    },
-    {
-      "id": "session-mtmfi9kd-a",
-      "name": "Mixed session",
-      "note": "One session carrying runs from more than one experiment.",
-      "breakMinutes": 3,
-      "blocks": [
-        {
-          "id": "blk-mtoxivho-3h",
-          "kind": "prep",
-          "enabled": true,
-          "label": "MRI safety screening and consent check",
-          "minutes": 6
-        },
-        {
-          "id": "blk-mtoxivho-3i",
-          "kind": "prep",
-          "enabled": true,
-          "label": "Positioning, coil placement, stabilisation",
-          "minutes": 5
-        },
-        {
-          "id": "blk-mtoxivho-3j",
-          "kind": "prep",
-          "enabled": true,
-          "label": "Task refresher and cadence practice",
-          "minutes": 4
-        },
-        {
-          "id": "blk-mtoxivho-3k",
-          "kind": "structural",
-          "enabled": true,
-          "protocol": "Survey-Localizer",
-          "count": 1
-        },
-        {
-          "id": "blk-mtoxivho-3l",
-          "kind": "structural",
-          "enabled": true,
-          "protocol": "SENSE-Reference",
-          "count": 1
-        },
-        {
-          "id": "blk-mtoxivho-3m",
-          "kind": "structural",
-          "enabled": true,
-          "protocol": "T1-Anatomical-MPRAGE",
-          "count": 1
-        },
-        {
-          "id": "blk-mtoxivho-3n",
-          "kind": "structural",
-          "enabled": false,
-          "protocol": "T2-FLAIR",
-          "count": 1
-        },
-        {
-          "id": "blk-mtoxivho-3o",
-          "kind": "structural",
-          "enabled": true,
-          "protocol": "EPI-SBRef",
-          "count": 1
-        },
-        {
-          "id": "blk-mtoxivho-3p",
-          "kind": "structural",
-          "enabled": true,
-          "protocol": "Field-Map-Reverse-PE",
-          "count": 1
-        },
-        {
-          "id": "blk-mtoxivho-3q",
-          "kind": "structural",
-          "enabled": false,
-          "protocol": "EPI-Dummy-Prescan",
-          "count": 1
-        },
-        {
-          "id": "blk-mtoxivho-3r",
-          "kind": "run",
-          "enabled": true,
-          "run": "run-mtmfi9kd-5",
-          "count": 2
-        },
-        {
-          "id": "blk-mtoxivho-3s",
-          "kind": "run",
-          "enabled": true,
-          "run": "run-mtmfi9kd-6",
-          "count": 2
         }
       ],
       "autoBreak": true
@@ -618,8 +301,8 @@
   "experiments": [
     {
       "id": "exp-mtmfi9kd-b",
-      "name": "Detection experiment",
-      "short": "DET",
+      "name": "Aim 1",
+      "short": "AIM1",
       "note": "",
       "enabled": true,
       "unit": {
@@ -627,7 +310,7 @@
         "plural": "trials",
         "short": "tr"
       },
-      "requestedPct": 12,
+      "requestedPct": 100,
       "locked": false,
       "lockPlan": false,
       "plan": [
@@ -637,52 +320,6 @@
         }
       ],
       "targetUnits": 400,
-      "manualSessions": 10
-    },
-    {
-      "id": "exp-mtmfi9kd-c",
-      "name": "Estimation experiment",
-      "short": "EST",
-      "note": "",
-      "enabled": true,
-      "unit": {
-        "noun": "trial",
-        "plural": "trials",
-        "short": "tr"
-      },
-      "requestedPct": 28,
-      "locked": false,
-      "lockPlan": false,
-      "plan": [
-        {
-          "session": "session-mtmfi9kd-8",
-          "count": 1
-        }
-      ],
-      "targetUnits": 900,
-      "manualSessions": 10
-    },
-    {
-      "id": "exp-mtmfi9kd-d",
-      "name": "Separation experiment",
-      "short": "SEP",
-      "note": "",
-      "enabled": true,
-      "unit": {
-        "noun": "trial",
-        "plural": "trials",
-        "short": "tr"
-      },
-      "requestedPct": 60,
-      "locked": false,
-      "lockPlan": false,
-      "plan": [
-        {
-          "session": "session-mtmfi9kd-9",
-          "count": 1
-        }
-      ],
-      "targetUnits": 2000,
       "manualSessions": 10
     }
   ],

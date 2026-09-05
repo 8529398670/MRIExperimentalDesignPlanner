@@ -168,6 +168,11 @@
 
   /* --------------------------------------------------------------- random */
 
+  /* Jitter is sampled from a fixed stream so the same design always solves to
+   * the same numbers.  What the participant actually sees on any given run is
+   * the presentation software's business, not the planner's. */
+  var JITTER_SEED = 20260823;
+
   function mulberry32(seed) {
     var state = seed >>> 0;
     return function () {
@@ -190,34 +195,16 @@
     return 'baseline';
   }
 
-  function conditionSequence(count, decode, rng) {
-    var order = (decode && decode.labelOrder) || 'intermixed';
-    var runLength = Math.max(1, Math.round((decode && decode.labelRunLength) || 1));
-    var labels = [];
-    var i;
-    if (order === 'blocked') {
-      for (i = 0; i < count; i += 1) labels.push(Math.floor(i / runLength) % 2 === 0 ? 1 : 0);
-    } else if (order === 'alternating') {
-      for (i = 0; i < count; i += 1) labels.push(i % 2 === 0 ? 1 : 0);
-    } else {
-      for (i = 0; i < count; i += 1) labels.push(i % 2 === 0 ? 1 : 0);
-      for (var s = labels.length - 1; s > 0; s -= 1) {
-        var j = Math.floor(rng() * (s + 1));
-        var swap = labels[s]; labels[s] = labels[j]; labels[j] = swap;
-      }
-    }
-    return labels;
-  }
-
-  /* `design` is a run design flattened against its trial: phases, ordering and
-   * a seed.  Everything geometric comes in through `geometry`. */
+  /* `design` is a run design flattened against its trial: its phases and
+   * nothing else.  Everything geometric comes in through `geometry`.  What
+   * gets presented in each trial is the presentation software's business, so
+   * every response window lands in one regressor here. */
   function buildRun(design, geometry, rng, maxTrials) {
-    var events = { stimulus: [], responseA: [], responseB: [] };
+    var events = { stimulus: [], response: [] };
     var trials = [];
     var time = geometry.leadIn;
     var cap = maxTrials && maxTrials > 0
       ? Math.min(geometry.trialsPerRun, maxTrials) : geometry.trialsPerRun;
-    var labels = conditionSequence(geometry.trialsPerRun, design.decode, rng);
     var phases = design.phases || [];
 
     var trialIndex = 0;
@@ -226,7 +213,7 @@
       if (block > 0) time += geometry.interBlockRest;
       for (var trial = 0; trial < geometry.trialsPerBlock; trial += 1) {
         if (trialIndex >= cap) { stop = true; break; }
-        var record = { label: labels[trialIndex], start: time, stimulus: null, response: null };
+        var record = { start: time, stimulus: null, response: null };
         for (var p = 0; p < phases.length; p += 1) {
           var phase = phases[p];
           var lo = Math.max(0, Number(phase.min) || 0);
@@ -239,7 +226,7 @@
             if (!record.stimulus) record.stimulus = sEvent;
           } else if (role === 'response') {
             var rEvent = { onset: time, duration: duration };
-            events[record.label === 1 ? 'responseA' : 'responseB'].push(rEvent);
+            events.response.push(rEvent);
             record.response = rEvent;
           }
           time += duration;
@@ -392,13 +379,12 @@
     options = options || {};
     var tr = trSeconds > 0 ? trSeconds : 2;
     var reach = span();
-    var rng = mulberry32(Number(design.seed) || 20260823);
+    var rng = mulberry32(JITTER_SEED);
     var run = buildRun(design, geometry, rng, options.maxTrials);
     var volumes = Math.min(MAX_VOLUMES, Math.max(8, Math.ceil(run.duration / tr)));
 
     var stimulus = new Float64Array(volumes);
-    var responseA = new Float64Array(volumes);
-    var responseB = new Float64Array(volumes);
+    var response = new Float64Array(volumes);
 
     function fill(target, list) {
       for (var e = 0; e < list.length; e += 1) {
@@ -412,8 +398,7 @@
       }
     }
     fill(stimulus, run.events.stimulus);
-    fill(responseA, run.events.responseA);
-    fill(responseB, run.events.responseB);
+    fill(response, run.events.response);
 
     var intercept = new Float64Array(volumes);
     var linear = new Float64Array(volumes);
@@ -425,7 +410,7 @@
       quadratic[v] = 1.5 * position * position - 0.5;
     }
 
-    var columns = [stimulus, responseA, responseB, intercept, linear, quadratic];
+    var columns = [stimulus, response, intercept, linear, quadratic];
     var xtx = gram(columns);
     var inverse = invert(xtx);
     if (!inverse) {
@@ -439,7 +424,6 @@
       trSeconds: tr,
       runSeconds: Math.round(run.duration * 10) / 10,
       trialCount: geometry.trialsPerRun,
-      effAvsB: 0,
       effResponseVsBaseline: 0,
       effStimulusVsResponse: 0,
       corrStimulusResponse: 0,
@@ -452,15 +436,12 @@
     };
 
     if (inverse) {
-      result.effAvsB = contrastEfficiency(inverse, [0, 1, -1, 0, 0, 0]);
-      result.effResponseVsBaseline = contrastEfficiency(inverse, [0, 0.5, 0.5, 0, 0, 0]);
-      result.effStimulusVsResponse = contrastEfficiency(inverse, [1, -0.5, -0.5, 0, 0, 0]);
+      result.effResponseVsBaseline = contrastEfficiency(inverse, [0, 1, 0, 0, 0]);
+      result.effStimulusVsResponse = contrastEfficiency(inverse, [1, -1, 0, 0, 0]);
     }
 
-    var responseCombined = new Float64Array(volumes);
-    for (var c = 0; c < volumes; c += 1) responseCombined[c] = responseA[c] + responseB[c];
-    result.corrStimulusResponse = correlation(stimulus, responseCombined);
-    var vif = varianceInflation([stimulus, responseA, responseB]);
+    result.corrStimulusResponse = correlation(stimulus, response);
+    var vif = varianceInflation([stimulus, response]);
     result.maxVif = isFinite(vif.max) ? vif.max : 999;
     result.vif = vif.values;
 
@@ -494,7 +475,7 @@
     var task = [];
     var stacked = 0;
     for (var m = firstSample; m < lastSample; m += 1) {
-      var total = stimulus[m] + responseA[m] + responseB[m];
+      var total = stimulus[m] + response[m];
       task.push(total);
       if (total > stacked) stacked = total;
     }
@@ -537,7 +518,6 @@
       residualCount += 1;
     }
     result.stimulusBleedPct = residualCount ? (residual / residualCount) * 100 : 0;
-    result.labelOrder = (design.decode && design.decode.labelOrder) || 'intermixed';
 
     if (options.singleTrial !== false) {
       result.singleTrialEff = singleTrialEfficiency(run, tr, volumes, stimulus,
@@ -546,12 +526,11 @@
 
     if (options.series) {
       var stride = Math.max(1, Math.ceil(volumes / 900));
-      var series = { t: [], stimulus: [], responseA: [], responseB: [] };
+      var series = { t: [], stimulus: [], response: [] };
       for (var s = 0; s < volumes; s += stride) {
         series.t.push(Math.round(s * tr * 10) / 10);
         series.stimulus.push(stimulus[s]);
-        series.responseA.push(responseA[s]);
-        series.responseB.push(responseB[s]);
+        series.response.push(response[s]);
       }
       result.series = series;
       result.events = run.events;
@@ -593,12 +572,6 @@
        * must both be gone. Throughput is only a weak tiebreak. */
       var clean = separation * recovery * stimulusClear;
       return Math.pow(clean, 3) * Math.pow(throughput, 0.25);
-    }
-    if (objective === 'contrast') {
-      return (metrics.effAvsB || 0) / minutes;
-    }
-    if (objective === 'balanced') {
-      return throughput * Math.sqrt(Math.max(0.0001, metrics.effAvsB || 0));
     }
     return throughput;
   }
