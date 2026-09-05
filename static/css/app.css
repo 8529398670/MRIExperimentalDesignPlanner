@@ -783,3 +783,94 @@ table.data td.cell { padding: 3px 6px; }
 .warn-list li { margin-bottom: 5px; }
 .plain-list { margin: 12px 0 0; padding-left: 18px; font-size: 11.5px; color: var(--ink-soft); }
 .plain-list li { margin-bottom: 2px; }
+
+/* ------------------------------------------------------ session sequence */
+
+.hint-block {
+  margin: 0 0 12px; font-size: 11.5px; line-height: 1.5; color: var(--ink-faint);
+  max-width: 900px;
+}
+
+.seq { border: 1px solid var(--line); border-radius: 2px; background: var(--surface); }
+
+.seq-row {
+  display: grid;
+  grid-template-columns: 18px 20px 82px minmax(0, 1fr) 108px 78px auto;
+  gap: 10px; align-items: center;
+  padding: 7px 10px; border-bottom: 1px solid var(--line);
+  border-left: 3px solid transparent; background: var(--surface);
+}
+.seq-row:last-of-type { border-bottom: 0; }
+.seq-row.kind-prep { border-left-color: var(--wsu-beige); }
+.seq-row.kind-structural { border-left-color: var(--wsu-gold); }
+.seq-row.kind-run { border-left-color: var(--wsu-green); }
+.seq-row.kind-break { border-left-color: var(--line-strong); }
+.seq-row:hover { background: var(--wsu-off-white); }
+.seq-row.off { opacity: .5; }
+.seq-row.dragging { opacity: .35; background: var(--wsu-faded-gold); }
+.seq-row.drop-before { box-shadow: inset 0 3px 0 -1px var(--wsu-green); }
+.seq-row.drop-after { box-shadow: inset 0 -3px 0 -1px var(--wsu-green); }
+
+.seq-handle {
+  cursor: grab; color: var(--ink-faint); font-size: 14px; line-height: 1;
+  text-align: center; user-select: none; touch-action: none;
+  padding: 2px 0; border: 0; background: transparent; font-family: inherit;
+}
+.seq-handle:hover { color: var(--wsu-green); }
+.seq-handle:focus-visible { outline: 2px solid var(--wsu-green); outline-offset: 1px; }
+.seq.dragging { cursor: grabbing; user-select: none; }
+.seq.dragging .seq-handle { cursor: grabbing; }
+.seq-on { display: flex; align-items: center; }
+.seq-on input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--wsu-green); }
+
+.seq-kind {
+  justify-self: start; font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+  background: var(--wsu-off-white); color: var(--ink-faint); border: 1px solid var(--line);
+}
+.seq-row.kind-run .seq-kind { background: var(--wsu-green); color: #fff; border-color: var(--wsu-green); }
+.seq-row.kind-structural .seq-kind { background: var(--wsu-yellow); color: var(--wsu-black); border-color: var(--wsu-deep-gold); }
+
+.seq-subject { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.seq-subject .cell-input { width: 100%; }
+.seq-detail { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); }
+.seq-flat { font-size: 12px; color: var(--ink-soft); }
+
+.seq-amount { display: flex; align-items: center; gap: 5px; }
+.seq-amount .cell-input { width: 100%; min-width: 56px; }
+.seq-unit { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); }
+
+.seq-minutes {
+  font-family: var(--mono); font-size: 12px; text-align: right; color: var(--wsu-dark-green);
+}
+.seq-actions { flex-wrap: nowrap; }
+
+.seq-tail {
+  padding: 7px 10px; border-top: 1px dashed var(--line-strong);
+  font-size: 11px; color: var(--ink-faint); text-align: center;
+}
+.seq-tail.drop-before { box-shadow: inset 0 3px 0 -1px var(--wsu-green); color: var(--wsu-dark-green); }
+
+.seq-total {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 7px 10px; border-top: 1px solid var(--line-strong);
+  background: var(--surface-sunk);
+  font-family: var(--mono); font-size: 11px; color: var(--ink-soft);
+}
+
+@media (max-width: 1100px) {
+  .seq-row {
+    grid-template-columns: 18px 20px minmax(0, 1fr) 96px;
+    grid-template-areas:
+      "handle on subject amount"
+      ".      .  kind    minutes"
+      ".      .  actions actions";
+    row-gap: 5px;
+  }
+  .seq-handle { grid-area: handle; }
+  .seq-on { grid-area: on; }
+  .seq-kind { grid-area: kind; }
+  .seq-subject { grid-area: subject; }
+  .seq-amount { grid-area: amount; }
+  .seq-minutes { grid-area: minutes; text-align: left; }
+  .seq-actions { grid-area: actions; }
+}

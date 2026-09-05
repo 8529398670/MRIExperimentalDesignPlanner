@@ -423,7 +423,7 @@ def _sheet_runs(wb: Workbook, payload: Dict[str, Any]) -> None:
 def _sheet_sessions(wb: Workbook, payload: Dict[str, Any]) -> None:
     ws = wb.create_sheet("Sessions")
     ws.sheet_properties.tabColor = BEIGE
-    row = _title_block(ws, "Session library", "Setup, structurals and runs, in console order",
+    row = _title_block(ws, "Session library", "Every block in the order the console runs it",
                        span=8)
 
     row = _table(
@@ -446,16 +446,31 @@ def _sheet_sessions(wb: Workbook, payload: Dict[str, Any]) -> None:
 
     for session in _sessions(payload):
         row = _section(ws, row, session.get("name", "Session"), 8)
+        auto_break = (
+            f"{session.get('breakMinutes', 0)} min between adjacent runs"
+            if session.get("autoBreak", True)
+            else "off - breaks are placed by hand"
+        )
         row = _kv_rows(ws, row, [
-            ["Safety screening", f"{session.get('screeningMinutes', 0)} min"],
-            ["Positioning", f"{session.get('positioningMinutes', 0)} min"],
-            ["Task practice", f"{session.get('practiceMinutes', 0)} min"],
+            ["Setup steps", f"{session.get('overheadMinutes', 0)} min"],
             ["Structural and reference scans", f"{session.get('structuralMinutes', 0)} min"],
-            ["Break between runs", f"{session.get('breakMinutes', 0)} min"],
+            ["Breaks", f"{session.get('breakTotalMinutes', 0)} min"],
+            ["Automatic break", auto_break],
             ["Functional acquisition", f"{session.get('functionalMinutes', 0)} min"],
             ["Expected session duration", f"{session.get('meanMinutes', 0)} min"],
             ["Primary events per session", session.get("units", 0)],
         ])
+        if session.get("setup"):
+            row = _table(
+                ws, row,
+                ["Setup step", "On", "Minutes"],
+                [
+                    [entry.get("label", ""), "yes" if entry.get("enabled") else "no",
+                     round(_num(entry.get("minutes")), 2)]
+                    for entry in session["setup"]
+                ],
+                widths=[44, 8, 12],
+            )
         if session.get("structurals"):
             row = _table(
                 ws, row,

@@ -171,8 +171,9 @@
 
   function structuralUses(slug) {
     return (App.state.sessions || []).filter(function (session) {
-      return (session.structurals || []).some(function (entry) {
-        return entry.protocol === slug && entry.enabled;
+      return (session.blocks || []).some(function (block) {
+        return block.kind === 'structural' && block.protocol === slug
+          && block.enabled !== false;
       });
     });
   }
@@ -687,15 +688,15 @@
   }
 
   /* Renaming the file moves every reference in the design with it, so a run
-   * design or a session's structural list never ends up pointing at nothing. */
+   * design or a session's sequence never ends up pointing at nothing. */
   function repoint(from, to) {
     if (from === to) return;
     (App.state.runs || []).forEach(function (run) {
       if (run.protocol === from) run.protocol = to;
     });
     (App.state.sessions || []).forEach(function (session) {
-      (session.structurals || []).forEach(function (entry) {
-        if (entry.protocol === from) entry.protocol = to;
+      (session.blocks || []).forEach(function (block) {
+        if (block.kind === 'structural' && block.protocol === from) block.protocol = to;
       });
     });
   }

@@ -267,213 +267,352 @@
       "id": "session-mtmfi9kd-7",
       "name": "Detection session",
       "note": "",
-      "screeningMinutes": 6,
-      "positioningMinutes": 5,
-      "practiceMinutes": 4,
       "breakMinutes": 3,
-      "structurals": [
+      "blocks": [
         {
+          "id": "blk-mtoxivho-1n",
+          "kind": "prep",
+          "enabled": true,
+          "label": "MRI safety screening and consent check",
+          "minutes": 6
+        },
+        {
+          "id": "blk-mtoxivho-1o",
+          "kind": "prep",
+          "enabled": true,
+          "label": "Positioning, coil placement, stabilisation",
+          "minutes": 5
+        },
+        {
+          "id": "blk-mtoxivho-1p",
+          "kind": "prep",
+          "enabled": true,
+          "label": "Task refresher and cadence practice",
+          "minutes": 4
+        },
+        {
+          "id": "blk-mtoxivho-1q",
+          "kind": "structural",
+          "enabled": true,
           "protocol": "Survey-Localizer",
-          "enabled": true,
           "count": 1
         },
         {
+          "id": "blk-mtoxivho-1r",
+          "kind": "structural",
+          "enabled": true,
           "protocol": "SENSE-Reference",
-          "enabled": true,
           "count": 1
         },
         {
+          "id": "blk-mtoxivho-1s",
+          "kind": "structural",
+          "enabled": true,
           "protocol": "T1-Anatomical-MPRAGE",
-          "enabled": true,
           "count": 1
         },
         {
+          "id": "blk-mtoxivho-1t",
+          "kind": "structural",
+          "enabled": false,
           "protocol": "T2-FLAIR",
-          "enabled": false,
           "count": 1
         },
         {
+          "id": "blk-mtoxivho-1u",
+          "kind": "structural",
+          "enabled": true,
           "protocol": "EPI-SBRef",
-          "enabled": true,
           "count": 1
         },
         {
+          "id": "blk-mtoxivho-1v",
+          "kind": "structural",
+          "enabled": true,
           "protocol": "Field-Map-Reverse-PE",
-          "enabled": true,
           "count": 1
         },
         {
-          "protocol": "EPI-Dummy-Prescan",
+          "id": "blk-mtoxivho-1w",
+          "kind": "structural",
           "enabled": false,
+          "protocol": "EPI-Dummy-Prescan",
           "count": 1
-        }
-      ],
-      "items": [
+        },
         {
+          "id": "blk-mtoxivho-1x",
+          "kind": "run",
+          "enabled": true,
           "run": "run-mtmfi9kd-4",
           "count": 2
         }
-      ]
+      ],
+      "autoBreak": true
     },
     {
       "id": "session-mtmfi9kd-8",
       "name": "Event-related session",
       "note": "",
-      "screeningMinutes": 6,
-      "positioningMinutes": 5,
-      "practiceMinutes": 4,
       "breakMinutes": 3,
-      "structurals": [
+      "blocks": [
         {
+          "id": "blk-mtoxivho-29",
+          "kind": "prep",
+          "enabled": true,
+          "label": "MRI safety screening and consent check",
+          "minutes": 6
+        },
+        {
+          "id": "blk-mtoxivho-2a",
+          "kind": "prep",
+          "enabled": true,
+          "label": "Positioning, coil placement, stabilisation",
+          "minutes": 5
+        },
+        {
+          "id": "blk-mtoxivho-2b",
+          "kind": "prep",
+          "enabled": true,
+          "label": "Task refresher and cadence practice",
+          "minutes": 4
+        },
+        {
+          "id": "blk-mtoxivho-2c",
+          "kind": "structural",
+          "enabled": true,
           "protocol": "Survey-Localizer",
-          "enabled": true,
           "count": 1
         },
         {
+          "id": "blk-mtoxivho-2d",
+          "kind": "structural",
+          "enabled": true,
           "protocol": "SENSE-Reference",
-          "enabled": true,
           "count": 1
         },
         {
+          "id": "blk-mtoxivho-2e",
+          "kind": "structural",
+          "enabled": true,
           "protocol": "T1-Anatomical-MPRAGE",
-          "enabled": true,
           "count": 1
         },
         {
+          "id": "blk-mtoxivho-2f",
+          "kind": "structural",
+          "enabled": false,
           "protocol": "T2-FLAIR",
-          "enabled": false,
           "count": 1
         },
         {
+          "id": "blk-mtoxivho-2g",
+          "kind": "structural",
+          "enabled": true,
           "protocol": "EPI-SBRef",
-          "enabled": true,
           "count": 1
         },
         {
+          "id": "blk-mtoxivho-2h",
+          "kind": "structural",
+          "enabled": true,
           "protocol": "Field-Map-Reverse-PE",
-          "enabled": true,
           "count": 1
         },
         {
-          "protocol": "EPI-Dummy-Prescan",
+          "id": "blk-mtoxivho-2i",
+          "kind": "structural",
           "enabled": false,
+          "protocol": "EPI-Dummy-Prescan",
           "count": 1
-        }
-      ],
-      "items": [
+        },
         {
+          "id": "blk-mtoxivho-2j",
+          "kind": "run",
+          "enabled": true,
           "run": "run-mtmfi9kd-5",
           "count": 3
         }
-      ]
+      ],
+      "autoBreak": true
     },
     {
       "id": "session-mtmfi9kd-9",
       "name": "Separation session",
       "note": "",
-      "screeningMinutes": 6,
-      "positioningMinutes": 5,
-      "practiceMinutes": 4,
       "breakMinutes": 3,
-      "structurals": [
+      "blocks": [
         {
+          "id": "blk-mtoxivho-2v",
+          "kind": "prep",
+          "enabled": true,
+          "label": "MRI safety screening and consent check",
+          "minutes": 6
+        },
+        {
+          "id": "blk-mtoxivho-2w",
+          "kind": "prep",
+          "enabled": true,
+          "label": "Positioning, coil placement, stabilisation",
+          "minutes": 5
+        },
+        {
+          "id": "blk-mtoxivho-2x",
+          "kind": "prep",
+          "enabled": true,
+          "label": "Task refresher and cadence practice",
+          "minutes": 4
+        },
+        {
+          "id": "blk-mtoxivho-2y",
+          "kind": "structural",
+          "enabled": true,
           "protocol": "Survey-Localizer",
-          "enabled": true,
           "count": 1
         },
         {
+          "id": "blk-mtoxivho-2z",
+          "kind": "structural",
+          "enabled": true,
           "protocol": "SENSE-Reference",
-          "enabled": true,
           "count": 1
         },
         {
+          "id": "blk-mtoxivho-30",
+          "kind": "structural",
+          "enabled": true,
           "protocol": "T1-Anatomical-MPRAGE",
-          "enabled": true,
           "count": 1
         },
         {
+          "id": "blk-mtoxivho-31",
+          "kind": "structural",
+          "enabled": false,
           "protocol": "T2-FLAIR",
-          "enabled": false,
           "count": 1
         },
         {
+          "id": "blk-mtoxivho-32",
+          "kind": "structural",
+          "enabled": true,
           "protocol": "EPI-SBRef",
-          "enabled": true,
           "count": 1
         },
         {
+          "id": "blk-mtoxivho-33",
+          "kind": "structural",
+          "enabled": true,
           "protocol": "Field-Map-Reverse-PE",
-          "enabled": true,
           "count": 1
         },
         {
-          "protocol": "EPI-Dummy-Prescan",
+          "id": "blk-mtoxivho-34",
+          "kind": "structural",
           "enabled": false,
+          "protocol": "EPI-Dummy-Prescan",
           "count": 1
-        }
-      ],
-      "items": [
+        },
         {
+          "id": "blk-mtoxivho-35",
+          "kind": "run",
+          "enabled": true,
           "run": "run-mtmfi9kd-6",
           "count": 4
         }
-      ]
+      ],
+      "autoBreak": true
     },
     {
       "id": "session-mtmfi9kd-a",
       "name": "Mixed session",
       "note": "One session carrying runs from more than one experiment.",
-      "screeningMinutes": 6,
-      "positioningMinutes": 5,
-      "practiceMinutes": 4,
       "breakMinutes": 3,
-      "structurals": [
+      "blocks": [
         {
+          "id": "blk-mtoxivho-3h",
+          "kind": "prep",
+          "enabled": true,
+          "label": "MRI safety screening and consent check",
+          "minutes": 6
+        },
+        {
+          "id": "blk-mtoxivho-3i",
+          "kind": "prep",
+          "enabled": true,
+          "label": "Positioning, coil placement, stabilisation",
+          "minutes": 5
+        },
+        {
+          "id": "blk-mtoxivho-3j",
+          "kind": "prep",
+          "enabled": true,
+          "label": "Task refresher and cadence practice",
+          "minutes": 4
+        },
+        {
+          "id": "blk-mtoxivho-3k",
+          "kind": "structural",
+          "enabled": true,
           "protocol": "Survey-Localizer",
-          "enabled": true,
           "count": 1
         },
         {
+          "id": "blk-mtoxivho-3l",
+          "kind": "structural",
+          "enabled": true,
           "protocol": "SENSE-Reference",
-          "enabled": true,
           "count": 1
         },
         {
+          "id": "blk-mtoxivho-3m",
+          "kind": "structural",
+          "enabled": true,
           "protocol": "T1-Anatomical-MPRAGE",
-          "enabled": true,
           "count": 1
         },
         {
+          "id": "blk-mtoxivho-3n",
+          "kind": "structural",
+          "enabled": false,
           "protocol": "T2-FLAIR",
-          "enabled": false,
           "count": 1
         },
         {
+          "id": "blk-mtoxivho-3o",
+          "kind": "structural",
+          "enabled": true,
           "protocol": "EPI-SBRef",
-          "enabled": true,
           "count": 1
         },
         {
+          "id": "blk-mtoxivho-3p",
+          "kind": "structural",
+          "enabled": true,
           "protocol": "Field-Map-Reverse-PE",
-          "enabled": true,
           "count": 1
         },
         {
-          "protocol": "EPI-Dummy-Prescan",
+          "id": "blk-mtoxivho-3q",
+          "kind": "structural",
           "enabled": false,
+          "protocol": "EPI-Dummy-Prescan",
           "count": 1
-        }
-      ],
-      "items": [
+        },
         {
+          "id": "blk-mtoxivho-3r",
+          "kind": "run",
+          "enabled": true,
           "run": "run-mtmfi9kd-5",
           "count": 2
         },
         {
+          "id": "blk-mtoxivho-3s",
+          "kind": "run",
+          "enabled": true,
           "run": "run-mtmfi9kd-6",
           "count": 2
         }
-      ]
+      ],
+      "autoBreak": true
     }
   ],
   "experiments": [

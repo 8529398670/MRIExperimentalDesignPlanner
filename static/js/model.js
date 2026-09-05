@@ -7,7 +7,8 @@
  *
  *   trial       phase list: what one trial looks like second by second
  *   run         a trial design laid out into blocks, bound to an acquisition card
- *   session     setup, structurals and a list of runs, in console order
+ *   session     one ordered list of blocks - setup, structurals, runs and
+ *               breaks - in the order the console runs them
  *   experiment  a plan of sessions, with a goal and a share of scanner time
  *   study       every experiment together, inside one scanner-time budget
  *
@@ -258,6 +259,106 @@
     { protocol: 'EPI-Dummy-Prescan', enabled: false, count: 1 }
   ];
 
+  /* ---------------------------------------------------- session blocks */
+
+  /* A session is one ordered list of blocks and nothing in it is pinned.  The
+   * setup steps, the structural and reference scans, the functional runs and
+   * the breaks are all the same kind of row: reorder, disable, edit or delete
+   * any of them, anywhere in the list.  The defaults below are only where a
+   * new session starts, not a rule about what has to come first. */
+
+  var SETUP_DEFAULTS = [
+    { label: 'MRI safety screening and consent check', minutes: 6 },
+    { label: 'Positioning, coil placement, stabilisation', minutes: 5 },
+    { label: 'Task refresher and cadence practice', minutes: 4 }
+  ];
+
+  var BLOCK_KINDS = ['prep', 'structural', 'run', 'break'];
+
+  var BLOCK_LABELS = {
+    prep: 'Setup',
+    structural: 'Structural',
+    run: 'Run',
+    break: 'Break'
+  };
+
+  function makeBlock(kind, extra) {
+    var block = { id: makeId('blk'), kind: kind, enabled: true };
+    if (kind === 'prep') { block.label = 'Setup step'; block.minutes = 5; }
+    else if (kind === 'break') { block.label = 'Break'; block.minutes = 3; }
+    else if (kind === 'structural') { block.protocol = ''; block.count = 1; }
+    else { block.run = ''; block.count = 1; }
+    return Object.assign(block, extra || {});
+  }
+
+  /* The opening order a new session gets: setup, then structurals and
+   * references, then whatever runs are added.  Every one of them can be moved
+   * out of that position afterwards. */
+  function defaultBlocks() {
+    var blocks = SETUP_DEFAULTS.map(function (entry) {
+      return makeBlock('prep', { label: entry.label, minutes: entry.minutes });
+    });
+    STRUCTURAL_DEFAULTS.forEach(function (entry) {
+      blocks.push(makeBlock('structural', {
+        protocol: entry.protocol, enabled: entry.enabled, count: entry.count
+      }));
+    });
+    return blocks;
+  }
+
+  /* Bring a session up to the block list, from the old fixed shape (setup
+   * fields, a structural list and a run list) or from a partly written one. */
+  function normaliseBlocks(session) {
+    var blocks = Array.isArray(session.blocks) ? session.blocks : null;
+    if (!blocks) {
+      blocks = [];
+      [
+        ['MRI safety screening and consent check', session.screeningMinutes, 6],
+        ['Positioning, coil placement, stabilisation', session.positioningMinutes, 5],
+        ['Task refresher and cadence practice', session.practiceMinutes, 4]
+      ].forEach(function (row) {
+        blocks.push(makeBlock('prep', { label: row[0], minutes: num(row[1], row[2]) }));
+      });
+      (Array.isArray(session.structurals) ? session.structurals : STRUCTURAL_DEFAULTS)
+        .forEach(function (entry) {
+          blocks.push(makeBlock('structural', {
+            protocol: entry.protocol,
+            enabled: entry.enabled !== false,
+            count: num(entry.count, 1)
+          }));
+        });
+      (Array.isArray(session.items) ? session.items : []).forEach(function (item) {
+        blocks.push(makeBlock('run', { run: item.run, count: num(item.count, 1) }));
+      });
+    }
+
+    session.blocks = blocks.map(function (block) {
+      var kind = BLOCK_KINDS.indexOf(block && block.kind) >= 0 ? block.kind : 'prep';
+      var out = makeBlock(kind);
+      out.id = String((block && block.id) || out.id);
+      out.enabled = !block || block.enabled !== false;
+      if (kind === 'prep' || kind === 'break') {
+        out.label = String((block && block.label) || out.label);
+        out.minutes = Math.max(0, num(block && block.minutes, out.minutes));
+      } else {
+        out.count = Math.max(0, Math.round(num(block && block.count, 1)));
+        if (kind === 'structural') out.protocol = String((block && block.protocol) || '');
+        else out.run = String((block && block.run) || '');
+      }
+      return out;
+    });
+
+    if (session.autoBreak === undefined) session.autoBreak = true;
+    session.autoBreak = !!session.autoBreak;
+    session.breakMinutes = Math.max(0, num(session.breakMinutes, 3));
+    delete session.screeningMinutes;
+    delete session.positioningMinutes;
+    delete session.practiceMinutes;
+    delete session.structurals;
+    delete session.items;
+    return session;
+  }
+
   var DEFAULT_HRF = {
     peakDelay: 6,
     peakDispersion: 1,
@@ -351,13 +452,22 @@
       id: makeId('session'),
       name: name || 'Session',
       note: '',
-      screeningMinutes: 6,
-      positioningMinutes: 5,
-      practiceMinutes: 4,
+      /* An automatic break between two runs that end up next to each other.
+       * Turn it off and place break blocks by hand instead. */
+      autoBreak: true,
       breakMinutes: 3,
-      structurals: deepCopy(STRUCTURAL_DEFAULTS),
-      items: []
+      blocks: defaultBlocks()
     };
+  }
+
+  /* Append run blocks to a session, in the order given. */
+  function addRunBlocks(session, list) {
+    (list || []).forEach(function (entry) {
+      session.blocks.push(makeBlock('run', {
+        run: entry.run, count: Math.max(0, Math.round(num(entry.count, 1)))
+      }));
+    });
+    return session;
   }
 
   function defaultExperiment(name, short) {
@@ -405,17 +515,17 @@
     runSeparation.dummyVolumes = 12;
 
     var sessionDetection = defaultSession('Detection session');
-    sessionDetection.items = [{ run: runDetection.id, count: 2 }];
+    addRunBlocks(sessionDetection, [{ run: runDetection.id, count: 2 }]);
     var sessionEstimation = defaultSession('Event-related session');
-    sessionEstimation.items = [{ run: runEstimation.id, count: 3 }];
+    addRunBlocks(sessionEstimation, [{ run: runEstimation.id, count: 3 }]);
     var sessionSeparation = defaultSession('Separation session');
-    sessionSeparation.items = [{ run: runSeparation.id, count: 4 }];
+    addRunBlocks(sessionSeparation, [{ run: runSeparation.id, count: 4 }]);
     var sessionMixed = defaultSession('Mixed session');
     sessionMixed.note = 'One session carrying runs from more than one experiment.';
-    sessionMixed.items = [
+    addRunBlocks(sessionMixed, [
       { run: runEstimation.id, count: 2 },
       { run: runSeparation.id, count: 2 }
-    ];
+    ]);
 
     var expDetection = defaultExperiment('Detection experiment', 'DET');
     expDetection.requestedPct = 12;
@@ -761,13 +871,17 @@
 
       var perAim = ((shared.perAim || {})[aimId]) || {};
       var source = perAim.custom ? perAim : shared;
+      /* Hand the old fixed shape to the block migration so both routes into
+       * the planner end up with the same ordered list. */
       var session = defaultSession(aim.name + ' session');
+      delete session.blocks;
       session.screeningMinutes = num(source.screeningMinutes, 6);
       session.positioningMinutes = num(source.positioningMinutes, 5);
       session.practiceMinutes = num(source.practiceMinutes, 4);
       session.breakMinutes = num(source.breakMinutes, 3);
       session.structurals = structurals(source.structurals);
       session.items = [{ run: run.id, count: Math.max(1, Math.round(num(structure.runsPerSession, 1))) }];
+      normaliseBlocks(session);
       state.sessions.push(session);
 
       var experiment = defaultExperiment(aim.name, aim.short || aim.name);
@@ -829,9 +943,10 @@
     });
     state.sessions.forEach(function (session) {
       if (!session.id) session.id = makeId('session');
-      if (!Array.isArray(session.items)) session.items = [];
-      if (!Array.isArray(session.structurals)) session.structurals = deepCopy(STRUCTURAL_DEFAULTS);
-      session.items = session.items.filter(function (item) { return runById(state, item.run); });
+      normaliseBlocks(session);
+      session.blocks = session.blocks.filter(function (block) {
+        return block.kind !== 'run' || runById(state, block.run);
+      });
     });
     state.experiments.forEach(function (experiment) {
       if (!experiment.id) experiment.id = makeId('exp');
@@ -924,7 +1039,117 @@
     return out;
   }
 
-  /* Resolve every session: setup block, run list, cap repair, timeline. */
+  /* Walk a session's blocks into the atomic things the console actually does,
+   * in the order the blocks sit in.  Totals, the timeline and the cap repair
+   * all read this one list, so what you see on screen is what is solved.
+   *
+   * The automatic break is only inserted between two functional acquisitions
+   * that end up next to each other.  Move anything between them - a structural,
+   * a setup step, a break you placed yourself - and no extra break appears. */
+  function buildSessionPlan(session, boot, runInfo) {
+    var autoBreak = session.autoBreak !== false;
+    var autoMinutes = Math.max(0, num(session.breakMinutes));
+    var entries = [];
+    var seen = {};
+    var lastWasRun = false;
+
+    function fixed(minutes) {
+      var value = Math.max(0, num(minutes));
+      return { min: value, mean: value, max: value };
+    }
+
+    (session.blocks || []).forEach(function (block) {
+      if (block.enabled === false) return;
+
+      if (block.kind === 'prep' || block.kind === 'break') {
+        var minutes = Math.max(0, num(block.minutes));
+        if (minutes <= 0) return;
+        entries.push({
+          kind: block.kind, blockId: block.id,
+          item: String(block.label || (block.kind === 'break' ? 'Break' : 'Setup step')),
+          protocol: '', protocolLabel: '', minutes: fixed(minutes),
+          category: block.kind === 'break' ? 'Break' : 'Non-acquisition'
+        });
+        lastWasRun = false;
+        return;
+      }
+
+      if (block.kind === 'structural') {
+        var ctx = protocolContext(boot, block.protocol);
+        var count = Math.max(0, Math.round(num(block.count, 1)));
+        if (count <= 0) return;
+        entries.push({
+          kind: 'structural', blockId: block.id, count: count,
+          item: ctx.label + (count > 1 ? ' x' + count : ''),
+          protocol: block.protocol, protocolLabel: ctx.label,
+          minutes: fixed((ctx.durationSeconds / 60) * count),
+          category: 'Structural / reference'
+        });
+        lastWasRun = false;
+        return;
+      }
+
+      if (block.kind !== 'run') return;
+      var info = runInfo[block.run];
+      if (!info) return;
+      var repeats = Math.max(0, Math.round(num(block.count, 1)));
+      for (var i = 0; i < repeats; i += 1) {
+        if (lastWasRun && autoBreak && autoMinutes > 0) {
+          entries.push({
+            kind: 'break', blockId: block.id, auto: true, item: 'Break',
+            protocol: '', protocolLabel: '', minutes: fixed(autoMinutes),
+            category: 'Break'
+          });
+        }
+        seen[block.run] = (seen[block.run] || 0) + 1;
+        entries.push({
+          kind: 'run', blockId: block.id, runId: block.run, info: info,
+          item: info.run.name + ' ' + seen[block.run],
+          protocol: info.run.protocol, protocolLabel: info.ctx.label,
+          minutes: info.minutes, category: 'Functional'
+        });
+        lastWasRun = true;
+      }
+    });
+    return entries;
+  }
+
+  /* The structural rows a session declares, disabled ones included, so the
+   * editor and the report can show what is switched off as well as on. */
+  function structuralRows(session, boot) {
+    return (session.blocks || []).filter(function (block) {
+      return block.kind === 'structural';
+    }).map(function (block) {
+      var ctx = protocolContext(boot, block.protocol);
+      var count = Math.max(0, Math.round(num(block.count, 1)));
+      return {
+        blockId: block.id,
+        protocol: block.protocol,
+        protocolLabel: ctx.label,
+        enabled: block.enabled !== false,
+        count: count,
+        minutesEach: ctx.durationSeconds / 60,
+        minutes: (ctx.durationSeconds / 60) * count
+      };
+    });
+  }
+
+  /* The setup rows a session declares, in list order. */
+  function setupRows(session) {
+    return (session.blocks || []).filter(function (block) {
+      return block.kind === 'prep';
+    }).map(function (block) {
+      return {
+        blockId: block.id,
+        label: String(block.label || 'Setup step'),
+        enabled: block.enabled !== false,
+        minutes: Math.max(0, num(block.minutes))
+      };
+    });
+  }
+
+  /* Resolve every session: walk the blocks, repair against the caps, and lay
+   * the result out as a timeline. */
   function resolveSessions(state, boot, runInfo, warnings) {
     var caps = state.caps;
     var basis = caps.applyTo === 'longest' ? 'max' : 'mean';
@@ -933,61 +1158,50 @@
     var out = {};
 
     (state.sessions || []).forEach(function (session) {
-      var structural = structuralMinutes(session.structurals, boot);
-      var overhead = num(session.screeningMinutes) + num(session.positioningMinutes)
-        + num(session.practiceMinutes);
-      var setupMinutes = structural.minutes + overhead;
-      var breakMinutes = Math.max(0, num(session.breakMinutes));
+      /* The run blocks in list order: the cap repair trims from the end,
+       * which is the last thing the console would have reached. */
+      var runBlocks = (session.blocks || []).filter(function (block) {
+        return block.kind === 'run' && block.enabled !== false && runInfo[block.run];
+      });
 
-      var items = (session.items || []).map(function (item) {
-        return {
-          run: item.run,
-          count: Math.max(0, Math.round(num(item.count, 1))),
-          info: runInfo[item.run] || null
-        };
-      }).filter(function (item) { return item.info; });
+      var entries = buildSessionPlan(session, boot, runInfo);
 
-      function runCount() {
-        return sum(items, function (item) { return item.count; });
+      function ofKind(list, kind) {
+        return list.filter(function (entry) { return entry.kind === kind; });
       }
-      function runMinutes(which) {
-        return sum(items, function (item) { return item.count * item.info.minutes[which]; });
+      function minutesOf(list, which) {
+        return sum(list, function (entry) { return entry.minutes[which]; });
       }
-      function sessionMinutes(which) {
-        var count = runCount();
-        return setupMinutes + runMinutes(which) + Math.max(0, count - 1) * breakMinutes;
-      }
+      function runCount() { return ofKind(entries, 'run').length; }
+      function sessionMinutes(which) { return minutesOf(entries, which); }
 
       /* Too many runs for the cap, or a session longer than the cap allows:
-       * drop runs from the end of the list, which is the order they are run
-       * in, so the session keeps its opening structure. */
+       * drop runs from the end of the list, so the session keeps its opening
+       * structure - whatever the user has put there. */
       var trimmed = 0;
+      function dropLastRun() {
+        for (var i = runBlocks.length - 1; i >= 0; i -= 1) {
+          var count = Math.max(0, Math.round(num(runBlocks[i].count, 1)));
+          if (count > 0) {
+            runBlocks[i].count = count - 1;
+            trimmed += 1;
+            entries = buildSessionPlan(session, boot, runInfo);
+            return true;
+          }
+        }
+        return false;
+      }
+
       if (state.budget.autoClamp) {
         var guard = 0;
-        while (runCount() > maxRuns && guard < 200) {
-          for (var i = items.length - 1; i >= 0; i -= 1) {
-            if (items[i].count > 0) { items[i].count -= 1; trimmed += 1; break; }
-          }
-          guard += 1;
-        }
-        while (runCount() > 1 && sessionMinutes(basis) > num(caps.maxSessionMinutes) && guard < 400) {
-          for (var j = items.length - 1; j >= 0; j -= 1) {
-            if (items[j].count > 0) { items[j].count -= 1; trimmed += 1; break; }
-          }
-          guard += 1;
-        }
+        while (runCount() > maxRuns && guard < 200 && dropLastRun()) guard += 1;
+        while (runCount() > 1 && sessionMinutes(basis) > num(caps.maxSessionMinutes)
+          && guard < 400 && dropLastRun()) guard += 1;
         if (trimmed > 0) {
           warnings.push(session.name + ': ' + trimmed + ' ' + plural(trimmed, 'run')
             + ' removed so the ' + basisLabel + ' session stays inside the '
             + num(caps.maxSessionMinutes) + ' min session cap and the '
             + maxRuns + '-run limit.');
-          /* Write the repair back so the editor shows what actually runs. */
-          items.forEach(function (item) {
-            var source = (session.items || []).filter(function (row) {
-              return row.run === item.run;
-            })[0];
-            if (source) source.count = item.count;
-          });
         }
       } else if (sessionMinutes(basis) > num(caps.maxSessionMinutes)) {
         warnings.push(session.name + ': ' + basisLabel + ' session is '
@@ -995,30 +1209,56 @@
           + num(caps.maxSessionMinutes) + ' min cap. Auto-clamp is off.');
       }
 
+      /* One entry per run block, for everything downstream that counts runs
+       * rather than walking the order. */
+      var items = runBlocks.map(function (block) {
+        return {
+          blockId: block.id,
+          run: block.run,
+          count: Math.max(0, Math.round(num(block.count, 1))),
+          info: runInfo[block.run]
+        };
+      }).filter(function (item) { return item.info && item.count > 0; });
+
+      var overhead = minutesOf(ofKind(entries, 'prep'), 'mean');
+      var structuralTotal = minutesOf(ofKind(entries, 'structural'), 'mean');
+      var breakTotal = minutesOf(ofKind(entries, 'break'), 'mean');
+      var autoBreakTotal = minutesOf(ofKind(entries, 'break').filter(function (entry) {
+        return entry.auto;
+      }), 'mean');
       var runs = runCount();
-      var timeline = buildSessionTimeline(session, structural, items, breakMinutes);
+
+      var builder = timelineBuilder();
+      entries.forEach(function (entry) {
+        builder.push(entry.item, entry.protocol, entry.protocolLabel,
+          entry.minutes.mean, entry.category);
+      });
 
       out[session.id] = {
         session: session,
-        structural: structural,
+        entries: entries,
+        structural: { rows: structuralRows(session, boot), minutes: structuralTotal },
+        setup: setupRows(session),
         items: items,
         runs: runs,
         overheadMinutes: overhead,
-        structuralMinutes: structural.minutes,
-        setupMinutes: setupMinutes,
-        breakMinutes: breakMinutes,
+        structuralMinutes: structuralTotal,
+        setupMinutes: structuralTotal + overhead,
+        breakMinutes: Math.max(0, num(session.breakMinutes)),
+        breakTotalMinutes: breakTotal,
+        autoBreakMinutes: autoBreakTotal,
         minutes: {
           min: sessionMinutes('min'),
           mean: sessionMinutes('mean'),
           max: sessionMinutes('max')
         },
-        functionalMinutes: runMinutes('mean'),
-        nonScanMinutes: overhead + Math.max(0, runs - 1) * breakMinutes,
+        functionalMinutes: minutesOf(ofKind(entries, 'run'), 'mean'),
+        nonScanMinutes: overhead + breakTotal,
         trials: sum(items, function (item) { return item.count * item.info.trialsPerRun; }),
         units: sum(items, function (item) { return item.count * item.info.unitsPerRun; }),
         volumes: sum(items, function (item) { return item.count * item.info.volumesPerRun; }),
         gb: sum(items, function (item) { return item.count * item.info.mbPerRun; }) / 1024,
-        timeline: timeline
+        timeline: builder.rows
       };
     });
     return out;
@@ -1043,38 +1283,6 @@
       });
     }
     return { rows: rows, push: push, total: function () { return cumulative; } };
-  }
-
-  function buildSessionTimeline(session, structural, items, breakMinutes) {
-    var builder = timelineBuilder();
-    if (num(session.screeningMinutes) > 0) {
-      builder.push('MRI safety screening and consent check', '', '',
-        session.screeningMinutes, 'Non-acquisition');
-    }
-    if (num(session.positioningMinutes) > 0) {
-      builder.push('Positioning, coil placement, stabilisation', '', '',
-        session.positioningMinutes, 'Non-acquisition');
-    }
-    if (num(session.practiceMinutes) > 0) {
-      builder.push('Task refresher and cadence practice', '', '',
-        session.practiceMinutes, 'Non-acquisition');
-    }
-    structural.rows.forEach(function (row) {
-      if (!row.enabled || row.count <= 0) return;
-      builder.push(row.protocolLabel + (row.count > 1 ? ' x' + row.count : ''),
-        row.protocol, row.protocolLabel, row.minutes, 'Structural / reference');
-    });
-
-    var placed = 0;
-    items.forEach(function (item) {
-      for (var i = 0; i < item.count; i += 1) {
-        if (placed > 0) builder.push('Break', '', '', breakMinutes, 'Break');
-        builder.push(item.info.run.name + ' ' + (i + 1), item.info.run.protocol,
-          item.info.ctx.label, item.info.minutes.mean, 'Functional');
-        placed += 1;
-      }
-    });
-    return builder.rows;
   }
 
   /* ------------------------------------------------ session distribution */
@@ -1546,10 +1754,15 @@
           };
         }),
         structurals: info.structural.rows,
-        screeningMinutes: num(session.screeningMinutes),
-        positioningMinutes: num(session.positioningMinutes),
-        practiceMinutes: num(session.practiceMinutes),
+        setup: info.setup.map(function (row) {
+          return { label: row.label, enabled: row.enabled, minutes: round(row.minutes, 2) };
+        }),
+        blocks: (session.blocks || []).map(function (block) {
+          return deepCopy(block);
+        }),
+        autoBreak: session.autoBreak !== false,
         breakMinutes: round(info.breakMinutes, 2),
+        breakTotalMinutes: round(info.breakTotalMinutes, 2),
         setupMinutes: round(info.setupMinutes, 2),
         structuralMinutes: round(info.structuralMinutes, 2),
         overheadMinutes: round(info.overheadMinutes, 2),
@@ -2684,7 +2897,9 @@
     },
     removeRun: function (state, id) {
       var used = (state.sessions || []).filter(function (session) {
-        return (session.items || []).some(function (item) { return item.run === id; });
+        return (session.blocks || []).some(function (block) {
+          return block.kind === 'run' && block.run === id;
+        });
       });
       if (used.length) {
         return 'Still used by ' + used.map(function (session) { return session.name; }).join(', ')
@@ -2696,7 +2911,7 @@
 
     addSession: function (state, runId) {
       var session = defaultSession(uniqueName(state.sessions, 'Session'));
-      if (runId) session.items = [{ run: runId, count: 1 }];
+      if (runId) addRunBlocks(session, [{ run: runId, count: 1 }]);
       state.sessions.push(session);
       return session;
     },
@@ -2798,6 +3013,12 @@
     trialTiming: trialTiming,
     runGeometry: runGeometry,
     structuralMinutes: structuralMinutes,
+    buildSessionPlan: buildSessionPlan,
+    structuralRows: structuralRows,
+    setupRows: setupRows,
+    makeBlock: makeBlock,
+    BLOCK_KINDS: BLOCK_KINDS,
+    BLOCK_LABELS: BLOCK_LABELS,
     normaliseAllocation: normaliseAllocation,
     distributeSessions: distributeSessions,
 

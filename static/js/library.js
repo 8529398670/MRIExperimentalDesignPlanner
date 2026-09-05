@@ -2,7 +2,11 @@
  *
  * Every level is the same shape - a named list on the left, an editor for the
  * selected item on the right - so adding, duplicating, renaming, reordering
- * and deleting work identically wherever you are in the hierarchy. */
+ * and deleting work identically wherever you are in the hierarchy.
+ *
+ * A session goes one step further: its contents are a single sortable list, so
+ * setup, structurals, runs and breaks are all reorderable against each other
+ * rather than living in fixed sections. */
 
 (function (global) {
   'use strict';
@@ -790,8 +794,9 @@
       id: 'sessions',
       noun: 'session',
       title: 'Sessions',
-      blurb: 'A named session: the setup block, the structural and reference scans, and the '
-        + 'runs in the order the console runs them. Experiments combine these.',
+      blurb: 'A named session: one ordered list of setup steps, structural and reference '
+        + 'scans, runs and breaks. Nothing is pinned - drag any block anywhere, switch any '
+        + 'block off, and the session solves in the order you leave it. Experiments combine these.',
       listTitle: 'Session library',
       items: function (state) { return state.sessions; },
       add: function (state) {
@@ -815,227 +820,417 @@
     });
   }
 
+  /* --------------------------------------------------- session sequence */
+
+  /* One editable, sortable row per block.  Every block kind renders into the
+   * same skeleton - handle, on-switch, kind, what it is, how many, how long,
+   * buttons - so the list reads as one sequence rather than four tables. */
+  function sessionSequence(sessionId, owner) {
+    var host = App.h('div', { class: 'seq' });
+
+    /* Reordering is driven from pointer events rather than the HTML5 drag
+     * protocol: the rows carry live inputs, and a pointer drag leaves those
+     * alone, works the same under touch, and cannot leave a row stuck in a
+     * half-dragged state if the pointer is released off the list. */
+    var drag = null;
+
+    /* Every read and write goes through the state, by id.  Re-solving the
+     * design can hand back repaired counts, so a row must never hold on to
+     * the block object it was drawn from. */
+    function sess() { return M.sessionById(App.state, sessionId); }
+
+    function blocks() {
+      var session = sess();
+      if (!session) return [];
+      if (!Array.isArray(session.blocks)) session.blocks = [];
+      return session.blocks;
+    }
+
+    function at(id) {
+      return blocks().filter(function (block) { return block.id === id; })[0] || null;
+    }
+
+    function indexOf(id) {
+      var list = blocks();
+      for (var i = 0; i < list.length; i += 1) if (list[i].id === id) return i;
+      return -1;
+    }
+
+    /* Edit through this so a block that has gone missing is a no-op rather
+     * than a thrown error. */
+    function edit(id, change) {
+      var block = at(id);
+      if (!block) { render(); return; }
+      change(block);
+      commit();
+    }
+
+    /* Re-drawing the list detaches the input the edit came from, and that
+     * fires its blur handler, which would commit again from inside the
+     * re-draw.  One commit at a time: the value is already written. */
+    var committing = false;
+    function commit() {
+      if (committing) return;
+      committing = true;
+      try {
+        App.refresh();
+        render();
+      } finally {
+        committing = false;
+      }
+    }
+
+    function move(from, to) {
+      var list = blocks();
+      if (from === to || from < 0 || from >= list.length) return;
+      var moved = list.splice(from, 1)[0];
+      list.splice(Math.max(0, Math.min(list.length, to)), 0, moved);
+      commit();
+    }
+
+    function blockMinutes(block) {
+      if (block.kind === 'prep' || block.kind === 'break') {
+        return Math.max(0, H.num(block.minutes));
+      }
+      var count = Math.max(0, Math.round(H.num(block.count, 1)));
+      if (block.kind === 'structural') {
+        return (M.protocolContext(App.boot, block.protocol).durationSeconds / 60) * count;
+      }
+      var run = M.runById(App.state, block.run);
+      if (!run) return 0;
+      var trial = M.trialById(App.state, run.trial);
+      var ctx = M.protocolContext(App.boot, run.protocol);
+      var geometry = M.runGeometry(run, trial, ctx.trSeconds);
+      return count * geometry.run.mean / 60;
+    }
+
+    /* What the block is: a card, a run design or a free-text label. */
+    function subjectCell(block) {
+      if (block.kind === 'structural') {
+        var cards = cardOptions();
+        if (!cards.length) return App.h('span', { class: 'seq-flat', text: block.protocol || '—' });
+        return selectInput(
+          function () { return block.protocol; },
+          function (value) { edit(block.id, function (live) { live.protocol = value; }); },
+          cards
+        );
+      }
+      if (block.kind === 'run') {
+        if (!App.state.runs.length) {
+          return App.h('span', { class: 'seq-flat', text: 'No run designs yet' });
+        }
+        return selectInput(
+          function () { return block.run; },
+          function (value) { edit(block.id, function (live) { live.run = value; }); },
+          App.state.runs.map(function (entry) {
+            return { value: entry.id, label: entry.name };
+          })
+        );
+      }
+      return textInput(
+        function () { return block.label || ''; },
+        function (value) {
+          edit(block.id, function (live) {
+            live.label = String(value || '').trim() || live.label;
+          });
+        },
+        block.kind === 'break' ? 'Break' : 'Setup step'
+      );
+    }
+
+    /* How much of it: a repeat count for scans, a duration for everything
+     * else the planner cannot time for you. */
+    function amountCell(block) {
+      if (block.kind === 'structural' || block.kind === 'run') {
+        return App.h('div', { class: 'seq-amount' }, [
+          numberInput(
+            function () { return Math.max(0, Math.round(H.num(block.count, 1))); },
+            function (value) {
+              edit(block.id, function (live) {
+                live.count = Math.max(0, Math.round(value));
+              });
+            },
+            { min: 0, step: 1 }
+          ),
+          App.h('span', { class: 'seq-unit', text: '×' })
+        ]);
+      }
+      return App.h('div', { class: 'seq-amount' }, [
+        numberInput(
+          function () { return H.round(H.num(block.minutes), 2); },
+          function (value) {
+            edit(block.id, function (live) { live.minutes = Math.max(0, value); });
+          },
+          { min: 0, step: 0.5 }
+        ),
+        App.h('span', { class: 'seq-unit', text: 'min' })
+      ]);
+    }
+
+    function detailFor(block) {
+      if (block.kind === 'run') {
+        var run = M.runById(App.state, block.run);
+        if (!run) return 'run design missing';
+        var trial = M.trialById(App.state, run.trial);
+        var ctx = M.protocolContext(App.boot, run.protocol);
+        var geometry = M.runGeometry(run, trial, ctx.trSeconds);
+        return ctx.label + '  ·  ' + H.round(geometry.run.mean / 60, 2) + ' min each  ·  '
+          + H.fmtNumber(geometry.trialsPerRun) + ' trials each';
+      }
+      if (block.kind === 'structural') {
+        var card = M.protocolContext(App.boot, block.protocol);
+        return card.slug + '  ·  ' + H.round(card.durationSeconds / 60, 2) + ' min each';
+      }
+      if (block.kind === 'break') return 'a break you placed yourself';
+      return 'time in the session that is not a scan';
+    }
+
+    function row(block, index) {
+      var enabled = block.enabled !== false;
+      var node = App.h('div', {
+        class: 'seq-row kind-' + block.kind + (enabled ? '' : ' off'),
+        'data-index': String(index)
+      });
+
+      /* Only the handle starts a drag, so the inputs in the row stay usable. */
+      var handle = App.h('button', {
+        class: 'seq-handle', type: 'button', text: '⠿',
+        title: 'Drag to reorder, or use the arrows',
+        'aria-label': 'Reorder this block'
+      });
+      handle.addEventListener('pointerdown', function (event) {
+        if (event.button) return;
+        event.preventDefault();
+        startDrag(block.id, node);
+      });
+
+      var box = App.h('input', { type: 'checkbox', title: 'Include this block in the session' });
+      box.checked = enabled;
+      box.addEventListener('change', function () {
+        edit(block.id, function (live) { live.enabled = box.checked; });
+      });
+
+      node.appendChild(handle);
+      node.appendChild(App.h('span', { class: 'seq-on' }, [box]));
+      node.appendChild(App.h('span', {
+        class: 'pill seq-kind', text: M.BLOCK_LABELS[block.kind] || block.kind
+      }));
+      node.appendChild(App.h('div', { class: 'seq-subject' }, [
+        subjectCell(block),
+        App.h('span', { class: 'seq-detail', text: detailFor(block) })
+      ]));
+      node.appendChild(amountCell(block));
+      node.appendChild(App.h('span', {
+        class: 'seq-minutes',
+        text: enabled ? H.round(blockMinutes(block), 2) + ' min' : '—'
+      }));
+      node.appendChild(App.h('div', { class: 'btn-row tight seq-actions' }, [
+        App.iconButton('↑', 'Move earlier in the session', function () {
+          var here = indexOf(block.id);
+          if (here > 0) move(here, here - 1);
+        }),
+        App.iconButton('↓', 'Move later in the session', function () {
+          var here = indexOf(block.id);
+          if (here >= 0 && here < blocks().length - 1) move(here, here + 2);
+        }),
+        App.iconButton('⧉', 'Duplicate this block', function () {
+          var here = indexOf(block.id);
+          if (here < 0) return;
+          var copy = H.deepCopy(blocks()[here]);
+          copy.id = M.makeId('blk');
+          blocks().splice(here + 1, 0, copy);
+          commit();
+        }),
+        App.iconButton('×', 'Remove this block', function () {
+          var here = indexOf(block.id);
+          if (here < 0) return;
+          blocks().splice(here, 1);
+          commit();
+        }, 'danger')
+      ]));
+      return node;
+    }
+
+    function rowNodes() {
+      return Array.prototype.slice.call(host.querySelectorAll('.seq-row'));
+    }
+
+    function clearMarkers() {
+      rowNodes().forEach(function (node) {
+        node.classList.remove('drop-before', 'drop-after');
+      });
+      tail.classList.remove('drop-before');
+    }
+
+    /* Where a drop at this height would insert: an index in 0..length, so the
+     * far end of the list is as reachable as any gap between two rows. */
+    function insertionAt(clientY) {
+      var nodes = rowNodes();
+      for (var i = 0; i < nodes.length; i += 1) {
+        var box = nodes[i].getBoundingClientRect();
+        if (clientY < box.top + box.height / 2) return i;
+      }
+      return nodes.length;
+    }
+
+    function paintMarker(insertion) {
+      clearMarkers();
+      var nodes = rowNodes();
+      if (insertion >= nodes.length) tail.classList.add('drop-before');
+      else nodes[insertion].classList.add('drop-before');
+    }
+
+    function endDrag(commitMove) {
+      if (!drag) return;
+      var state = drag;
+      drag = null;
+      document.removeEventListener('pointermove', onDragMove, true);
+      document.removeEventListener('pointerup', onDragUp, true);
+      document.removeEventListener('pointercancel', onDragCancel, true);
+      document.removeEventListener('keydown', onDragKey, true);
+      host.classList.remove('dragging');
+      if (state.node) state.node.classList.remove('dragging');
+      clearMarkers();
+      if (!commitMove) return;
+      var from = indexOf(state.id);
+      if (from < 0) { render(); return; }
+      var to = state.insertion > from ? state.insertion - 1 : state.insertion;
+      move(from, to);
+    }
+
+    function onDragMove(event) {
+      if (!drag) return;
+      event.preventDefault();
+      drag.insertion = insertionAt(event.clientY);
+      paintMarker(drag.insertion);
+    }
+
+    function onDragUp(event) {
+      if (!drag) return;
+      event.preventDefault();
+      drag.insertion = insertionAt(event.clientY);
+      endDrag(true);
+    }
+
+    function onDragCancel() { endDrag(false); }
+
+    function onDragKey(event) {
+      if (event.key === 'Escape') { event.preventDefault(); endDrag(false); }
+    }
+
+    function startDrag(id, node) {
+      if (drag) endDrag(false);
+      drag = { id: id, node: node, insertion: indexOf(id) };
+      node.classList.add('dragging');
+      host.classList.add('dragging');
+      paintMarker(drag.insertion);
+      document.addEventListener('pointermove', onDragMove, true);
+      document.addEventListener('pointerup', onDragUp, true);
+      document.addEventListener('pointercancel', onDragCancel, true);
+      document.addEventListener('keydown', onDragKey, true);
+    }
+
+    /* A landing strip past the last row, so "run this last" is a place you can
+     * aim at rather than the bottom edge of the final row. */
+    var tail = App.h('div', { class: 'seq-tail', text: 'Drop here to run last' });
+
+    function addBlock(kind) {
+      var extra = {};
+      if (kind === 'structural') {
+        var cards = cardOptions();
+        if (!cards.length) { App.toast('No acquisition cards to add.', 'bad'); return; }
+        extra.protocol = cards[0].value;
+      }
+      if (kind === 'run') {
+        if (!App.state.runs.length) {
+          App.toast('Build a run design first, in the Runs panel.', 'bad');
+          return;
+        }
+        extra.run = App.state.runs[0].id;
+      }
+      blocks().push(M.makeBlock(kind, extra));
+      commit();
+    }
+
+    var adders = App.h('div', { class: 'btn-row mt' }, [
+      App.iconButton('+ Setup step', 'Append a non-scan step', function () { addBlock('prep'); }),
+      App.iconButton('+ Structural / reference', 'Append a structural or reference scan',
+        function () { addBlock('structural'); }),
+      App.iconButton('+ Run', 'Append a functional run', function () { addBlock('run'); }),
+      App.iconButton('+ Break', 'Append a break you place yourself',
+        function () { addBlock('break'); }),
+      App.iconButton('Reset to the default order', 'Setup, then structurals, then runs',
+        function () {
+          var list = blocks();
+          var rank = { prep: 0, structural: 1, run: 2, break: 3 };
+          list.sort(function (a, b) { return rank[a.kind] - rank[b.kind]; });
+          commit();
+        })
+    ]);
+
+    function render() {
+      if (drag) endDrag(false);
+      App.clear(host);
+      var list = blocks();
+      if (!list.length) {
+        host.appendChild(App.h('div', {
+          class: 'notice', text: 'This session is empty. Add setup, scans, runs and breaks below, '
+            + 'in any order you like.'
+        }));
+      }
+      list.forEach(function (block, index) {
+        host.appendChild(row(block, index));
+      });
+      host.appendChild(tail);
+      var total = H.sum(list, function (block) {
+        return block.enabled === false ? 0 : blockMinutes(block);
+      });
+      host.appendChild(App.h('div', { class: 'seq-total' }, [
+        App.h('span', { text: list.length + ' blocks' }),
+        App.h('span', { text: H.round(total, 2) + ' min before automatic breaks' })
+      ]));
+    }
+
+    render();
+    return { host: host, adders: adders, render: render };
+  }
+
   function buildSessionEditor(session, host, owner) {
     host.appendChild(identityCard(session, owner));
 
-    host.appendChild(App.card('Setup and breaks', 'Time in the session that is not a run', [
-      App.slider({
-        owner: owner, label: 'Safety screening and consent', min: 0, max: 40, step: 1, unit: 'min',
-        get: function () { return H.num(session.screeningMinutes); },
-        set: function (value) { session.screeningMinutes = value; }
+    var sessionId = session.id;
+    function sess() { return M.sessionById(App.state, sessionId) || session; }
+
+    var sequence = sessionSequence(sessionId, owner);
+
+    host.appendChild(App.card('Session sequence',
+      'Everything the console does, in the order you put it in',
+      [
+        App.h('p', { class: 'hint-block', text: 'A new session opens with setup, then the '
+          + 'structural and reference scans, then its runs - but nothing is pinned there. '
+          + 'Drag any row by its handle, or use the arrows, to run scans between runs, move '
+          + 'the practice block to the middle, or drop a break wherever you want one. '
+          + 'Switch a row off to keep it in the design without running it.' }),
+        sequence.host,
+        sequence.adders
+      ]));
+
+    host.appendChild(App.card('Automatic break', 'Only between two runs that end up adjacent', [
+      App.checkbox({
+        owner: owner, label: 'Insert a break between back-to-back runs',
+        hint: 'Off means every break is a block you placed yourself.',
+        get: function () { return sess().autoBreak !== false; },
+        set: function (value) { sess().autoBreak = !!value; },
+        onChange: function () { sequence.render(); }
       }),
       App.slider({
-        owner: owner, label: 'Positioning and coil placement', min: 0, max: 40, step: 1, unit: 'min',
-        get: function () { return H.num(session.positioningMinutes); },
-        set: function (value) { session.positioningMinutes = value; }
-      }),
-      App.slider({
-        owner: owner, label: 'Task practice', min: 0, max: 40, step: 1, unit: 'min',
-        get: function () { return H.num(session.practiceMinutes); },
-        set: function (value) { session.practiceMinutes = value; }
-      }),
-      App.slider({
-        owner: owner, label: 'Break between runs', min: 0, max: 30, step: 0.5, decimals: 1,
+        owner: owner, label: 'Automatic break length', min: 0, max: 30, step: 0.5, decimals: 1,
         unit: 'min',
-        get: function () { return H.num(session.breakMinutes); },
-        set: function (value) { session.breakMinutes = value; }
+        get: function () { return H.num(sess().breakMinutes); },
+        set: function (value) { sess().breakMinutes = value; },
+        onChange: function () { sequence.render(); }
       })
     ]));
-
-    /* --- structurals --------------------------------------------------- */
-    var structuralHost = App.h('div', {});
-    function renderStructurals() {
-      App.clear(structuralHost);
-      var rows = session.structurals.map(function (entry, index) {
-        var ctx = M.protocolContext(App.boot, entry.protocol);
-        var minutes = (ctx.durationSeconds / 60) * Math.max(0, H.num(entry.count, 1));
-        return {
-          entry: entry, ctx: ctx, minutes: minutes, index: index,
-          cells: [
-            { node: (function () {
-              var box = App.h('input', { type: 'checkbox' });
-              box.checked = !!entry.enabled;
-              box.addEventListener('change', function () {
-                entry.enabled = box.checked;
-                App.refresh();
-                renderStructurals();
-              });
-              return box;
-            }()), copy: entry.enabled ? 'yes' : 'no' },
-            { node: selectInput(
-              function () { return entry.protocol; },
-              function (value) { entry.protocol = value; renderStructurals(); },
-              cardOptions()
-            ), copy: ctx.label },
-            { node: numberInput(
-              function () { return Math.max(0, Math.round(H.num(entry.count, 1))); },
-              function (value) { entry.count = Math.max(0, Math.round(value)); renderStructurals(); },
-              { min: 0, step: 1 }
-            ), num: true, copy: String(entry.count) },
-            { text: H.round(ctx.durationSeconds / 60, 2) + ' min', num: true },
-            { text: entry.enabled ? H.round(minutes, 2) + ' min' : '—', num: true },
-            { node: App.iconButton('×', 'Remove this row', function () {
-              session.structurals.splice(index, 1);
-              renderStructurals();
-              App.refresh();
-            }, 'danger'), copy: '' }
-          ]
-        };
-      });
-
-      var total = H.sum(rows, function (row) {
-        return row.entry.enabled ? row.minutes : 0;
-      });
-
-      var table = App.dataTable(
-        [{ label: 'On' }, { label: 'Card' }, { label: 'Count', num: true },
-          { label: 'Each', num: true }, { label: 'Minutes', num: true }, { label: '' }],
-        rows.map(function (row) {
-          return row.cells.map(function (cell) {
-            return { text: cell.text, num: cell.num, copy: cell.copy };
-          });
-        }).concat([{
-          className: 'total',
-          cells: ['Total', '', '', '', { text: H.round(total, 2) + ' min', num: true }, '']
-        }]),
-        { caption: session.name + ' - structurals' }
-      );
-      var bodyRows = table.querySelectorAll('tbody tr');
-      rows.forEach(function (row, rowIndex) {
-        var tr = bodyRows[rowIndex];
-        if (!tr) return;
-        row.cells.forEach(function (cell, cellIndex) {
-          if (!cell.node) return;
-          var td = tr.children[cellIndex];
-          App.clear(td);
-          td.appendChild(cell.node);
-        });
-      });
-      structuralHost.appendChild(table);
-
-      var picker = App.h('select', {});
-      cardOptions().forEach(function (option) {
-        picker.appendChild(App.h('option', { value: option.value, text: option.label }));
-      });
-      structuralHost.appendChild(App.h('div', { class: 'split-inline mt' }, [
-        picker,
-        App.iconButton('Add card to the setup block', 'Append a structural or reference scan',
-          function () {
-            if (!picker.value) return;
-            session.structurals.push({ protocol: picker.value, enabled: true, count: 1 });
-            renderStructurals();
-            App.refresh();
-          })
-      ]));
-    }
-    renderStructurals();
-
-    host.appendChild(App.card('Structural and reference scans',
-      'What runs before the functional runs', [structuralHost]));
-
-    /* --- runs in the session ------------------------------------------- */
-    var runHost = App.h('div', {});
-    function renderRuns() {
-      App.clear(runHost);
-      if (!App.state.runs.length) {
-        runHost.appendChild(App.h('div', {
-          class: 'notice', text: 'No run designs exist yet. Build one in the Runs panel first.'
-        }));
-        return;
-      }
-      var rows = session.items.map(function (item, index) {
-        var run = M.runById(App.state, item.run);
-        var trial = run ? M.trialById(App.state, run.trial) : null;
-        var ctx = run ? M.protocolContext(App.boot, run.protocol) : null;
-        var geometry = run ? M.runGeometry(run, trial, ctx.trSeconds) : null;
-        var count = Math.max(0, Math.round(H.num(item.count, 1)));
-        return {
-          index: index,
-          cells: [
-            { node: selectInput(
-              function () { return item.run; },
-              function (value) { item.run = value; renderRuns(); },
-              App.state.runs.map(function (entry) {
-                return { value: entry.id, label: entry.name };
-              })
-            ), copy: run ? run.name : '' },
-            { text: trial ? trial.name : '—' },
-            { text: ctx ? ctx.label : '—' },
-            { node: numberInput(
-              function () { return count; },
-              function (value) { item.count = Math.max(0, Math.round(value)); renderRuns(); },
-              { min: 0, step: 1 }
-            ), num: true, copy: String(count) },
-            { text: geometry ? H.round(geometry.run.mean / 60, 2) + ' min' : '—', num: true },
-            { text: geometry ? H.round(count * geometry.run.mean / 60, 2) + ' min' : '—', num: true },
-            { text: geometry ? H.fmtNumber(count * geometry.trialsPerRun) : '—', num: true },
-            { node: App.h('div', { class: 'btn-row tight' }, [
-              App.iconButton('↑', 'Run earlier in the session', function () {
-                if (index === 0) return;
-                var moved = session.items.splice(index, 1)[0];
-                session.items.splice(index - 1, 0, moved);
-                renderRuns();
-                App.refresh();
-              }),
-              App.iconButton('↓', 'Run later in the session', function () {
-                if (index >= session.items.length - 1) return;
-                var moved = session.items.splice(index, 1)[0];
-                session.items.splice(index + 1, 0, moved);
-                renderRuns();
-                App.refresh();
-              }),
-              App.iconButton('×', 'Remove this run from the session', function () {
-                session.items.splice(index, 1);
-                renderRuns();
-                App.refresh();
-              }, 'danger')
-            ]), copy: '' }
-          ]
-        };
-      });
-
-      var table = App.dataTable(
-        [{ label: 'Run design' }, { label: 'Trial design' }, { label: 'Card' },
-          { label: 'Count', num: true }, { label: 'Each', num: true },
-          { label: 'Minutes', num: true }, { label: 'Trials', num: true }, { label: '' }],
-        rows.length ? rows.map(function (row) {
-          return row.cells.map(function (cell) {
-            return { text: cell.text, num: cell.num, copy: cell.copy };
-          });
-        }) : [['No runs in this session yet.', '', '', '', '', '', '', '']],
-        { caption: session.name + ' - runs' }
-      );
-      var bodyRows = table.querySelectorAll('tbody tr');
-      rows.forEach(function (row, rowIndex) {
-        var tr = bodyRows[rowIndex];
-        if (!tr) return;
-        row.cells.forEach(function (cell, cellIndex) {
-          if (!cell.node) return;
-          var td = tr.children[cellIndex];
-          App.clear(td);
-          td.appendChild(cell.node);
-        });
-      });
-      runHost.appendChild(table);
-
-      var picker = App.h('select', {});
-      App.state.runs.forEach(function (entry) {
-        picker.appendChild(App.h('option', { value: entry.id, text: entry.name }));
-      });
-      runHost.appendChild(App.h('div', { class: 'split-inline mt' }, [
-        picker,
-        App.iconButton('Add run to this session', 'Append a run design', function () {
-          if (!picker.value) return;
-          session.items.push({ run: picker.value, count: 1 });
-          renderRuns();
-          App.refresh();
-        })
-      ]));
-    }
-    renderRuns();
-
-    host.appendChild(App.card('Runs in this session',
-      'In the order the console runs them', [runHost]));
 
     /* --- solved session ------------------------------------------------ */
     var readout = App.h('div', { class: 'readout' });
@@ -1049,6 +1244,7 @@
         ['Runs', String(record.runs)],
         ['Setup block', record.setupMinutes + ' min'],
         ['Structurals', record.structuralMinutes + ' min'],
+        ['Breaks', record.breakTotalMinutes + ' min'],
         ['Functional', record.functionalMinutes + ' min'],
         ['Shortest session', record.minMinutes + ' min'],
         ['Expected session', record.meanMinutes + ' min'],

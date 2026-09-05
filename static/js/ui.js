@@ -2335,6 +2335,25 @@
     });
   }
 
+  /* Merge a solved list back into the one on screen, matching on id so the
+   * objects survive.  Anything new, renamed away or without an id is taken as
+   * it comes. */
+  function adoptById(current, next) {
+    var known = {};
+    (current || []).forEach(function (item) {
+      if (item && item.id) known[item.id] = item;
+    });
+    return (next || []).map(function (item) {
+      var existing = item && item.id ? known[item.id] : null;
+      if (!existing) return item;
+      Object.keys(existing).forEach(function (key) {
+        if (!(key in item)) delete existing[key];
+      });
+      Object.keys(item).forEach(function (key) { existing[key] = item[key]; });
+      return existing;
+    });
+  }
+
   function refresh(force) {
     if (App.suspend) return;
     App.suspend = true;
@@ -2342,10 +2361,13 @@
       M.applyHrf(App.state);
       App.report = M.solve(App.state, App.boot);
       /* The solver repairs the design against the caps; adopt the repairs so
-       * what the editors show is what actually runs. */
+       * what the editors show is what actually runs.  Written into the objects
+       * already in the state rather than over them, because an open editor
+       * holds those objects: swapping them would leave the panel editing a
+       * copy nothing else can see. */
       if (App.report.state) {
         ['trials', 'runs', 'sessions', 'experiments'].forEach(function (key) {
-          App.state[key] = App.report.state[key];
+          App.state[key] = adoptById(App.state[key], App.report.state[key]);
         });
       }
       /* A view may rebuild an editor and so drop or add views mid-pass; walk a

@@ -16,7 +16,7 @@ duplicate, rename, reorder and delete, and each level is built out of the one be
 |---|---|---|
 | **Trial** | A list of phases: what one trial looks like, second by second | Trials |
 | **Run** | A trial design laid out into blocks, bound to an acquisition card | Runs |
-| **Session** | Setup, structurals and a list of runs, in console order | Sessions |
+| **Session** | One sortable list of setup steps, structurals, runs and breaks, in console order | Sessions |
 | **Experiment** | A plan of sessions, with its own unit, its own goal and a share of time | Experiments |
 | **Study** | Every experiment together inside one scanner-time budget | Overview, Budget |
 
@@ -154,10 +154,27 @@ It reports, from a simulated run at the bound TR:
 
 ## Sessions
 
-A session is a named block of scanner time: safety screening, positioning, task practice, the
-structural and reference scans, then the runs in the order the console runs them, with a break
-between each. Any acquisition card can be added to the setup block; any run design can be
-added to the run list, as many times as you like.
+A session is a named block of scanner time held as **one ordered list of blocks**. There are
+four kinds and they all sit in the same list:
+
+| Block | What it is | What you set |
+| --- | --- | --- |
+| **Setup** | Time that is not a scan — screening, positioning, task practice, anything you name | A label and a duration |
+| **Structural** | An acquisition card run as a structural or reference scan | Which card, how many |
+| **Run** | A run design | Which run design, how many |
+| **Break** | A break you place yourself | A label and a duration |
+
+**Nothing in the list is pinned.** A new session opens with the setup steps, then the
+structural and reference scans, then its runs — but that is only a starting position. Drag any
+block by its handle (or use the arrows) to put structurals between runs, move task practice
+into the middle of the session, or drop a break exactly where you want one. Every block can be
+renamed, retimed, duplicated, deleted, or switched off to keep it in the design without running
+it. The session solves in whatever order you leave it in.
+
+The one thing the planner still does for you is the **automatic break**: when two runs end up
+next to each other, it inserts a break of the length you set. Put anything between them — a
+structural, a setup step, a break of your own — and no automatic break appears there. Turn the
+setting off and every break in the session is a block you placed.
 
 The solved session gives the shortest, expected and longest duration, the trial and event
 counts, the data volume, and a console-order timeline you can copy straight into a scanner
@@ -235,8 +252,9 @@ first match, which is the console's own order.
 - **Copy for Word** — rich text: paste into Word, Google Docs or LibreOffice and it lands as a
   real bordered table with a caption.
 
-Tables with live inputs in them — the phase editor, the session run list, the experiment plan
-— copy their *values*, not their widgets, and drop the row-tools column.
+Tables with live inputs in them — the phase editor, the experiment plan — copy their *values*,
+not their widgets, and drop the row-tools column. The session sequence is a sortable list
+rather than a table; its solved timeline underneath copies as a table.
 
 ## Export
 
