@@ -223,7 +223,8 @@
       duplicate: function (state, id) { return M.Library.duplicateTrial(state, id); },
       remove: function (state, id) { return M.Library.removeTrial(state, id); },
       meta: function (trial) {
-        var timing = M.trialTiming(trial);
+        var timing = M.trialTiming(trial, M.representativeTr(App.state, App.boot, trial),
+          M.jitterSettings(App.state));
         return [
           H.fmtRange(timing.min, timing.max) + '  ·  ' + trial.phases.length + ' phases',
           (M.objectiveDef(App.state, trial.objective).label)
@@ -407,12 +408,19 @@
     host.appendChild(App.figureCard('Trial timeline', '', function () {
       return {
         markup: App.trialFigureMarkup(trial, 0),
-        caption: 'Onsets are cumulative means; jittered phases vary trial to trial.',
+        caption: M.jitterSettings(App.state).mode === 'geometric'
+          ? 'Onsets are cumulative means; jittered waits are whole TRs drawn from the '
+            + 'truncated geometric, so they sit nearer the short end of their window.'
+          : 'Onsets are cumulative means; jittered phases vary trial to trial.',
         empty: 'Add at least one phase to draw the timeline.'
       };
     }, function () { return App.fileStem(trial.name, 'trial-timeline'); }, [
       App.iconButton('Copy sequence', 'Copy the phase sequence as text', function () {
-        App.copy(trial.phases.map(H.phaseLabel).join(' -> '), 'Trial sequence');
+        var trSeconds = M.representativeTr(App.state, App.boot, trial);
+        var jitter = M.jitterSettings(App.state);
+        App.copy(trial.phases.map(function (phase) {
+          return H.phaseLabel(phase, trSeconds, jitter);
+        }).join(' -> '), 'Trial sequence');
       })
     ], owner));
   }
@@ -434,7 +442,9 @@
     }
 
     App.registerView(function () {
-      var model = M.trialHrfSeries(App.state, trial, { repeats: 2 });
+      var model = M.trialHrfSeries(App.state, trial, {
+        repeats: 2, trSeconds: M.representativeTr(App.state, App.boot, trial)
+      });
       App.clear(readout);
       App.clear(tableHost);
       plot.render(model);
@@ -499,7 +509,8 @@
 
     function solved() {
       return M.separationTiming(App.state, trial,
-        H.num(trial.separationTolerancePct, M.objectiveDef(App.state, trial.objective).tolerancePct));
+        H.num(trial.separationTolerancePct, M.objectiveDef(App.state, trial.objective).tolerancePct),
+        M.representativeTr(App.state, App.boot, trial));
     }
 
     function render() {
@@ -563,7 +574,8 @@
 
     var presets = App.h('div', { class: 'btn-row' }, [1, 4, 10, 25, 45].map(function (value) {
       return App.iconButton(value + ' %', 'Solve at a ' + value + '% residual', function () {
-        App.adopt(M.applySeparationTiming(App.state, trial.id, value));
+        App.adopt(M.applySeparationTiming(App.state, trial.id, value,
+          M.representativeTr(App.state, App.boot, trial)));
         App.toast('Timing solved at a ' + value + '% residual', 'ok');
       });
     }));
@@ -579,7 +591,8 @@
             class: 'btn gold sm', type: 'button', text: 'Apply this solution',
             onclick: function () {
               App.adopt(M.applySeparationTiming(App.state, trial.id,
-                H.num(trial.separationTolerancePct, 4)));
+                H.num(trial.separationTolerancePct, 4),
+                M.representativeTr(App.state, App.boot, trial)));
               App.toast('Solved timing written into the trial', 'ok');
             }
           })
@@ -609,7 +622,7 @@
       meta: function (run) {
         var trial = M.trialById(App.state, run.trial);
         var ctx = M.protocolContext(App.boot, run.protocol);
-        var geometry = M.runGeometry(run, trial, ctx.trSeconds);
+        var geometry = M.runGeometry(run, trial, ctx.trSeconds, M.jitterSettings(App.state));
         return [
           (trial ? trial.name : 'no trial design') + '  ·  ' + ctx.label,
           geometry.trialsPerRun + ' trials  ·  '
@@ -766,9 +779,10 @@
       }
       var trial = M.trialById(App.state, run.trial);
       var ctx = M.protocolContext(App.boot, run.protocol);
-      var geometry = M.runGeometry(run, trial, ctx.trSeconds);
+      var geometry = M.runGeometry(run, trial, ctx.trSeconds, M.jitterSettings(App.state));
       var series = global.PlannerEfficiency.evaluate(
-        M.runDesign(App.state, run), ctx.trSeconds, geometry, { series: true, singleTrial: false }
+        M.runDesign(App.state, run), ctx.trSeconds, geometry,
+        { series: true, singleTrial: false, jitter: M.jitterSettings(App.state) }
       );
       plot.render(series, { stimulus: 'Stimulus', response: 'Response window' });
 
@@ -912,7 +926,7 @@
       if (!run) return 0;
       var trial = M.trialById(App.state, run.trial);
       var ctx = M.protocolContext(App.boot, run.protocol);
-      var geometry = M.runGeometry(run, trial, ctx.trSeconds);
+      var geometry = M.runGeometry(run, trial, ctx.trSeconds, M.jitterSettings(App.state));
       return count * geometry.run.mean / 60;
     }
 
@@ -985,7 +999,7 @@
         if (!run) return 'run design missing';
         var trial = M.trialById(App.state, run.trial);
         var ctx = M.protocolContext(App.boot, run.protocol);
-        var geometry = M.runGeometry(run, trial, ctx.trSeconds);
+        var geometry = M.runGeometry(run, trial, ctx.trSeconds, M.jitterSettings(App.state));
         return ctx.label + '  ·  ' + H.round(geometry.run.mean / 60, 2) + ' min each  ·  '
           + H.fmtNumber(geometry.trialsPerRun) + ' trials each';
       }
@@ -1708,11 +1722,11 @@
     var owner = 'hrf';
     var panel = App.h('div', { class: 'panel' });
     panel.appendChild(App.h('div', { class: 'panel-head' }, [
-      App.h('h2', { text: 'HRF model and objectives' }),
+      App.h('h2', { text: 'HRF model, jitter and objectives' }),
       App.h('p', {
-        text: 'The haemodynamic response every timing decision is solved against, and what '
-          + 'the planner treats as separated. Change the definition here and every trial '
-          + 'design re-solves against it.'
+        text: 'The haemodynamic response every timing decision is solved against, how the '
+          + 'wait in a jittered phase is drawn, and what the planner treats as separated. '
+          + 'Change any of it here and every trial design re-solves against it.'
       })
     ]));
 
@@ -1877,10 +1891,150 @@
       renderObjectives();
     }, owner);
 
+    /* --- jitter sampling ------------------------------------------------ */
+
+    /* The widest jittered phase in the design, which is the one worth working
+     * through: it has the most rungs, so it shows the distribution's shape
+     * rather than a two-line stub. */
+    function widestJitteredPhase() {
+      var best = null;
+      (App.state.trials || []).forEach(function (trial) {
+        var trSeconds = M.representativeTr(App.state, App.boot, trial);
+        (trial.phases || []).forEach(function (phase) {
+          var lo = H.num(phase.min);
+          var hi = Math.max(lo, H.num(phase.max));
+          if (!phase.jitter || hi - lo < 0.001) return;
+          if (!best || hi - lo > best.window) {
+            best = {
+              trial: trial, phase: phase, window: hi - lo,
+              min: lo, max: hi, trSeconds: trSeconds
+            };
+          }
+        });
+      });
+      return best;
+    }
+
+    var jitterReadout = App.h('div', { class: 'readout' });
+    var jitterNote = App.h('div', { class: 'notice' });
+    var jitterTableHost = App.h('div', {});
+
+    App.registerView(function () {
+      var settings = M.jitterSettings(App.state);
+      App.clear(jitterReadout);
+      App.clear(jitterTableHost);
+
+      var widest = widestJitteredPhase();
+      if (!widest) {
+        jitterNote.textContent = 'No phase in this design is marked as jittered yet. '
+          + 'Tick Jitter on a phase in the Trials panel and give it a min below its max, '
+          + 'and the distribution it is drawn from shows up here.';
+        return;
+      }
+
+      if (settings.mode !== 'geometric') {
+        jitterNote.textContent = 'Waits are currently flat across their window, so a '
+          + widest.min + ' - ' + widest.max + ' s phase averages '
+          + H.round((widest.min + widest.max) / 2, 2) + ' s. That is a fine default, but it '
+          + 'lets the participant anticipate: every blank TR that passes makes the stimulus '
+          + 'more likely next, and at the top of the window it is certain. Switching to the '
+          + 'geometric removes that cue - and shortens every jittered phase, so the study '
+          + 'needs fewer hours.';
+        return;
+      }
+
+      var draw = M.truncGeometric(widest.min, widest.max, widest.trSeconds, settings.p);
+      var uniformMean = (widest.min + widest.max) / 2;
+
+      jitterReadout.appendChild(App.readoutCell('Worked phase',
+        (widest.phase.name || 'Phase') + ', ' + widest.min + ' - ' + widest.max + ' s'));
+      jitterReadout.appendChild(App.readoutCell('Longest wait',
+        H.round(draw.effMax, 2) + ' s (' + widest.min + ' s + ' + draw.nMax + ' TR'
+          + (draw.nMax === 1 ? '' : 's') + ')'));
+      jitterReadout.appendChild(App.readoutCell('Expected wait',
+        H.round(draw.mean, 2) + ' s'));
+      jitterReadout.appendChild(App.readoutCell('Against a flat window',
+        (draw.mean >= uniformMean ? '+' : '') + H.round(draw.mean - uniformMean, 2) + ' s'));
+
+      jitterTableHost.appendChild(App.dataTable(
+        [{ label: 'Delay (TRs)', num: true }, { label: 'Wait', num: true },
+          { label: 'P(delay)', num: true }],
+        draw.probs.map(function (probability, n) {
+          return [
+            { text: String(n), num: true },
+            { text: H.round(widest.min + n * draw.trSeconds, 2) + ' s', num: true },
+            { text: H.round(probability, 4), num: true }
+          ];
+        }),
+        { caption: (widest.phase.name || 'Phase') + ' - P(delay = n TRs) at p = '
+          + H.round(settings.p, 2) + ', TR ' + widest.trSeconds + ' s' }
+      ));
+
+      /* A window narrower than one TR has a single rung, so it is not jittered
+       * at all any more.  Say so - losing the jitter quietly is worse than the
+       * shorter trial it buys. */
+      var degenerate = [];
+      (App.state.trials || []).forEach(function (trial) {
+        var profile = M.jitterProfile(trial,
+          M.representativeTr(App.state, App.boot, trial), settings);
+        profile.degenerate.forEach(function (name) {
+          degenerate.push(trial.name + ' / ' + name);
+        });
+      });
+
+      jitterNote.textContent = degenerate.length
+        ? 'Fixed at their minimum, because their window is shorter than one TR: '
+          + degenerate.join(', ') + '. Widen the window past one TR, or leave them fixed '
+          + 'deliberately - a wait that cannot span a whole TR cannot be jittered on the '
+          + 'TR grid.'
+        : 'Every jittered phase spans at least one whole TR, so all of them are actually '
+          + 'being jittered.';
+    }, owner);
+
+    var jitterCard = App.card('Jitter sampling',
+      'How the wait in a jittered phase is drawn', [
+        App.h('div', {
+          class: 'notice',
+          text: 'Off by default: waits are flat across their window and average the '
+            + 'midpoint. Turned on, a wait is a whole number of TRs drawn from a truncated '
+            + 'geometric - the only distribution that tells the participant nothing about '
+            + 'when the stimulus is due, because the chance it lands on the next TR stays p '
+            + 'however long they have already waited. This changes what a trial is expected '
+            + 'to cost, so it changes the hours the study needs.'
+        }),
+        App.checkbox({
+          owner: owner,
+          label: 'Draw jittered waits from a truncated geometric distribution',
+          hint: 'Ashby, Statistical Analysis of fMRI Data, ch. 5',
+          get: function (state) { return M.jitterSettings(state).mode === 'geometric'; },
+          set: function (value, state) {
+            if (!state.jitter) state.jitter = M.defaultJitter();
+            state.jitter.mode = value ? 'geometric' : 'uniform';
+          }
+        }),
+        App.slider({
+          owner: owner, label: 'p', min: 0.02, max: 0.98, step: 0.01, decimals: 2, unit: '',
+          hint: 'Low approaches a flat window - what the planner does with this off; '
+            + '0.5 is the textbook default; high pins every wait to its minimum',
+          get: function (state) { return M.jitterSettings(state).p; },
+          set: function (value, state) {
+            if (!state.jitter) state.jitter = M.defaultJitter();
+            state.jitter.p = value;
+          },
+          disabledWhen: function (state) {
+            return M.jitterSettings(state).mode !== 'geometric';
+          }
+        }),
+        jitterReadout,
+        jitterTableHost,
+        jitterNote
+      ]);
+
     panel.appendChild(App.h('div', { class: 'grid split' }, [
       App.h('div', {}, [shapeCard]),
       objectiveHost
     ]));
+    panel.appendChild(jitterCard);
     panel.appendChild(App.card('How long recovery takes',
       'Read straight off the response, for any tolerance', [decayHost]));
     return panel;

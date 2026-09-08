@@ -173,6 +173,32 @@
    * the presentation software's business, not the planner's. */
   var JITTER_SEED = 20260823;
 
+  /* One draw from the truncated geometric over a phase's window, as the PDF's
+   * own sampling recipe puts it: take a uniform (0, 1) and walk the cumulative
+   * probabilities until it is covered.  The wait that comes back is a whole
+   * number of TRs above the phase's floor. */
+  function geometricWait(lo, hi, tr, p, rng) {
+    var step = tr > 0 ? tr : 2;
+    var prob = Math.min(0.98, Math.max(0.02, p));
+    var nMax = Math.max(0, Math.floor((hi - lo) / step + 1e-9));
+    if (nMax === 0) return lo;
+
+    var weights = [];
+    var total = 0;
+    for (var n = 0; n <= nMax; n += 1) {
+      var w = prob * Math.pow(1 - prob, n);
+      weights.push(w);
+      total += w;
+    }
+    var target = rng() * total;
+    var cumulative = 0;
+    for (var k = 0; k <= nMax; k += 1) {
+      cumulative += weights[k];
+      if (target <= cumulative) return lo + k * step;
+    }
+    return lo + nMax * step;
+  }
+
   function mulberry32(seed) {
     var state = seed >>> 0;
     return function () {
@@ -199,7 +225,8 @@
    * nothing else.  Everything geometric comes in through `geometry`.  What
    * gets presented in each trial is the presentation software's business, so
    * every response window lands in one regressor here. */
-  function buildRun(design, geometry, rng, maxTrials) {
+  function buildRun(design, geometry, rng, maxTrials, tr, jitter) {
+    var geometric = jitter && jitter.mode === 'geometric';
     var events = { stimulus: [], response: [] };
     var trials = [];
     var time = geometry.leadIn;
@@ -218,7 +245,11 @@
           var phase = phases[p];
           var lo = Math.max(0, Number(phase.min) || 0);
           var hi = Math.max(lo, Number(phase.max) || lo);
-          var duration = hi > lo ? lo + rng() * (hi - lo) : lo;
+          var duration = hi > lo
+            ? (geometric && phase.jitter
+              ? geometricWait(lo, hi, tr, jitter.p, rng)
+              : lo + rng() * (hi - lo))
+            : lo;
           var role = roleOf(phase);
           if (role === 'stimulus') {
             var sEvent = { onset: time, duration: duration };
@@ -380,7 +411,7 @@
     var tr = trSeconds > 0 ? trSeconds : 2;
     var reach = span();
     var rng = mulberry32(JITTER_SEED);
-    var run = buildRun(design, geometry, rng, options.maxTrials);
+    var run = buildRun(design, geometry, rng, options.maxTrials, tr, options.jitter);
     var volumes = Math.min(MAX_VOLUMES, Math.max(8, Math.ceil(run.duration / tr)));
 
     var stimulus = new Float64Array(volumes);

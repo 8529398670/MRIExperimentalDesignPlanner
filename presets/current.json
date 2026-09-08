@@ -60,7 +60,7 @@
   "trials": [
     {
       "id": "trial-mtmfi9kd-1",
-      "name": "Blocked detection trial",
+      "name": "GLM",
       "note": "",
       "objective": "detection",
       "phases": [
@@ -197,7 +197,7 @@
   "runs": [
     {
       "id": "run-mtmfi9kd-4",
-      "name": "Aim 1",
+      "name": "GLM",
       "note": "",
       "trial": "trial-mtmfi9kd-1",
       "protocol": "EPI-TR2000-Task",
@@ -292,7 +292,7 @@
           "kind": "run",
           "enabled": true,
           "run": "run-mtmfi9kd-4",
-          "count": 1
+          "count": 3
         }
       ],
       "autoBreak": true
@@ -323,5 +323,9 @@
       "manualSessions": 10
     }
   ],
-  "dynScansFrom": "max"
+  "dynScansFrom": "max",
+  "jitter": {
+    "mode": "geometric",
+    "p": 0.5
+  }
 }

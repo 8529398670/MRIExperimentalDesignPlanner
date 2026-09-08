@@ -475,8 +475,9 @@
         text: 'Each file is the lab template with the scanner block (TR, dummy volumes), '
           + 'run: (lead-in and lead-out, blocks per run, trials per block, inter-block rest, '
           + 'inter-trial gap), trial.phases: (the trial design\'s phase list, durations and '
-          + 'jitter) and trials: (how many trials a run holds, and how many of them are '
-          + 'control) filled in. What is presented in each trial, and in what order, stays '
+          + 'jitter - including the distribution each jittered wait is drawn from, so the '
+          + 'script reproduces exactly the timing the planner sized against) and trials: '
+          + '(how many trials a run holds, and how many of them are control) filled in. What is presented in each trial, and in what order, stays '
           + 'this file\'s business. Window, text, keys and instructions are passed through '
           + 'unchanged.'
       }),

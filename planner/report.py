@@ -162,6 +162,20 @@ def _prose(ws, row: int, text: str, width: int = 132) -> int:
     return row
 
 
+def _jitter_label(jitter: Dict[str, Any]) -> str:
+    """How a trial's jittered waits were drawn, for the trial summary block."""
+    if jitter.get("mode") != "geometric":
+        return "uniform (flat across the window)"
+    # A phase whose window cannot hold one whole TR is not being jittered at
+    # all, so it has no cap to report - it is called out in its own row instead.
+    caps = sorted({entry["nMax"] for entry in jitter.get("phases", [])
+                   if not entry.get("degenerate")})
+    if not caps:
+        return "uniform (flat across the window)"
+    span = str(caps[0]) if len(caps) == 1 else f"{caps[0]}-{caps[-1]}"
+    return f"truncated geometric, p = {_num(jitter.get('p')):.2f}, n<={span} TRs"
+
+
 def _experiments(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     return payload.get("experiments", []) or []
 
@@ -355,19 +369,40 @@ def _sheet_trials(wb: Workbook, payload: Dict[str, Any]) -> None:
             ["Share on condition A", f"{trial.get('conditionBalance', 50)} %"],
             ["Embedded control share", f"{trial.get('controlPct', 0)} %"],
             ["Residual tolerance", f"{trial.get('separationTolerancePct', 0)} %"],
+            ["Jitter sampling", _jitter_label(trial.get("jitter") or {})],
             ["Sequence", trial.get("sequence", "")],
         ], value_width=90)
+        jitter = trial.get("jitter") or {}
+        drawn = {entry["index"]: entry for entry in jitter.get("phases", [])}
+
+        def _draw(position: int, phase: Dict[str, Any]) -> str:
+            entry = drawn.get(position)
+            if entry is None:
+                return "uniform" if phase.get("jitter") else "no"
+            if entry.get("degenerate"):
+                return "fixed (window < 1 TR)"
+            # The top rung can sit below the stated max, so say where it lands.
+            if entry["effMax"] < entry["statedMax"] - 0.005:
+                return f"geometric, n<={entry['nMax']} (to {_num(entry['effMax']):g} s)"
+            return f"geometric, n<={entry['nMax']}"
+
+        def _mean(position: int, phase: Dict[str, Any]) -> float:
+            entry = drawn.get(position)
+            if entry is not None:
+                return _num(entry.get("mean"))
+            return (_num(phase.get("min")) + _num(phase.get("max"))) / 2
+
         row = _table(
             ws, row,
-            ["#", "Phase", "Role", "Min (s)", "Max (s)", "Jitter"],
+            ["#", "Phase", "Role", "Min (s)", "Max (s)", "Jitter", "Expected (s)"],
             [
                 [index, phase.get("name", ""), phase.get("role", ""),
                  _num(phase.get("min")), _num(phase.get("max")),
-                 "yes" if phase.get("jitter") else "no"]
+                 _draw(index - 1, phase), _mean(index - 1, phase)]
                 for index, phase in enumerate(trial.get("phases", []), start=1)
             ],
-            widths=[6, 30, 22, 12, 12, 10],
-            number_formats={4: "0.0", 5: "0.0"},
+            widths=[6, 30, 22, 12, 12, 18, 14],
+            number_formats={4: "0.0", 5: "0.0", 7: "0.00"},
         )
 
 

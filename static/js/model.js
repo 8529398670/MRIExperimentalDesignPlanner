@@ -88,10 +88,14 @@
     return (value < 10 ? '0' : '') + Math.floor(value);
   }
 
-  function phaseLabel(phase) {
-    var lo = round(num(phase.min), 1);
-    var hi = round(num(phase.max), 1);
+  /* `trSeconds` and `jitter` are optional: without them the label describes the
+   * phase as written, which is all the views that have no run in hand can say. */
+  function phaseLabel(phase, trSeconds, jitter) {
+    var span = phaseSpan(phase, trSeconds, jitter);
+    var lo = round(span.min, 1);
+    var hi = round(span.max, 1);
     if (Math.abs(hi - lo) < 0.001) return phase.name + ' (' + lo + 's)';
+    if (span.geometric) return phase.name + ' (geometric, ' + lo + '-' + hi + 's)';
     if (phase.jitter) return phase.name + ' (jitter, ' + lo + '-' + hi + 's)';
     return phase.name + ' (' + lo + '-' + hi + 's)';
   }
@@ -102,6 +106,13 @@
 
   function plural(count, one, many) {
     return Math.abs(num(count) - 1) < 0.005 ? one : (many || one + 's');
+  }
+
+  /* "a", "a and b", "a, b and c" - for prose the planner writes into reports. */
+  function joinList(items) {
+    var list = (items || []).slice();
+    if (list.length <= 1) return list.join('');
+    return list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1];
   }
 
   /* Stable, readable identifiers.  A design file is meant to be diffed. */
@@ -381,6 +392,144 @@
     return hrf;
   }
 
+  /* -------------------------------------------------------------- jitter */
+
+  /* How the wait in a jittered phase is drawn.  `uniform` is what the planner
+   * has always done: the wait is flat across the window, so its mean sits at
+   * the midpoint.  `geometric` is the truncated geometric from Ashby,
+   * Statistical Analysis of fMRI Data, ch. 5 - the wait is a whole number of
+   * TRs drawn from
+   *
+   *     P(n) = p(1-p)^n / SUM(i = 0..nMax) p(1-p)^i,    n = 0 .. nMax
+   *
+   * which is the only discrete distribution that tells the participant nothing
+   * about when the stimulus is due: the chance it lands on the next TR stays
+   * `p` however long they have already waited.
+   *
+   * It is off by default.  Turning it on pulls every jittered phase towards its
+   * minimum, so it changes how long a trial runs and therefore how many hours
+   * the study needs - which is why the distribution is settled here and not
+   * left to the presentation software.  The draws themselves still belong to
+   * PsychoPy; only their shape is decided here. */
+  var DEFAULT_JITTER = { mode: 'uniform', p: 0.5 };
+
+  function defaultJitter() { return deepCopy(DEFAULT_JITTER); }
+
+  /* The jitter settings in force, whatever a saved design happens to carry. */
+  function jitterSettings(state) {
+    var stored = (state && state.jitter) || {};
+    return {
+      mode: stored.mode === 'geometric' ? 'geometric' : 'uniform',
+      p: clamp(num(stored.p, DEFAULT_JITTER.p), 0.02, 0.98)
+    };
+  }
+
+  /* The truncated geometric over one phase's window.  `nMax` is deliberately
+   * not a setting: the phase's own min and max already say where the wait
+   * floor and the truncation cap sit, and the TR says how finely the gap
+   * between them can be cut.  A second field for it could only ever disagree
+   * with those.
+   *
+   * A window shorter than one TR leaves a single rung, so the phase collapses
+   * to a fixed wait at its minimum.  `degenerate` flags that, because losing
+   * the jitter silently is the last thing a design wants. */
+  function truncGeometric(minSeconds, maxSeconds, trSeconds, p) {
+    var lo = Math.max(0, num(minSeconds));
+    var hi = Math.max(lo, num(maxSeconds));
+    var tr = num(trSeconds) > 0 ? num(trSeconds) : 2;
+    var prob = clamp(num(p, DEFAULT_JITTER.p), 0.02, 0.98);
+    var nMax = Math.max(0, Math.floor((hi - lo) / tr + 1e-9));
+
+    var weights = [];
+    var total = 0;
+    var weighted = 0;
+    for (var n = 0; n <= nMax; n += 1) {
+      var w = prob * Math.pow(1 - prob, n);
+      weights.push(w);
+      total += w;
+      weighted += n * w;
+    }
+    var meanExtraTr = total > 0 ? weighted / total : 0;
+
+    return {
+      nMax: nMax,
+      p: prob,
+      trSeconds: tr,
+      probs: weights.map(function (w) { return total > 0 ? w / total : 0; }),
+      meanExtraTr: meanExtraTr,
+      min: lo,
+      mean: lo + meanExtraTr * tr,
+      /* The top rung, at or below the phase's stated max: a 2-7 s window at
+       * TR 2 s can only ever reach 6 s. */
+      effMax: lo + nMax * tr,
+      degenerate: nMax === 0 && hi > lo
+    };
+  }
+
+  /* What one phase is worth: its shortest, longest and expected duration under
+   * the settings in force.  Every duration the planner sizes against comes
+   * through here, so the uniform path has to stay exactly what it was - and it
+   * does: summing (lo + hi) / 2 is the same number as (SUM lo + SUM hi) / 2.
+   *
+   * The per-phase Jitter box stays the switch for which phases vary, so
+   * geometric sampling only reaches the phases already marked as jittered. */
+  function phaseSpan(phase, trSeconds, jitter) {
+    var lo = Math.max(0, num(phase && phase.min));
+    var hi = Math.max(lo, num(phase && phase.max));
+    if (!jitter || jitter.mode !== 'geometric' || hi <= lo || !(phase && phase.jitter)) {
+      return { min: lo, max: hi, mean: (lo + hi) / 2, geometric: null };
+    }
+    var draw = truncGeometric(lo, hi, trSeconds, jitter.p);
+    return { min: lo, max: draw.effMax, mean: draw.mean, geometric: draw };
+  }
+
+  /* Everything a view needs to explain the jitter it is looking at, worked out
+   * once so the settings card, the timeline and the PsychoPy export cannot
+   * drift apart.  Under uniform sampling this is just the mode, because there
+   * is nothing to explain. */
+  function jitterProfile(trial, trSeconds, jitter) {
+    var settings = jitter || DEFAULT_JITTER;
+    var profile = {
+      mode: settings.mode,
+      p: settings.p,
+      trSeconds: num(trSeconds, 2),
+      phases: [],
+      degenerate: [],
+      meanDeltaSeconds: 0
+    };
+    if (settings.mode !== 'geometric') return profile;
+
+    (trial && trial.phases ? trial.phases : []).forEach(function (phase, position) {
+      var span = phaseSpan(phase, trSeconds, settings);
+      if (!span.geometric) return;
+      var draw = span.geometric;
+      var uniformMean = (num(phase.min) + Math.max(num(phase.min), num(phase.max))) / 2;
+      var entry = {
+        index: position,
+        name: phase.name || 'Phase',
+        min: round(draw.min, 2),
+        statedMax: round(Math.max(num(phase.min), num(phase.max)), 2),
+        effMax: round(draw.effMax, 2),
+        nMax: draw.nMax,
+        mean: round(draw.mean, 2),
+        uniformMean: round(uniformMean, 2),
+        degenerate: draw.degenerate,
+        rungs: draw.probs.map(function (probability, n) {
+          return {
+            n: n,
+            seconds: round(draw.min + n * draw.trSeconds, 2),
+            probability: probability
+          };
+        })
+      };
+      profile.phases.push(entry);
+      profile.meanDeltaSeconds += draw.mean - uniformMean;
+      if (draw.degenerate) profile.degenerate.push(entry.name);
+    });
+    profile.meanDeltaSeconds = round(profile.meanDeltaSeconds, 2);
+    return profile;
+  }
+
   /* The objective definition in force, falling back to the shipped one. */
   function objectiveDef(state, id) {
     var key = id || 'separation';
@@ -560,6 +709,7 @@
         minUnitsPerExperiment: 50
       },
       hrf: defaultHrf(),
+      jitter: defaultJitter(),
       trials: [detection, estimation, separation],
       runs: [runDetection, runEstimation, runSeparation],
       sessions: [sessionDetection, sessionEstimation, sessionSeparation, sessionMixed],
@@ -579,6 +729,21 @@
   }
 
   function trialById(state, id) { return byId(state.trials, id) || (state.trials || [])[0] || null; }
+
+  /* Geometric jitter quantises waits to the TR, but a trial design is not tied
+   * to one - runs are, through their acquisition card.  Views that show a trial
+   * on its own therefore borrow the TR of the first run that uses it, and fall
+   * back to the planner's default card when nothing does yet. */
+  function representativeTr(state, boot, trial) {
+    var id = trial && trial.id;
+    var runs = (state && state.runs) || [];
+    for (var i = 0; i < runs.length; i += 1) {
+      if (runs[i] && runs[i].trial === id) {
+        return protocolContext(boot || {}, runs[i].protocol).trSeconds;
+      }
+    }
+    return protocolContext(boot || {}, (runs[0] || {}).protocol).trSeconds;
+  }
   function runById(state, id) { return byId(state.runs, id); }
   function sessionById(state, id) { return byId(state.sessions, id); }
   function experimentById(state, id) { return byId(state.experiments, id); }
@@ -601,19 +766,19 @@
 
   /* --------------------------------------------------- derived durations */
 
-  function trialTiming(trial) {
-    var minTotal = 0, maxTotal = 0;
+  function trialTiming(trial, trSeconds, jitter) {
+    var minTotal = 0, maxTotal = 0, meanTotal = 0;
     ((trial && trial.phases) || []).forEach(function (phase) {
-      var lo = Math.max(0, num(phase.min));
-      var hi = Math.max(lo, num(phase.max));
-      minTotal += lo;
-      maxTotal += hi;
+      var span = phaseSpan(phase, trSeconds, jitter);
+      minTotal += span.min;
+      maxTotal += span.max;
+      meanTotal += span.mean;
     });
-    return { min: minTotal, max: maxTotal, mean: (minTotal + maxTotal) / 2 };
+    return { min: minTotal, max: maxTotal, mean: meanTotal };
   }
 
-  function runGeometry(run, trial, trSeconds) {
-    var timing = trialTiming(trial);
+  function runGeometry(run, trial, trSeconds, jitter) {
+    var timing = trialTiming(trial, trSeconds, jitter);
     var trialsPerBlock = Math.max(1, Math.round(num(run.trialsPerBlock, 1)));
     var blocksPerRun = Math.max(1, Math.round(num(run.blocksPerRun, 1)));
     var gap = Math.max(0, num(run.interTrialGap));
@@ -891,6 +1056,11 @@
 
     state.hrf = Object.assign(defaultHrf(), state.hrf || {});
     state.hrf.objectives = Object.assign(defaultHrf().objectives, state.hrf.objectives || {});
+    /* Designs saved before geometric jitter existed come back uniform, which is
+     * exactly the timing they were solved under. */
+    state.jitter = jitterSettings(Object.assign({}, state, {
+      jitter: Object.assign(defaultJitter(), state.jitter || {})
+    }));
 
     ['trials', 'runs', 'sessions', 'experiments'].forEach(function (key) {
       if (!Array.isArray(state[key])) state[key] = deepCopy(fresh[key]);
@@ -953,7 +1123,8 @@
     (state.runs || []).forEach(function (run) {
       var trial = trialById(state, run.trial);
       var ctx = protocolContext(boot, run.protocol);
-      var geometry = runGeometry(run, trial, ctx.trSeconds);
+      var jitter = jitterSettings(state);
+      var geometry = runGeometry(run, trial, ctx.trSeconds, jitter);
 
       if (ctx.missing) {
         warnings.push(run.name + ': acquisition card "' + run.protocol
@@ -965,13 +1136,13 @@
         while (geometry.run[basis] / 60 > num(caps.maxRunMinutes)
           && geometry.blocksPerRun > 1 && guard < 40) {
           run.blocksPerRun = geometry.blocksPerRun - 1;
-          geometry = runGeometry(run, trial, ctx.trSeconds);
+          geometry = runGeometry(run, trial, ctx.trSeconds, jitter);
           guard += 1;
         }
         while (geometry.run[basis] / 60 > num(caps.maxRunMinutes)
           && geometry.trialsPerBlock > 1 && guard < 80) {
           run.trialsPerBlock = geometry.trialsPerBlock - 1;
-          geometry = runGeometry(run, trial, ctx.trSeconds);
+          geometry = runGeometry(run, trial, ctx.trSeconds, jitter);
           guard += 1;
         }
         if (guard > 0) {
@@ -1580,11 +1751,13 @@
   /* ------------------------------------------------------------ reports */
 
   function buildTrialReports(state, runInfo) {
+    var jitter = jitterSettings(state);
     return (state.trials || []).map(function (trial) {
-      var timing = trialTiming(trial);
-      var usedBy = Object.keys(runInfo).map(function (key) { return runInfo[key]; })
-        .filter(function (info) { return info.run.trial === trial.id; })
-        .map(function (info) { return info.run.name; });
+      var users = Object.keys(runInfo).map(function (key) { return runInfo[key]; })
+        .filter(function (info) { return info.run.trial === trial.id; });
+      var trSeconds = users.length ? users[0].ctx.trSeconds : 2;
+      var timing = trialTiming(trial, trSeconds, jitter);
+      var usedBy = users.map(function (info) { return info.run.name; });
       var objective = objectiveDef(state, trial.objective);
       return {
         id: trial.id,
@@ -1600,7 +1773,10 @@
           max: round(timing.max, 2),
           mean: round(timing.mean, 2)
         },
-        sequence: (trial.phases || []).map(phaseLabel).join(' -> '),
+        jitter: jitterProfile(trial, trSeconds, jitter),
+        sequence: (trial.phases || []).map(function (phase) {
+          return phaseLabel(phase, trSeconds, jitter);
+        }).join(' -> '),
         usedBy: usedBy
       };
     });
@@ -1625,7 +1801,8 @@
       var geometry = info.geometry;
       var ctx = info.ctx;
       var efficiency = global.PlannerEfficiency
-        ? global.PlannerEfficiency.evaluate(info.design, ctx.trSeconds, geometry)
+        ? global.PlannerEfficiency.evaluate(info.design, ctx.trSeconds, geometry,
+          { jitter: jitterSettings(state) })
         : {};
       var trial = info.trial;
       var objective = (trial && trial.objective) || 'estimation';
@@ -1818,7 +1995,9 @@
       var geometry = leadInfo.geometry;
       table.push({
         level: 'Trial',
-        sequence: (leadInfo.trial ? leadInfo.trial.phases.map(phaseLabel).join(' -> ') : ''),
+        sequence: (leadInfo.trial ? leadInfo.trial.phases.map(function (phase) {
+          return phaseLabel(phase, leadInfo.ctx.trSeconds, jitterSettings(state));
+        }).join(' -> ') : ''),
         count: 1,
         duration: fmtRange(geometry.trial.min, geometry.trial.max)
       });
@@ -2070,18 +2249,34 @@
     });
 
     report.trials.forEach(function (trial) {
+      /* Min and max are the phase as written; the last two columns say how the
+       * wait between them is actually drawn and what it is expected to cost. */
+      var drawn = {};
+      ((trial.jitter && trial.jitter.phases) || []).forEach(function (entry) {
+        drawn[entry.index] = entry;
+      });
       tables[trial.name + ' - phases'] = mdTable(
-        ['#', 'Phase', 'Role', 'Min (s)', 'Max (s)', 'Jitter'],
+        ['#', 'Phase', 'Role', 'Min (s)', 'Max (s)', 'Jitter', 'Expected (s)'],
         trial.phases.map(function (phase, index) {
           var role = PHASE_ROLES.filter(function (entry) {
             return entry.id === normaliseRole(phase.role);
           })[0];
+          var entry = drawn[index];
+          var draw = 'no';
+          if (entry && entry.degenerate) draw = 'fixed (window < 1 TR)';
+          else if (entry) {
+            draw = 'geometric, n<=' + entry.nMax
+              + (entry.effMax < entry.statedMax - 0.005 ? ' (to ' + entry.effMax + ' s)' : '');
+          } else if (phase.jitter) draw = 'uniform';
+          var expected = entry
+            ? entry.mean
+            : round((num(phase.min) + Math.max(num(phase.min), num(phase.max))) / 2, 2);
           return [
             index + 1, phase.name, (role && role.label) || phase.role,
-            trim(phase.min, 1), trim(phase.max, 1), phase.jitter ? 'yes' : 'no'
+            trim(phase.min, 1), trim(phase.max, 1), draw, trim(expected, 2)
           ];
         }),
-        ['right', 'left', 'left', 'right', 'right', 'center']
+        ['right', 'left', 'left', 'right', 'right', 'center', 'right']
       );
     });
 
@@ -2344,19 +2539,51 @@
 
     lines.push('');
     lines.push('trial:');
+    /* Which distribution each phase's wait is drawn from - and, when it is the
+     * truncated geometric, the two numbers PsychoPy needs to reproduce exactly
+     * the distribution the planner sized this run against.  `n_max` is derived
+     * from the window and the TR rather than set by hand, so it is written out
+     * here instead of being left for the presentation script to guess. */
+    var jitterProfile = trial.jitter || { mode: 'uniform' };
+    var geometricPhases = {};
+    (jitterProfile.phases || []).forEach(function (entry) {
+      geometricPhases[entry.index] = entry;
+    });
+
     lines.push('  round_jitter_to_tr: true');
+    if (jitterProfile.mode === 'geometric') {
+      lines.push('  jitter_distribution: geometric   # truncated; waits are whole TRs');
+      lines.push(yamlSetting('jitter_p', trim(num(jitterProfile.p), 3),
+        'P(delay = n TRs) = p(1-p)^n, renormalised over 0..n_max'));
+    } else {
+      lines.push('  jitter_distribution: uniform');
+    }
     lines.push('  phases:');
     var nameWidth = 0;
     names.forEach(function (name) { nameWidth = Math.max(nameWidth, name.length + 2); });
     phases.forEach(function (phase, index) {
       var lo = Math.max(0, num(phase.min));
       var hi = Math.max(lo, num(phase.max));
+      var geometric = geometricPhases[index];
+      /* Under geometric sampling the window's top rung can sit below the
+       * stated max - a 2-7 s window at TR 2 s only ever reaches 6 s - and the
+       * run was sized against the rung, so that is what gets exported. */
+      if (geometric) hi = num(geometric.effMax, hi);
       var jittered = hi - lo > 0.001;
+      var draw = '';
+      if (jittered) {
+        draw = geometric
+          ? ', jitter: geometric, n_max: ' + geometric.nMax
+          : ', jitter: uniform';
+      }
       lines.push('    - {name: ' + padRight(names[index] + ',', nameWidth)
         + 'show: ' + padRight((PSYCHOPY_SHOW[normaliseRole(phase.role)] || 'blank') + ',', 10)
         + 'dur: ' + (jittered ? '[' + yamlSeconds(lo) + ', ' + yamlSeconds(hi) + ']' : yamlSeconds(lo))
-        + (jittered ? ', jitter: ' + (phase.jitter ? 'exponential' : 'uniform') : '')
+        + draw
         + '}');
+    });
+    (jitterProfile.degenerate || []).forEach(function (name) {
+      lines.push('    # ' + name + ': window is shorter than one TR, so the wait is fixed.');
     });
 
     lines.push('');
@@ -2420,6 +2647,33 @@
         sentence += 'Each trial runs ' + trialReport.sequence + ', '
           + fmtRange(trialReport.timing.min, trialReport.timing.max) + ' in total, '
           + 'targeting ' + trialReport.objectiveLabel.toLowerCase() + '. ';
+        var profile = trialReport.jitter;
+        var drawn = ((profile && profile.phases) || []).filter(function (entry) {
+          return !entry.degenerate;
+        });
+        if (profile && profile.mode === 'geometric' && drawn.length) {
+          /* Two fixation phases truncated at the same point is one fact, not
+           * two, so collapse the list by the cap rather than by phase. */
+          var caps = [];
+          drawn.forEach(function (entry) {
+            var seen = caps.filter(function (cap) { return cap.nMax === entry.nMax; })[0];
+            if (seen) { if (seen.names.indexOf(entry.name) < 0) seen.names.push(entry.name); }
+            else caps.push({ nMax: entry.nMax, names: [entry.name] });
+          });
+          sentence += 'Jittered waits were drawn from a truncated geometric '
+            + 'distribution over whole TRs, P(delay = n TRs) proportional to '
+            + 'p(1-p)^n with p = ' + trim(profile.p, 2) + ', truncated at '
+            + caps.map(function (cap) {
+              return cap.nMax + ' TR' + (cap.nMax === 1 ? '' : 's')
+                + (caps.length > 1 ? ' (' + cap.names.join(', ').toLowerCase() + ')' : '');
+            }).join(' and ') + '. ';
+          if (profile.degenerate.length) {
+            sentence += joinList(profile.degenerate) + ' '
+              + plural(profile.degenerate.length, 'was', 'were')
+              + ' held fixed at ' + plural(profile.degenerate.length, 'its', 'their')
+              + ' minimum, the jitter window being shorter than one TR. ';
+          }
+        }
       }
       if (runReport) {
         sentence += 'A run holds ' + runReport.structure.blocksPerRun + ' '
@@ -2492,10 +2746,9 @@
     return index;
   }
 
-  function phaseMean(phase) {
+  function phaseMean(phase, trSeconds, jitter) {
     if (!phase) return 0;
-    var lo = Math.max(0, num(phase.min));
-    return (lo + Math.max(lo, num(phase.max))) / 2;
+    return phaseSpan(phase, trSeconds, jitter).mean;
   }
 
   /* How long the planner treats a response of this length as still present.
@@ -2512,11 +2765,12 @@
    * predicted response exceeds the tolerance by the time the next event is
    * measured.  Everything comes from the HRF, so the answer is exact rather
    * than searched. */
-  function separationTiming(state, trial, tolerancePct) {
+  function separationTiming(state, trial, tolerancePct, trSeconds) {
     if (!global.PlannerEfficiency || !trial) return null;
     applyHrf(state);
     var index = phaseIndices(trial);
     if (index.stimulus < 0 || index.response < 0) return null;
+    var jitter = jitterSettings(state);
 
     var objective = objectiveDef(state, trial.objective);
     var tolerance = clamp(num(tolerancePct, objective.tolerancePct), 0.25, 90) / 100;
@@ -2529,8 +2783,8 @@
     var leadPhase = index.leadBaseline >= 0 ? trial.phases[index.leadBaseline] : null;
     var tailPhase = index.tailBaseline >= 0 ? trial.phases[index.tailBaseline] : null;
 
-    var stimulusSeconds = Math.max(0.1, phaseMean(stimulusPhase));
-    var responseSeconds = Math.max(0.1, phaseMean(responsePhase));
+    var stimulusSeconds = Math.max(0.1, phaseMean(stimulusPhase, trSeconds, jitter));
+    var responseSeconds = Math.max(0.1, phaseMean(responsePhase, trSeconds, jitter));
 
     /* Stimulus bleed is read at the response peak, `readLag` after the
      * response onset, so the stimulus has had stimulus + delay + readLag to
@@ -2541,7 +2795,7 @@
     /* Carryover is read at the next stimulus onset, so the response has had
      * response + tail baseline + lead baseline to decay. */
     var responseDecay = separationSpan(responseSeconds, tolerance, override);
-    var leadSeconds = Math.max(0, phaseMean(leadPhase));
+    var leadSeconds = Math.max(0, phaseMean(leadPhase, trSeconds, jitter));
     var tailNeeded = Math.max(0, responseDecay - responseSeconds - leadSeconds);
 
     var delaySpread = delayPhase ? Math.max(0, num(delayPhase.max) - num(delayPhase.min)) : 0;
@@ -2550,11 +2804,20 @@
     var delayMin = Math.round(delayNeeded * 2) / 2;
     var tailMin = Math.round(tailNeeded * 2) / 2;
 
+    /* The delay and the tail do not exist yet - the solver is about to write
+     * them - so their expected length has to be priced under the distribution
+     * that will fill them, not the midpoint of the window. */
+    function solvedMean(floorSeconds, spread) {
+      return phaseMean({
+        min: floorSeconds, max: floorSeconds + spread, jitter: spread > 0
+      }, trSeconds, jitter);
+    }
+
     var trialMean = 0;
     (trial.phases || []).forEach(function (phase, position) {
-      if (position === index.delay) trialMean += delayMin + delaySpread / 2;
-      else if (position === index.tailBaseline) trialMean += tailMin + tailSpread / 2;
-      else trialMean += phaseMean(phase);
+      if (position === index.delay) trialMean += solvedMean(delayMin, delaySpread);
+      else if (position === index.tailBaseline) trialMean += solvedMean(tailMin, tailSpread);
+      else trialMean += phaseMean(phase, trSeconds, jitter);
     });
 
     return {
@@ -2592,6 +2855,7 @@
     applyHrf(state);
     var E = global.PlannerEfficiency;
     var opts = options || {};
+    var jitter = jitterSettings(state);
     var repeats = Math.max(1, Math.round(num(opts.repeats, 2)));
     var dt = 0.1;
 
@@ -2599,7 +2863,7 @@
     var events = [];
     var cursor = 0;
     (trial.phases || []).forEach(function (phase, position) {
-      var duration = phaseMean(phase);
+      var duration = phaseMean(phase, opts.trSeconds, jitter);
       var role = normaliseRole(phase.role);
       var def = PHASE_ROLES.filter(function (entry) { return entry.id === role; })[0];
       if (def && def.regressor && duration > 0) {
@@ -2704,13 +2968,13 @@
     return base;
   }
 
-  function applySeparationTiming(state, trialId, tolerancePct) {
+  function applySeparationTiming(state, trialId, tolerancePct, trSeconds) {
     var draft = deepCopy(state);
     var trial = byId(draft.trials, trialId);
     if (!trial) return state;
     var objective = objectiveDef(draft, trial.objective);
     trial.separationTolerancePct = clamp(num(tolerancePct, objective.tolerancePct), 0.25, 90);
-    var solved = separationTiming(draft, trial, trial.separationTolerancePct);
+    var solved = separationTiming(draft, trial, trial.separationTolerancePct, trSeconds);
     if (!solved) return draft;
     if (solved.delayIndex >= 0) {
       trial.phases[solved.delayIndex].min = solved.delayMin;
@@ -2776,7 +3040,8 @@
         + geometry.interBlockRest;
       if (!cache[key]) {
         cache[key] = global.PlannerEfficiency
-          ? global.PlannerEfficiency.evaluate(probe, ctx.trSeconds, geometry, { maxTrials: 18 })
+          ? global.PlannerEfficiency.evaluate(probe, ctx.trSeconds, geometry,
+            { maxTrials: 18, jitter: jitterSettings(state) })
           : {};
       }
       return cache[key];
@@ -2787,7 +3052,7 @@
         var candidate = deepCopy(run);
         candidate.trialsPerBlock = trialsPerBlock;
         candidate.blocksPerRun = blocksPerRun;
-        var geometry = runGeometry(candidate, trial, ctx.trSeconds);
+        var geometry = runGeometry(candidate, trial, ctx.trSeconds, jitterSettings(state));
         if (geometry.run[basis] / 60 > num(caps.maxRunMinutes)) continue;
 
         var probe = { phases: (trial && trial.phases) || [] };
@@ -2846,12 +3111,13 @@
             probeTrial.phases[index.tailBaseline].max = tailMin + tailSpread;
             probeTrial.phases[index.tailBaseline].jitter = tailSpread > 0;
 
-            var geometry = runGeometry(run, probeTrial, ctx.trSeconds);
+            var geometry = runGeometry(run, probeTrial, ctx.trSeconds, jitterSettings(state));
             if (geometry.run[basis] / 60 > num(draft.caps.maxRunMinutes)) return;
 
             var metrics = global.PlannerEfficiency.evaluate({
               phases: probeTrial.phases
-            }, ctx.trSeconds, geometry, { maxTrials: 16 });
+            }, ctx.trSeconds, geometry,
+            { maxTrials: 16, jitter: jitterSettings(state) });
             var trialsPerHour = 3600 / Math.max(1, geometry.trial.mean);
             var score = global.PlannerEfficiency.objectiveScore(
               objective, metrics, geometry.run.mean / 60, trialsPerHour
@@ -3043,6 +3309,7 @@
 
     defaultState: defaultState,
     defaultHrf: defaultHrf,
+    defaultJitter: defaultJitter,
     defaultTrial: defaultTrial,
     defaultRun: defaultRun,
     defaultSession: defaultSession,
@@ -3062,6 +3329,11 @@
     normaliseRole: normaliseRole,
     objectiveDef: objectiveDef,
     applyHrf: applyHrf,
+    jitterSettings: jitterSettings,
+    truncGeometric: truncGeometric,
+    phaseSpan: phaseSpan,
+    jitterProfile: jitterProfile,
+    representativeTr: representativeTr,
 
     solve: solve,
     protocolContext: protocolContext,

@@ -107,10 +107,11 @@ worst-case trial is still clean. Presets cover 1, 4, 10, 25 and 45 percent; the 
 the solved values, the residuals they deliver, and whether the trial matches the solution or
 is only a preview.
 
-## HRF model — what counts as separated
+## HRF model — jitter, and what counts as separated
 
-The **HRF model** panel is where the response itself lives, and where you decide what the
-planner treats as recovered. Everything else re-solves against it.
+The **HRF model** panel is where the response itself lives, how the wait in a jittered phase
+is drawn, and where you decide what the planner treats as recovered. Everything else
+re-solves against it.
 
 - **Response shape** — peak delay, peak dispersion, undershoot delay, undershoot dispersion,
   the peak-to-undershoot ratio, and how far out the response is evaluated. Defaults are the
@@ -126,6 +127,47 @@ planner treats as recovered. Everything else re-solves against it.
 The readouts under each objective say how long a 3 s and a 4 s event take to separate under
 the current definition, and which trial designs are using it. A table at the foot of the panel
 gives recovery time against tolerance for a range of event durations.
+
+### Jitter sampling
+
+By default a jittered phase's wait is **flat** across its window, so it averages the midpoint —
+a 2–6 s fixation costs 4 s. The **Jitter sampling** card offers the alternative: a truncated
+geometric, following Ashby, *Statistical Analysis of fMRI Data*, ch. 5. It is **off by
+default**.
+
+Turned on, a wait becomes a whole number of TRs drawn from
+
+```
+P(delay = n TRs) = p(1-p)^n / SUM(i = 0..n_max) p(1-p)^i,    n = 0 .. n_max
+```
+
+The point is anticipation. Under a flat window every blank TR that passes makes the stimulus
+more likely next, and at the top of the window the participant knows it with certainty. The
+geometric is the only discrete distribution where that chance stays `p` however long they have
+already waited, so it gives the participant nothing to anticipate on.
+
+There is one setting, `p`. `n_max` is **not** a setting: it is `floor((max - min) / TR)`, so
+the phase's own minimum and maximum already say where the wait floor and the truncation cap
+sit, and the run's acquisition card supplies the TR. Low `p` approaches the flat window; 0.5 is
+the textbook default; high `p` pins every wait to its minimum.
+
+Two consequences worth knowing before you switch it on:
+
+- **It shortens the study.** The geometric mean sits well below the midpoint, so trials get
+  cheaper and the plan needs fewer hours. On the shipped GLM trial at TR 2 s and `p` = 0.5 the
+  trial mean drops from 16.50 s to 14.29 s. That is why the distribution is chosen here rather
+  than left to the presentation software — it changes the sizing. The draws themselves still
+  belong to PsychoPy.
+- **A window narrower than one TR stops being jittered.** It has a single rung, so the phase
+  fixes at its minimum. The card names any phase this happens to rather than quietly
+  shortening it. For the same reason a 2–7 s window at TR 2 s tops out at 6 s, and the planner
+  sizes and exports the 6.
+
+The card works one phase through in full — every rung, its probability and the resulting mean —
+so the numbers can be checked against the source directly. The choice travels into the
+PsychoPy YAML as `jitter_distribution`, `jitter_p` and a per-phase `n_max`, into the methods
+text as a citable sentence, and into the workbook's phase tables as the distribution and the
+expected duration of every phase.
 
 ## Run designs
 

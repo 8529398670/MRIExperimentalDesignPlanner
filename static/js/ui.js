@@ -1206,13 +1206,15 @@
   function trialFigureMarkup(trial, extraGap) {
     if (!trial) return '';
     var uid = String(trial.id || 'trial').replace(/[^A-Za-z0-9_-]/g, '');
+    var jitter = M.jitterSettings(App.state);
+    var trSeconds = M.representativeTr(App.state, App.boot, trial);
     var steps = (trial.phases || []).map(function (phase) {
-      var min = H.num(phase.min);
-      var max = Math.max(min, H.num(phase.max));
+      var span = M.phaseSpan(phase, trSeconds, jitter);
       return {
         name: phase.name || 'Phase',
         role: M.normaliseRole(phase.role),
-        min: min, max: max, mean: (min + max) / 2
+        min: span.min, max: span.max, mean: span.mean,
+        geometric: !!span.geometric
       };
     });
     if (extraGap > 0) {
@@ -1275,7 +1277,8 @@
         + TIMELINE_MONO + '" font-size="12.5" fill="#00482B">' + bounds + '</text>');
       if (step.min !== step.max) {
         svg.push('<text x="' + centre + '" y="' + meanY + '" text-anchor="middle" font-family="'
-          + TIMELINE_SANS + '" font-size="10.5" fill="#6b767b">jittered, mean '
+          + TIMELINE_SANS + '" font-size="10.5" fill="#6b767b">'
+          + (step.geometric ? 'geometric, mean ' : 'jittered, mean ')
           + figureSeconds(step.mean) + ' s</text>');
       }
     });
@@ -1360,8 +1363,10 @@
       + 'fill="#ffffff" stroke="#b9c0b4" stroke-width="1"/>');
     svg.push('<rect x="' + legendX + '" y="' + (legendY - 9) + '" width="11" height="11" '
       + 'fill="url(#tl-jitter-' + uid + ')" stroke="none"/>');
+    var jitterLegend = steps.some(function (step) { return step.geometric; })
+      ? 'jittered phase (geometric)' : 'jittered phase';
     svg.push('<text x="' + (legendX + 16) + '" y="' + legendY + '" font-family="' + TIMELINE_SANS
-      + '" font-size="10.5" fill="#3d4a4f">jittered phase</text>');
+      + '" font-size="10.5" fill="#3d4a4f">' + jitterLegend + '</text>');
 
     svg.push('</svg>');
     return svg.join('');
@@ -1438,11 +1443,12 @@
     var d = experimentReport.derived;
     var weeks = H.num(App.state.budget.weeksAvailable);
 
+    var runTrSeconds = H.num(runReport.trMs, 2000) / 1000;
+    var runJitter = M.jitterSettings(App.state);
     var trialParts = trialReport.phases.map(function (phase) {
-      var min = H.num(phase.min);
-      var max = Math.max(min, H.num(phase.max));
       return {
-        span: (min + max) / 2, kind: M.normaliseRole(phase.role),
+        span: M.phaseSpan(phase, runTrSeconds, runJitter).mean,
+        kind: M.normaliseRole(phase.role),
         role: true, label: phase.name
       };
     });
@@ -2546,7 +2552,7 @@
       build: function () { return global.PlannerLibrary.buildRuns(); } },
     { id: 'trials', label: 'Trials', hint: 'What one trial looks like',
       build: function () { return global.PlannerLibrary.buildTrials(); } },
-    { id: 'hrf', label: 'HRF model', hint: 'The response, and what counts as separated',
+    { id: 'hrf', label: 'HRF model', hint: 'The response, the jitter, and what counts as separated',
       build: function () { return global.PlannerLibrary.buildHrf(); } },
     { id: 'budget', label: 'Budget', hint: 'Scanner time and caps', build: buildBudgetPanel },
     { id: 'acquisition', label: 'Acquisition', hint: 'Scanner parameter cards',
