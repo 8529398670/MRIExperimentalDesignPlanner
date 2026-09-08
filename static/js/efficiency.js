@@ -177,10 +177,15 @@
    * own sampling recipe puts it: take a uniform (0, 1) and walk the cumulative
    * probabilities until it is covered.  The wait that comes back is a whole
    * number of TRs above the phase's floor. */
-  function geometricWait(lo, hi, tr, p, rng) {
+  function geometricWait(lo, hi, tr, p, rng, nMaxCap) {
     var step = tr > 0 ? tr : 2;
     var prob = Math.min(0.98, Math.max(0.02, p));
     var nMax = Math.max(0, Math.floor((hi - lo) / step + 1e-9));
+    /* A stated cap can only tighten the window, never widen past the max the
+     * design already committed to. */
+    if (nMaxCap !== undefined && nMaxCap !== null) {
+      nMax = Math.min(nMax, Math.max(0, Math.round(nMaxCap)));
+    }
     if (nMax === 0) return lo;
 
     var weights = [];
@@ -247,7 +252,8 @@
           var hi = Math.max(lo, Number(phase.max) || lo);
           var duration = hi > lo
             ? (geometric && phase.jitter
-              ? geometricWait(lo, hi, tr, jitter.p, rng)
+              ? geometricWait(lo, hi, tr, jitter.p, rng,
+                jitter.truncation === 'trs' ? jitter.nMaxCap : undefined)
               : lo + rng() * (hi - lo))
             : lo;
           var role = roleOf(phase);

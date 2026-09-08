@@ -326,6 +326,8 @@
   "dynScansFrom": "max",
   "jitter": {
     "mode": "geometric",
-    "p": 0.5
+    "p": 0.5,
+    "truncation": "window",
+    "nMaxCap": 4
   }
 }

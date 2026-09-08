@@ -405,6 +405,32 @@ def _sheet_trials(wb: Workbook, payload: Dict[str, Any]) -> None:
             number_formats={4: "0.0", 5: "0.0", 7: "0.00"},
         )
 
+        # One distribution per jittered phase, tabulated the way the source
+        # does. "Running total" is the sampling recipe; "P(next TR)" is what
+        # truncating costs - flat at p until the cap, certain on the last rung.
+        for entry in jitter.get("phases", []):
+            if entry.get("degenerate"):
+                continue
+            row = _section(
+                ws, row,
+                f"Phase {entry['index'] + 1}, {entry['name']} — delay distribution "
+                f"(p = {_num(jitter.get('p')):.2f}, capped at {entry['nMax']} "
+                f"{'TR' if entry['nMax'] == 1 else 'TRs'})",
+                span=5,
+            )
+            row = _table(
+                ws, row,
+                ["No. of TRs in delay", "Wait (s)", "P(delay)",
+                 "Running total", "P(next TR)"],
+                [
+                    [rung["n"], _num(rung["seconds"]), _num(rung["probability"]),
+                     _num(rung["cumulative"]), _num(rung["hazard"])]
+                    for rung in entry.get("rungs", [])
+                ],
+                widths=[22, 12, 14, 16, 14],
+                number_formats={2: "0.00", 3: "0.0000", 4: "0.0000", 5: "0.0000"},
+            )
+
 
 def _sheet_runs(wb: Workbook, payload: Dict[str, Any]) -> None:
     ws = wb.create_sheet("Run Designs")

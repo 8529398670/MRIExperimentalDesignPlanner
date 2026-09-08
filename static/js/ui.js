@@ -392,19 +392,23 @@
       return button;
     });
     var wrap = h('div', { class: 'seg' }, buttons);
-    registerControl(function () {
-      var value = options.get ? options.get(App.state) : getPath(App.state, options.path);
-      buttons.forEach(function (button) {
-        button.classList.toggle('active', button.dataset.value === String(value));
-      });
-    }, options.owner);
-    return h('div', { class: 'control wide' }, [
+    var node = h('div', { class: 'control wide' }, [
       h('label', {}, [
         h('span', { text: options.label }),
         options.hint ? h('span', { class: 'hint', text: options.hint }) : null
       ]),
       wrap
     ]);
+    registerControl(function () {
+      var value = options.get ? options.get(App.state) : getPath(App.state, options.path);
+      var off = options.disabledWhen ? options.disabledWhen(App.state) : false;
+      buttons.forEach(function (button) {
+        button.classList.toggle('active', button.dataset.value === String(value));
+        button.disabled = !!off;
+      });
+      node.style.opacity = off ? '.5' : '1';
+    }, options.owner);
+    return node;
   }
 
   function card(title, note, body, headExtra) {
@@ -2552,7 +2556,9 @@
       build: function () { return global.PlannerLibrary.buildRuns(); } },
     { id: 'trials', label: 'Trials', hint: 'What one trial looks like',
       build: function () { return global.PlannerLibrary.buildTrials(); } },
-    { id: 'hrf', label: 'HRF model', hint: 'The response, the jitter, and what counts as separated',
+    { id: 'jitter', label: 'Jitter', hint: 'How the gap between events is drawn',
+      build: function () { return global.PlannerLibrary.buildJitter(); } },
+    { id: 'hrf', label: 'HRF model', hint: 'The response, and what counts as separated',
       build: function () { return global.PlannerLibrary.buildHrf(); } },
     { id: 'budget', label: 'Budget', hint: 'Scanner time and caps', build: buildBudgetPanel },
     { id: 'acquisition', label: 'Acquisition', hint: 'Scanner parameter cards',

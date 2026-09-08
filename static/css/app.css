@@ -194,6 +194,14 @@ a { color: var(--wsu-green); }
 }
 .card-head h3 { font-size: 12.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--wsu-dark-green); }
 .card-head .head-note { font-size: 11px; color: var(--ink-faint); font-family: var(--mono); }
+
+/* A heading inside a card body, for grouping several tables under one trial. */
+.sub-head {
+  font-size: 11.5px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--wsu-dark-green); margin: 18px 0 6px;
+  padding-bottom: 5px; border-bottom: 1px solid var(--line);
+}
+.card-body > .sub-head:first-child { margin-top: 0; }
 .card-body { padding: 14px; }
 .card-body.tight { padding: 8px 14px 12px; }
 .card.flush .card-body { padding: 0; }

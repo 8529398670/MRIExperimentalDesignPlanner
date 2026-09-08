@@ -411,7 +411,21 @@
    * the study needs - which is why the distribution is settled here and not
    * left to the presentation software.  The draws themselves still belong to
    * PsychoPy; only their shape is decided here. */
-  var DEFAULT_JITTER = { mode: 'uniform', p: 0.5 };
+  /* `truncation` is the PDF's own second choice.  An untruncated geometric puts
+   * some probability on arbitrarily long delays, which a laboratory can absorb
+   * and a scanner cannot, so the distribution gets an upper limit - "suppose
+   * the longest delay we allow is Nmax TRs".  Two ways to say where it sits:
+   *
+   *   window - the phase's own max is the limit, so the cap follows whatever
+   *            the trial design already says.  The default.
+   *   trs    - a limit in TRs, stated once and applied to every jittered phase.
+   *            This is the PDF's framing, and it is the one to use when the cap
+   *            is a decision about the participant rather than about one phase.
+   *
+   * A stated cap can only ever tighten: the phase's max is a hard bound the
+   * design already committed to, so `nMaxCap` is applied on top of it, never
+   * through it. */
+  var DEFAULT_JITTER = { mode: 'uniform', p: 0.5, truncation: 'window', nMaxCap: 4 };
 
   function defaultJitter() { return deepCopy(DEFAULT_JITTER); }
 
@@ -420,25 +434,37 @@
     var stored = (state && state.jitter) || {};
     return {
       mode: stored.mode === 'geometric' ? 'geometric' : 'uniform',
-      p: clamp(num(stored.p, DEFAULT_JITTER.p), 0.02, 0.98)
+      p: clamp(num(stored.p, DEFAULT_JITTER.p), 0.02, 0.98),
+      truncation: stored.truncation === 'trs' ? 'trs' : 'window',
+      nMaxCap: Math.max(0, Math.round(num(stored.nMaxCap, DEFAULT_JITTER.nMaxCap)))
     };
   }
 
-  /* The truncated geometric over one phase's window.  `nMax` is deliberately
-   * not a setting: the phase's own min and max already say where the wait
-   * floor and the truncation cap sit, and the TR says how finely the gap
-   * between them can be cut.  A second field for it could only ever disagree
-   * with those.
+  /* The truncated geometric over one phase's window.
    *
-   * A window shorter than one TR leaves a single rung, so the phase collapses
-   * to a fixed wait at its minimum.  `degenerate` flags that, because losing
-   * the jitter silently is the last thing a design wants. */
-  function truncGeometric(minSeconds, maxSeconds, trSeconds, p) {
+   * The rungs are whole TRs above the phase's minimum, and the cap is the
+   * tighter of what the window allows and what `nMaxCap` states.  A window
+   * shorter than one TR leaves a single rung, so the phase collapses to a
+   * fixed wait at its minimum - `degenerate` flags that, because losing the
+   * jitter silently is the last thing a design wants.
+   *
+   * `hazard[n]` is what the truncation costs, in the PDF's own terms.  It is
+   * the chance the stimulus arrives on the next TR given the participant has
+   * already waited n, P(N = n) / P(N >= n).  Untruncated it would be flat at
+   * `p` - that is the whole reason for choosing the geometric.  Truncated it
+   * climbs as the cap approaches and reaches 1 on the last rung, where an
+   * ideal observer knows the stimulus is next.  That climb is the "some
+   * opportunity to anticipate" the truncation buys back. */
+  function truncGeometric(minSeconds, maxSeconds, trSeconds, p, nMaxCap) {
     var lo = Math.max(0, num(minSeconds));
     var hi = Math.max(lo, num(maxSeconds));
     var tr = num(trSeconds) > 0 ? num(trSeconds) : 2;
     var prob = clamp(num(p, DEFAULT_JITTER.p), 0.02, 0.98);
-    var nMax = Math.max(0, Math.floor((hi - lo) / tr + 1e-9));
+
+    var windowRungs = Math.max(0, Math.floor((hi - lo) / tr + 1e-9));
+    var capRungs = nMaxCap === undefined || nMaxCap === null
+      ? windowRungs : Math.max(0, Math.round(num(nMaxCap)));
+    var nMax = Math.min(windowRungs, capRungs);
 
     var weights = [];
     var total = 0;
@@ -449,13 +475,38 @@
       total += w;
       weighted += n * w;
     }
+    var probs = weights.map(function (w) { return total > 0 ? w / total : 0; });
+
+    /* Cumulative mass, and the conditional chance of "next TR" at each rung.
+     * Both fall straight out of the tail sums, so no closed form to get wrong. */
+    var cumulative = [];
+    var hazard = [];
+    var seen = 0;
+    for (var k = 0; k <= nMax; k += 1) {
+      seen += probs[k];
+      cumulative.push(Math.min(1, seen));
+      var remaining = 0;
+      for (var j = k; j <= nMax; j += 1) remaining += probs[j];
+      hazard.push(remaining > 0 ? probs[k] / remaining : 1);
+    }
+
     var meanExtraTr = total > 0 ? weighted / total : 0;
 
     return {
       nMax: nMax,
+      windowRungs: windowRungs,
+      capRungs: capRungs,
+      /* Which constraint actually bit, so the UI can say so rather than leaving
+       * the user to work out why their cap had no effect. */
+      limitedBy: capRungs < windowRungs ? 'cap' : 'window',
       p: prob,
       trSeconds: tr,
-      probs: weights.map(function (w) { return total > 0 ? w / total : 0; }),
+      probs: probs,
+      cumulative: cumulative,
+      hazard: hazard,
+      /* Share of trials that reach the cap, where the wait is as long as it can
+       * be and the next TR is certain. */
+      capProbability: probs.length ? probs[probs.length - 1] : 1,
       meanExtraTr: meanExtraTr,
       min: lo,
       mean: lo + meanExtraTr * tr,
@@ -479,7 +530,8 @@
     if (!jitter || jitter.mode !== 'geometric' || hi <= lo || !(phase && phase.jitter)) {
       return { min: lo, max: hi, mean: (lo + hi) / 2, geometric: null };
     }
-    var draw = truncGeometric(lo, hi, trSeconds, jitter.p);
+    var draw = truncGeometric(lo, hi, trSeconds, jitter.p,
+      jitter.truncation === 'trs' ? jitter.nMaxCap : undefined);
     return { min: lo, max: draw.effMax, mean: draw.mean, geometric: draw };
   }
 
@@ -492,9 +544,12 @@
     var profile = {
       mode: settings.mode,
       p: settings.p,
+      truncation: settings.truncation,
+      nMaxCap: settings.nMaxCap,
       trSeconds: num(trSeconds, 2),
       phases: [],
       degenerate: [],
+      cappedByLimit: [],
       meanDeltaSeconds: 0
     };
     if (settings.mode !== 'geometric') return profile;
@@ -514,17 +569,26 @@
         mean: round(draw.mean, 2),
         uniformMean: round(uniformMean, 2),
         degenerate: draw.degenerate,
+        limitedBy: draw.limitedBy,
+        windowRungs: draw.windowRungs,
+        /* Share of trials landing on the last rung, where the wait cannot grow
+         * any further and the next TR is a certainty. */
+        capProbability: draw.capProbability,
+        /* The distribution as the PDF tabulates it, one row per rung. */
         rungs: draw.probs.map(function (probability, n) {
           return {
             n: n,
             seconds: round(draw.min + n * draw.trSeconds, 2),
-            probability: probability
+            probability: probability,
+            cumulative: draw.cumulative[n],
+            hazard: draw.hazard[n]
           };
         })
       };
       profile.phases.push(entry);
       profile.meanDeltaSeconds += draw.mean - uniformMean;
       if (draw.degenerate) profile.degenerate.push(entry.name);
+      else if (draw.limitedBy === 'cap') profile.cappedByLimit.push(entry.name);
     });
     profile.meanDeltaSeconds = round(profile.meanDeltaSeconds, 2);
     return profile;
@@ -2278,6 +2342,25 @@
         }),
         ['right', 'left', 'left', 'right', 'right', 'center', 'right']
       );
+
+      /* One table per jittered phase, laid out the way the source tabulates it.
+       * `Running total` is the sampling recipe (draw a uniform and take the
+       * first rung it covers) and `P(next TR)` is what the truncation costs -
+       * flat at p until the cap, then certainty on the last rung. */
+      ((trial.jitter && trial.jitter.phases) || []).forEach(function (entry) {
+        if (entry.degenerate) return;
+        tables[trial.name + ' - phase ' + (entry.index + 1) + ', ' + entry.name
+          + ' jitter distribution'] = mdTable(
+          ['No. of TRs in delay', 'Wait (s)', 'P(delay)', 'Running total', 'P(next TR)'],
+          entry.rungs.map(function (rung) {
+            return [
+              rung.n, trim(rung.seconds, 2), round(rung.probability, 4),
+              round(rung.cumulative, 4), round(rung.hazard, 4)
+            ];
+          }),
+          ['right', 'right', 'right', 'right', 'right']
+        );
+      });
     });
 
     report.sessions.forEach(function (session) {
@@ -2555,6 +2638,11 @@
       lines.push('  jitter_distribution: geometric   # truncated; waits are whole TRs');
       lines.push(yamlSetting('jitter_p', trim(num(jitterProfile.p), 3),
         'P(delay = n TRs) = p(1-p)^n, renormalised over 0..n_max'));
+      lines.push(yamlSetting('jitter_truncation', jitterProfile.truncation,
+        jitterProfile.truncation === 'trs'
+          ? 'longest delay capped at ' + jitterProfile.nMaxCap + ' '
+            + plural(jitterProfile.nMaxCap, 'TR') + ', or the phase max'
+          : 'longest delay is whatever each phase max allows'));
     } else {
       lines.push('  jitter_distribution: uniform');
     }
@@ -2666,7 +2754,15 @@
             + caps.map(function (cap) {
               return cap.nMax + ' TR' + (cap.nMax === 1 ? '' : 's')
                 + (caps.length > 1 ? ' (' + cap.names.join(', ').toLowerCase() + ')' : '');
-            }).join(' and ') + '. ';
+            }).join(' and ')
+            /* Only credit the stated limit where it actually bit; a limit
+             * looser than every phase max did nothing, and saying otherwise
+             * would misdescribe the design. */
+            + (profile.truncation === 'trs' && profile.cappedByLimit.length
+              ? ', a limit of ' + profile.nMaxCap + ' TR'
+                + (profile.nMaxCap === 1 ? '' : 's') + ' applied across the design'
+              : ', set by each phase\u2019s own maximum')
+            + '. ';
           if (profile.degenerate.length) {
             sentence += joinList(profile.degenerate) + ' '
               + plural(profile.degenerate.length, 'was', 'were')

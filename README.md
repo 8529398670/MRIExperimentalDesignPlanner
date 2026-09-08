@@ -7,6 +7,9 @@ The tool solves one question in both directions: **how much scanner time does th
 need**, and **what design fits the scanner time I have** — while keeping every level of the
 hierarchy consistent with the acquisition parameters actually recorded on the cards.
 
+New to the tool? **[TUTORIAL.md](TUTORIAL.md)** is a step-by-step walkthrough that builds a
+costed study from scratch. This file is the reference for what every control does.
+
 ## The hierarchy
 
 Nothing in the planner is fixed in number. Every level is a named library you add to,
@@ -54,7 +57,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 | `static/js/model.js` | Design state, constraint solver, optimisers, Markdown and methods text |
 | `static/js/efficiency.js` | HRF convolution, contrast efficiency, design diagnostics |
 | `static/js/ui.js` | Control factories, figures, overview and budget panels |
-| `static/js/library.js` | The trial, run, session, experiment and HRF panels |
+| `static/js/library.js` | The trial, run, session, experiment, jitter and HRF panels |
 | `static/js/protocols.js` | Acquisition card editor |
 | `static/js/export.js` | Clipboard, Markdown, PsychoPy, workbook and zip export |
 | `scanner-parameters/*.json` | The acquisition cards, edited in place |
@@ -107,11 +110,11 @@ worst-case trial is still clean. Presets cover 1, 4, 10, 25 and 45 percent; the 
 the solved values, the residuals they deliver, and whether the trial matches the solution or
 is only a preview.
 
-## HRF model — jitter, and what counts as separated
+## HRF model — what counts as separated
 
-The **HRF model** panel is where the response itself lives, how the wait in a jittered phase
-is drawn, and where you decide what the planner treats as recovered. Everything else
-re-solves against it.
+The **HRF model** panel is where the response itself lives, and where you decide what the
+planner treats as recovered. Everything else re-solves against it. How the wait in a
+jittered phase is drawn has its own panel — see [Jitter](#jitter) below.
 
 - **Response shape** — peak delay, peak dispersion, undershoot delay, undershoot dispersion,
   the peak-to-undershoot ratio, and how far out the response is evaluated. Defaults are the
@@ -128,7 +131,23 @@ The readouts under each objective say how long a 3 s and a 4 s event take to sep
 the current definition, and which trial designs are using it. A table at the foot of the panel
 gives recovery time against tolerance for a range of event durations.
 
-### Jitter sampling
+## Jitter
+
+Which phases vary is set by the **Jitter** box on each phase, in the Trials panel. The
+**Jitter** panel decides how the varying ones are drawn, and shows the resulting
+distribution for every jittered phase in the design.
+
+### How many steps a phase has
+
+A geometric wait moves in whole TRs, so `steps = (max - min) / TR`. The count depends on the
+**width** of the window, not on how long the waits are: two phases with quite different
+timings get the same number of steps whenever their windows match. At TR 2 s a 4 s window
+buys 2 steps, 6 s buys 3, 8 s buys 4. A window narrower than one TR has nowhere to step, so
+the phase becomes a fixed wait at its minimum — the panel says so rather than shortening the
+trial silently. The panel prints both directions: the derivation per phase, and the window a
+given step count needs.
+
+### Sampling
 
 By default a jittered phase's wait is **flat** across its window, so it averages the midpoint —
 a 2–6 s fixation costs 4 s. The **Jitter sampling** card offers the alternative: a truncated
@@ -146,10 +165,34 @@ more likely next, and at the top of the window the participant knows it with cer
 geometric is the only discrete distribution where that chance stays `p` however long they have
 already waited, so it gives the participant nothing to anticipate on.
 
-There is one setting, `p`. `n_max` is **not** a setting: it is `floor((max - min) / TR)`, so
-the phase's own minimum and maximum already say where the wait floor and the truncation cap
-sit, and the run's acquisition card supplies the TR. Low `p` approaches the flat window; 0.5 is
-the textbook default; high `p` pins every wait to its minimum.
+`p` sets the shape: low `p` approaches the flat window, 0.5 is the textbook default, high `p`
+pins every wait to its minimum.
+
+**Truncation** is the second choice, and the card exposes it because it is a real trade-off
+rather than an implementation detail. An untruncated geometric puts some probability on
+arbitrarily long waits — cheap in a psychology lab, expensive in a scanner — so the
+distribution gets an upper limit. Two ways to say where it sits:
+
+| Setting | The longest delay is |
+|---|---|
+| **At the phase max** (default) | whatever each phase's own maximum already allows |
+| **At a stated number of TRs** | one limit for the whole design, applied on top of each phase's max, so it can only ever tighten |
+
+Either way `n_max` is derived, never typed twice: it is
+`min(stated limit, floor((max - min) / TR))`, with the TR coming from the run's acquisition
+card. The card says which of the two constraints actually bit.
+
+**What truncating costs is shown, not just asserted.** The distribution table's last column is
+`P(next TR)` — the chance the stimulus arrives on the next TR given the participant has already
+waited that long. Untruncated it would be flat at `p`, which is the entire reason for choosing
+a geometric; truncated it climbs as the cap approaches and reaches 1 on the last rung, where an
+ideal observer knows the stimulus is next. The **Anticipatable trials** readout is the share of
+trials that land on that rung. Tightening the cap from 2 TRs to 1 on the shipped GLM trial
+takes it from 14.3 % to 33.3 % — that is the price of guaranteeing no long delays, in a number.
+
+The `Running total` column is not decoration either: it is literally the sampling recipe. Draw
+a uniform (0, 1) and take the first rung whose running total covers it. At `p` = .5 truncated
+at 4 TRs it reads .516, .774, .903, .968, 1 — the intervals the source quotes.
 
 Two consequences worth knowing before you switch it on:
 
@@ -163,11 +206,18 @@ Two consequences worth knowing before you switch it on:
   shortening it. For the same reason a 2–7 s window at TR 2 s tops out at 6 s, and the planner
   sizes and exports the 6.
 
-The card works one phase through in full — every rung, its probability and the resulting mean —
-so the numbers can be checked against the source directly. The choice travels into the
-PsychoPy YAML as `jitter_distribution`, `jitter_p` and a per-phase `n_max`, into the methods
-text as a citable sentence, and into the workbook's phase tables as the distribution and the
-expected duration of every phase.
+### Where the distribution is shown
+
+- **Jitter panel**: every jittered phase in the design, rung by rung, grouped by trial, with
+  the step arithmetic above it.
+- **Markdown tables and the workbook**: one table per jittered phase, same columns.
+- **PsychoPy YAML**: `jitter_distribution`, `jitter_p`, `jitter_truncation` and a per-phase
+  `n_max`, which is everything needed to reproduce the exact distribution the planner sized
+  against.
+- **Methods text**: a citable sentence naming `p`, the truncation and where it came from.
+
+All of them come from one `truncGeometric()` in `static/js/model.js`, so they cannot drift
+apart.
 
 ## Run designs
 
