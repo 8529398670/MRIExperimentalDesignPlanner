@@ -1507,7 +1507,7 @@
    * asks for, by largest remainder, so the mix is preserved and the counts are
    * still whole sessions. */
   function distributeSessions(plan, total) {
-    var weights = plan.map(function (entry) { return Math.max(0, num(entry.count, 1)); });
+    var weights = plan.map(function (entry) { return Math.max(0, num(entry.requested, 1)); });
     var pool = sum(weights);
     if (!plan.length) return [];
     if (pool <= 0) {
@@ -1588,23 +1588,44 @@
       + ' whole sessions, leaving the rest of the budget unspent.');
   }
 
+  /* A locked plan is literal: its counts are restored from the plan after the
+   * caps run, so clamping it here would only produce a warning about a cut that
+   * never happens.  Take the locked sessions off the limit instead and share the
+   * reduction among the experiments the solver still owns. */
   function clampSessions(solved, limit, warnings, reason) {
     var total = sum(solved, function (entry) { return entry.sessions; });
     if (total <= limit || total <= 0) return total;
-    var scale = limit / total;
-    var exact = solved.map(function (entry) { return entry.sessions * scale; });
-    solved.forEach(function (entry, index) { entry.sessions = Math.floor(exact[index]); });
-    var spare = limit - sum(solved, function (entry) { return entry.sessions; });
+
+    var locked = sum(solved, function (entry) {
+      return entry.experiment.lockPlan ? entry.sessions : 0;
+    });
+    var free = solved.filter(function (entry) { return !entry.experiment.lockPlan; });
+    var pool = total - locked;
+    var room = Math.max(0, limit - locked);
+
+    if (!free.length || pool <= 0) {
+      warnings.push('The locked session plans alone need ' + total + ' '
+        + plural(total, 'session') + ', which is over ' + reason
+        + '. Unlock a plan or raise the cap.');
+      return total;
+    }
+
+    var scale = room / pool;
+    var exact = free.map(function (entry) { return entry.sessions * scale; });
+    free.forEach(function (entry, index) { entry.sessions = Math.floor(exact[index]); });
+    var spare = room - sum(free, function (entry) { return entry.sessions; });
     var order = exact.map(function (value, index) {
       return { index: index, frac: value - Math.floor(value) };
     }).sort(function (a, b) { return b.frac - a.frac; });
     for (var i = 0; i < order.length && spare > 0; i += 1) {
-      solved[order[i].index].sessions += 1;
+      free[order[i].index].sessions += 1;
       spare -= 1;
     }
-    warnings.push('Total sessions reduced from ' + total + ' to '
-      + sum(solved, function (entry) { return entry.sessions; }) + ' by ' + reason + '.');
-    return sum(solved, function (entry) { return entry.sessions; });
+    var now = sum(solved, function (entry) { return entry.sessions; });
+    warnings.push('Total sessions reduced from ' + total + ' to ' + now + ' by ' + reason
+      + (locked > 0 ? ', with the ' + locked + ' locked ' + plural(locked, 'session')
+        + ' left alone.' : '.'));
+    return now;
   }
 
   /* ------------------------------------------------------------- solve */
@@ -2299,7 +2320,8 @@
       );
       if (experiment.plan.length) {
         tables[experiment.name + ' - session plan'] = mdTable(
-          ['Session', 'Asked for', 'Scheduled', 'Runs each', 'Minutes each',
+          ['Session', experiment.lockPlan ? 'Sessions' : 'Mix', 'Scheduled',
+            'Runs each', 'Minutes each',
             'Trials each', experiment.unit.plural + ' each', 'Total minutes'],
           experiment.plan.map(function (row) {
             return [

@@ -66,7 +66,7 @@ WORKDIR /app
 
 # Application code is owned by root and not writable by the runtime user: the
 # process can read its own source and nothing more.
-COPY server.py ./
+COPY server.py API.md ./
 COPY planner ./planner
 COPY static ./static
 COPY templates ./templates

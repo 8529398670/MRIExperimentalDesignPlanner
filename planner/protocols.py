@@ -286,6 +286,33 @@ class ProtocolStore:
             self._backup(slug)
         os.unlink(path)
 
+    def backups(self, slug: str) -> List[Dict[str, Any]]:
+        """Snapshots of one card, newest first."""
+        prefix = f"{slug}."
+        entries = []
+        for name in sorted(os.listdir(self.backup_dir), reverse=True):
+            if name.startswith(prefix):
+                path = os.path.join(self.backup_dir, name)
+                entries.append(
+                    {
+                        "file": name,
+                        "size": os.path.getsize(path),
+                        "modified": os.path.getmtime(path),
+                    }
+                )
+        return entries
+
+    def restore(self, slug: str, filename: str) -> str:
+        """Put a snapshot back; the card as it stands is backed up first."""
+        name = re.sub(r"[^A-Za-z0-9._-]+", "-", str(filename or ""))
+        source = os.path.join(self.backup_dir, name)
+        if not name.startswith(f"{slug}.") or not os.path.exists(source):
+            raise FileNotFoundError(name)
+        with open(source, "r", encoding="utf-8") as handle:
+            data = json.load(handle, object_pairs_hook=OrderedDict)
+        self.save(slug, data)
+        return name
+
     # -------------------------------------------------------------- internal
 
     def _free_slug(self, slug: str) -> str:
@@ -319,6 +346,32 @@ class ProtocolStore:
 
 
 # ------------------------------------------------------------------ helpers
+
+
+def apply_values(
+    data: Dict[str, Any], updates: Dict[str, Any], first_only: bool = False
+) -> "tuple[Dict[str, str], List[str]]":
+    """Write parameter values into a card by name, ignoring case.
+
+    Returns ``(applied, missing)``.  ``first_only`` writes only the first row
+    of each name in console order - the row every lookup reads - so repeated
+    sub-rows such as the several ``AP (mm)`` entries are left alone.
+    """
+    lowered = {str(k).strip().lower(): (k, v) for k, v in updates.items()}
+    applied: Dict[str, str] = {}
+    seen = set()
+    for section, rows in data.items():
+        if str(section).startswith("_") or not isinstance(rows, list):
+            continue
+        for row in rows:
+            key = str(row.get("parameter", "")).strip().lower()
+            if key not in lowered or (first_only and key in seen):
+                continue
+            seen.add(key)
+            row["value"] = str(lowered[key][1])
+            applied[row["parameter"]] = row["value"]
+    missing = [original for key, (original, _v) in lowered.items() if key not in seen]
+    return applied, missing
 
 
 def validate(payload: Any) -> None:

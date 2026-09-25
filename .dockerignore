@@ -24,4 +24,5 @@ dockerRun.sh
 # Notes and generated documents
 *.md
 !README.md
+!API.md
 prompt.txt

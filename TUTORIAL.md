@@ -40,6 +40,8 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ```
 
 Your work autosaves to `presets/current.json` as you go. You do not need to press save.
+Designs you save under a name open at their own link, `/designs/<name>`, which you can send
+to someone: see [Where things live](#6-where-things-live).
 
 ---
 
@@ -290,10 +292,14 @@ ordering are the presentation software's job. If two trial types genuinely diffe
 
 | Path | What |
 |---|---|
-| `presets/current.json` | Your autosaved working design |
-| `presets/*.json` | Named designs you saved |
+| `presets/current.json` | Your autosaved working design, at `/` |
+| `presets/*.json` | Named designs you saved, each at `/designs/<name>` |
 | `scanner-parameters/*.json` | Acquisition cards |
 | `scanner-parameters/.backups/` | Timestamped snapshot before every card save |
 | `exports/` | Every workbook and zip you generated |
+
+To share a saved design, send its link: **Copy link** in the masthead, or next to it in
+**Report and export → Saved designs**. Whoever opens it is working on that design, and their
+changes save to it; save a copy under a new name first if you want a version kept as it is.
 
 To reload an old design: **Report and export → Saved designs → Import JSON file**.

@@ -1,7 +1,8 @@
 """MRI Experimental Design Planner - production HTTP server.
 
 Serves the planner UI and a small JSON API over the acquisition parameter
-cards, saved designs, the XLSX report generator and the full-export zip.
+cards, saved designs, the XLSX report generator and the full-export zip, plus
+the agent-facing design API under /api/v1 (see API.md).
 Run with::
 
     ./run.sh                      # waitress, 0.0.0.0:8760
@@ -13,22 +14,34 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import hashlib
 import json
 import os
 import re
 import sys
-import tempfile
 from datetime import datetime
 from typing import Any, Dict
 
-from flask import Flask, Response, jsonify, render_template, request, send_from_directory
+from flask import (
+    Flask,
+    Response,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_from_directory,
+)
 
+from planner.api import create_blueprint, render_docs
 from planner.bundle import build_bundle
+from planner.designs import DesignConflict, DesignStore, clean_name, page_path
+from planner.engine import Engine
 from planner.protocols import (
     ROLE_LABELS,
     ROLES,
     ProtocolError,
     ProtocolStore,
+    apply_values,
     find_value,
     headline_values,
     meta_of,
@@ -54,10 +67,13 @@ app.config["MAX_CONTENT_LENGTH"] = MAX_PAYLOAD_BYTES
 app.json.sort_keys = False  # card pages must keep console order
 
 store = ProtocolStore(PROTOCOL_DIR)
+designs = DesignStore(PRESET_DIR)
 
 SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 
 STATIC_DIR = os.path.join(BASE_DIR, "static")
+API_DOCS = os.path.join(BASE_DIR, "API.md")
+engine = Engine(STATIC_DIR)
 COMPRESSIBLE_TYPES = {
     "application/javascript",
     "application/json",
@@ -86,25 +102,10 @@ def asset_url(path: str) -> str:
 app.jinja_env.globals["asset"] = asset_url
 
 
-def _page(name: str) -> Response:
-    return Response(render_template(name), mimetype="text/html; charset=utf-8")
-
-
-def _preset_path(name: str) -> str:
-    clean = SAFE_NAME.sub("-", (name or "").strip())[:80] or "untitled"
-    return os.path.join(PRESET_DIR, f"{clean}.json")
-
-
-def _write_json(path: str, payload: Any) -> None:
-    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, indent=2, ensure_ascii=False)
-            handle.write("\n")
-        os.replace(tmp, path)
-    finally:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
+def _page(name: str, status: int = 200, **context: Any) -> Response:
+    return Response(
+        render_template(name, **context), status=status, mimetype="text/html; charset=utf-8"
+    )
 
 
 def _body() -> Dict[str, Any]:
@@ -128,12 +129,52 @@ def _acquisition_summary(protocols: Dict[str, Any]) -> Dict[str, Any]:
     return summary
 
 
+def _boot() -> Dict[str, Any]:
+    """What the solver needs to know about the cards, as the page gets it."""
+    protocols = store.load_all()
+    return {
+        "manifest": store.manifest(),
+        "protocols": protocols,
+        "acquisition": _acquisition_summary(protocols),
+        "roles": ROLES,
+        "roleLabels": ROLE_LABELS,
+    }
+
+
+def _cards_rev() -> str:
+    """Changes whenever a card file is added, removed or saved."""
+    parts = []
+    for slug in store.slugs():
+        try:
+            parts.append(f"{slug}:{os.path.getmtime(store.path_for(slug))}")
+        except (OSError, ProtocolError):
+            continue
+    return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:12]
+
+
 # ------------------------------------------------------------------- pages
 
 
 @app.route("/")
 def index() -> Response:
-    return _page("index.html")
+    return _page("index.html", design="current")
+
+
+@app.route("/designs/<name>")
+@app.route("/designs/<name>/")
+def design_page(name: str) -> Response:
+    """A saved design's own address: the interface, working on that design.
+
+    Anything that is not the canonical spelling - a trailing slash, a name
+    with characters the store replaces, ``current`` - is redirected to it, so
+    the address bar always shows the link worth sharing.  An unknown name
+    still gets the page, which says so and lists the designs that exist.
+    """
+    target = page_path(name)
+    if request.path != target:
+        return redirect(target)
+    status = 200 if designs.exists(name) else 404
+    return _page("index.html", status=status, design=clean_name(name))
 
 
 @app.route("/favicon.ico")
@@ -158,25 +199,32 @@ def health() -> Response:
 
 @app.get("/api/bootstrap")
 def bootstrap() -> Response:
-    """Everything the client needs on first paint, in one round trip."""
-    protocols = store.load_all()
-    current = None
-    current_path = _preset_path("current")
-    if os.path.exists(current_path):
-        try:
-            with open(current_path, "r", encoding="utf-8") as handle:
-                current = json.load(handle)
-        except (OSError, json.JSONDecodeError):
-            current = None
+    """Everything the client needs on first paint, in one round trip.
+
+    ``?design=<name>`` is the design the page opens on, by default the working
+    design.  The working design starts from the defaults when its file is
+    missing or unreadable; any other design reports ``designError`` instead,
+    and the page stops there rather than autosaving over it.
+    """
+    name = clean_name(request.args.get("design") or "current")
+    design, rev, error = None, None, None
+    try:
+        design, rev = designs.read(name)
+    except FileNotFoundError:
+        if name != "current":
+            error = f"No saved design named {name}."
+    except (OSError, ValueError) as exc:
+        if name != "current":
+            error = f"The saved design {name} could not be read: {exc}"
     return jsonify(
         {
-            "manifest": store.manifest(),
-            "protocols": protocols,
-            "acquisition": _acquisition_summary(protocols),
-            "roles": ROLES,
-            "roleLabels": ROLE_LABELS,
-            "design": current,
-            "presets": _preset_list(),
+            **_boot(),
+            "design": design,
+            "designName": name,
+            "designRev": rev,
+            "designError": error,
+            "cardsRev": _cards_rev(),
+            "presets": designs.list(),
             "generated": datetime.now().isoformat(timespec="seconds"),
         }
     )
@@ -297,31 +345,16 @@ def delete_protocol(slug: str) -> Response:
 
 @app.get("/api/protocols/<slug>/backups")
 def list_backups(slug: str) -> Response:
-    prefix = f"{slug}."
-    entries = []
-    for name in sorted(os.listdir(store.backup_dir), reverse=True):
-        if name.startswith(prefix):
-            path = os.path.join(store.backup_dir, name)
-            entries.append(
-                {
-                    "file": name,
-                    "size": os.path.getsize(path),
-                    "modified": os.path.getmtime(path),
-                }
-            )
-    return jsonify({"slug": slug, "backups": entries})
+    return jsonify({"slug": slug, "backups": store.backups(slug)})
 
 
 @app.post("/api/protocols/<slug>/restore")
 def restore_backup(slug: str) -> Response:
     payload = _body()
-    name = SAFE_NAME.sub("-", str(payload.get("file", "")))
-    source = os.path.join(store.backup_dir, name)
-    if not name.startswith(f"{slug}.") or not os.path.exists(source):
+    try:
+        name = store.restore(slug, payload.get("file", ""))
+    except FileNotFoundError:
         return jsonify({"error": "Backup not found."}), 404
-    with open(source, "r", encoding="utf-8") as handle:
-        data = json.load(handle)
-    store.save(slug, data)
     return _card_response(slug, {"restored": name})
 
 
@@ -342,16 +375,7 @@ def apply_derived() -> Response:
     except (FileNotFoundError, ProtocolError):
         return jsonify({"error": f"Unknown card {slug}"}), 404
 
-    lowered = {str(k).strip().lower(): v for k, v in updates.items()}
-    applied = {}
-    for section, rows in data.items():
-        if str(section).startswith("_") or not isinstance(rows, list):
-            continue
-        for row in rows:
-            key = str(row.get("parameter", "")).strip().lower()
-            if key in lowered:
-                row["value"] = str(lowered[key])
-                applied[row["parameter"]] = row["value"]
+    applied, _missing = apply_values(data, updates)
     store.save(slug, data)
     return _card_response(slug, {"applied": applied})
 
@@ -359,65 +383,56 @@ def apply_derived() -> Response:
 # ------------------------------------------------------------------ design
 
 
-def _preset_list():
-    entries = []
-    for name in sorted(os.listdir(PRESET_DIR)):
-        if not name.endswith(".json"):
-            continue
-        path = os.path.join(PRESET_DIR, name)
-        label = os.path.splitext(name)[0]
-        title = label
-        try:
-            with open(path, "r", encoding="utf-8") as handle:
-                blob = json.load(handle)
-            title = (blob.get("meta") or {}).get("studyTitle") or label
-        except (OSError, json.JSONDecodeError):
-            pass
-        entries.append(
-            {
-                "name": label,
-                "title": title,
-                "modified": os.path.getmtime(path),
-            }
-        )
-    return entries
-
-
 @app.get("/api/design")
 def get_design() -> Response:
     name = request.args.get("name", "current")
-    path = _preset_path(name)
-    if not os.path.exists(path):
+    try:
+        design, rev = designs.read(name)
+    except FileNotFoundError:
         return jsonify({"error": f"No saved design named {name}."}), 404
-    with open(path, "r", encoding="utf-8") as handle:
-        return jsonify({"name": name, "design": json.load(handle)})
+    return jsonify({"name": name, "design": design, "rev": rev})
+
+
+@app.get("/api/design/rev")
+def design_rev() -> Response:
+    """Cheap enough to poll: lets an open page notice the API changed its design."""
+    name = request.args.get("name", "current")
+    return jsonify({"name": clean_name(name), "rev": designs.rev(name), "cardsRev": _cards_rev()})
 
 
 @app.post("/api/design")
 def post_design() -> Response:
+    """Save a design.  With ``baseRev``, refuse (409) if the stored copy has
+    moved on since - the page sends it, so an autosave cannot silently undo a
+    change the API made in the meantime."""
     payload = _body()
     name = payload.get("name", "current")
     design = payload.get("design")
     if not isinstance(design, dict):
         return jsonify({"error": "design must be an object."}), 400
-    _write_json(_preset_path(name), design)
+    try:
+        rev = designs.write(name, design, base_rev=payload.get("baseRev"))
+    except DesignConflict:
+        stored, rev = designs.read(name)
+        return jsonify(
+            {"error": "The design was changed elsewhere.", "rev": rev, "design": stored}
+        ), 409
     return jsonify(
         {
-            "name": name,
+            "name": clean_name(name),
+            "rev": rev,
             "savedAt": datetime.now().isoformat(timespec="seconds"),
-            "presets": _preset_list(),
+            "presets": designs.list(),
         }
     )
 
 
 @app.delete("/api/design/<name>")
 def delete_design(name: str) -> Response:
-    path = _preset_path(name)
     if name == "current":
         return jsonify({"error": "The working design cannot be deleted."}), 400
-    if os.path.exists(path):
-        os.unlink(path)
-    return jsonify({"deleted": name, "presets": _preset_list()})
+    designs.delete(name)
+    return jsonify({"deleted": name, "presets": designs.list()})
 
 
 # ------------------------------------------------------------------ export
@@ -492,9 +507,29 @@ def export_json() -> Response:
     )
 
 
+app.register_blueprint(
+    create_blueprint(
+        store=store,
+        designs=designs,
+        engine=engine,
+        boot=_boot,
+        export_dir=EXPORT_DIR,
+        docs_path=API_DOCS,
+    )
+)
+
+
 @app.errorhandler(ProtocolError)
 def handle_protocol_error(exc: ProtocolError) -> Response:
     return jsonify({"error": str(exc)}), 400
+
+
+@app.errorhandler(500)
+def handle_500(exc) -> Response:
+    if request.path.startswith("/api/"):
+        original = getattr(exc, "original_exception", None) or exc
+        return jsonify({"ok": False, "error": f"Server error: {original}"}), 500
+    return Response("Internal server error", status=500, mimetype="text/plain")
 
 
 @app.errorhandler(404)
@@ -560,7 +595,19 @@ def main() -> int:
     )
     parser.add_argument("--threads", type=int, default=8)
     parser.add_argument("--debug", action="store_true", help="Flask reloader (development)")
+    parser.add_argument(
+        "--write-api-docs", action="store_true",
+        help="Regenerate the action reference in API.md from static/js/api.js and exit",
+    )
     args = parser.parse_args()
+
+    if args.write_api_docs:
+        with open(API_DOCS, "r", encoding="utf-8") as handle:
+            template = handle.read()
+        with open(API_DOCS, "w", encoding="utf-8") as handle:
+            handle.write(render_docs(template, engine.catalogue()))
+        print(f"  wrote {API_DOCS}")
+        return 0
 
     banner = (
         f"\n  MRI Experimental Design Planner\n"
@@ -569,6 +616,7 @@ def main() -> int:
         f"  acquisition cards : {PROTOCOL_DIR} ({len(store.slugs())} files)\n"
         f"  presets           : {PRESET_DIR}\n"
         f"  exports           : {EXPORT_DIR}\n"
+        f"  agent API         : /api/v1 ({'ready' if engine.available else 'needs the quickjs package'})\n"
         f"  listening on      : http://{args.host}:{args.port}\n"
     )
     print(banner, flush=True)

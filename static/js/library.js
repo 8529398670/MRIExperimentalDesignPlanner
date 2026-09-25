@@ -19,11 +19,22 @@
    * editor for whichever item is selected. */
   function libraryPanel(spec) {
     var owner = spec.id + '-editor';
-    var local = { selected: null };
+    /* Held on App rather than here: adopting a new state rebuilds every panel,
+     * and the editor should come back on the item it was showing. */
+    if (!App.selection) App.selection = {};
+    if (!App.selection[spec.id]) App.selection[spec.id] = { selected: null };
+    var local = App.selection[spec.id];
     var listHost = App.h('div', { class: 'proto-list' });
     var editorHost = App.h('div', {});
 
     function items() { return spec.items(App.state) || []; }
+
+    /* The arguments that name this item to its level's actions. */
+    function itemArgs(item, extra) {
+      var args = Object.assign({}, extra || {});
+      args[spec.kind] = item.id;
+      return args;
+    }
 
     function current() {
       var list = items();
@@ -69,26 +80,23 @@
 
         var tools = App.h('div', { class: 'proto-tools' }, [
           App.iconButton('↑', 'Move up', function () {
-            if (M.Library.move(items(), item.id, -1)) App.refresh();
+            if (index > 0) App.act(spec.kind + '.move', itemArgs(item, { delta: -1 }));
             renderList();
           }),
           App.iconButton('↓', 'Move down', function () {
-            if (M.Library.move(items(), item.id, 1)) App.refresh();
+            if (index < list.length - 1) App.act(spec.kind + '.move', itemArgs(item, { delta: 1 }));
             renderList();
           }),
           App.iconButton('Duplicate', 'Copy this ' + spec.noun, function () {
-            var copy = spec.duplicate(App.state, item.id);
+            var copy = App.act(spec.kind + '.duplicate', itemArgs(item));
             if (copy) {
-              App.refresh();
               select(copy.id);
               App.toast('Duplicated as "' + copy.name + '"', 'ok');
             }
           }),
           App.iconButton('Delete', 'Remove this ' + spec.noun, function () {
-            var error = spec.remove(App.state, item.id);
-            if (error) { App.toast(error, 'bad'); return; }
+            if (!App.act(spec.kind + '.remove', itemArgs(item))) return;
             if (local.selected === item.id) local.selected = null;
-            App.refresh();
             renderList();
             renderEditor();
             App.toast('Deleted "' + item.name + '"');
@@ -117,9 +125,8 @@
     var addButton = App.h('button', {
       class: 'btn sm', type: 'button', text: 'Add ' + spec.noun,
       onclick: function () {
-        var created = spec.add(App.state);
+        var created = App.act(spec.kind + '.add');
         if (!created) return;
-        App.refresh();
         select(created.id);
         App.toast('Added "' + created.name + '"', 'ok');
       }
@@ -213,15 +220,13 @@
   function buildTrials() {
     return libraryPanel({
       id: 'trials',
+      kind: 'trial',
       noun: 'trial design',
       title: 'Trial designs',
       blurb: 'What one trial looks like, second by second. A trial design is a list of '
         + 'phases; run designs point at it, so editing here changes every run that uses it.',
       listTitle: 'Trial designs',
       items: function (state) { return state.trials; },
-      add: function (state) { return M.Library.addTrial(state); },
-      duplicate: function (state, id) { return M.Library.duplicateTrial(state, id); },
-      remove: function (state, id) { return M.Library.removeTrial(state, id); },
       meta: function (trial) {
         var timing = M.trialTiming(trial, M.representativeTr(App.state, App.boot, trial),
           M.jitterSettings(App.state));
@@ -249,10 +254,10 @@
         hint: 'What this trial design is trying to buy',
         options: objectives,
         get: function () { return trial.objective; },
-        set: function (value) { trial.objective = value; },
-        onChange: function () {
-          App.adopt(M.applyObjectiveDefaults(App.state, trial.id));
-          App.toast('Adopted the timing this objective implies', 'ok');
+        set: function (value) {
+          if (App.write('trial.setObjective', { trial: trial.id, objective: value })) {
+            App.toast('Adopted the timing this objective implies', 'ok');
+          }
         }
       }),
       App.h('div', { class: 'notice', text: M.objectiveDef(App.state, trial.objective).blurb })
@@ -260,6 +265,13 @@
 
     /* --- phases -------------------------------------------------------- */
     var phaseHost = App.h('div', {});
+
+    /* A cell edit is phase.update, like any other caller; the input's own
+     * commit refreshes afterwards. */
+    function editPhase(index, fields) {
+      App.write('phase.update', Object.assign({ trial: trial.id, phase: index }, fields));
+    }
+
     function renderPhases() {
       App.clear(phaseHost);
       var rows = trial.phases.map(function (phase, index) {
@@ -267,32 +279,30 @@
           { text: String(index + 1), num: true },
           { html: '', node: textInput(
             function () { return phase.name; },
-            function (value) { phase.name = value || 'Phase'; }
+            function (value) { editPhase(index, { name: String(value || '').trim() || 'Phase' }); }
           ), copy: phase.name },
           { node: selectInput(
             function () { return M.normaliseRole(phase.role); },
-            function (value) { phase.role = value; },
+            function (value) { editPhase(index, { role: value }); },
             M.PHASE_ROLES.map(function (role) {
               return { value: role.id, label: role.label };
             })
           ), copy: M.normaliseRole(phase.role) },
           { node: numberInput(
             function () { return H.round(H.num(phase.min), 2); },
-            function (value) {
-              phase.min = Math.max(0, value);
-              if (phase.max < phase.min) phase.max = phase.min;
-            }, { min: 0, step: 0.5 }
+            function (value) { editPhase(index, { min: Math.max(0, value) }); },
+            { min: 0, step: 0.5 }
           ), num: true, copy: H.trim(phase.min, 1) },
           { node: numberInput(
             function () { return H.round(H.num(phase.max), 2); },
-            function (value) { phase.max = Math.max(H.num(phase.min), value); },
+            function (value) { editPhase(index, { max: Math.max(0, value) }); },
             { min: 0, step: 0.5 }
           ), num: true, copy: H.trim(phase.max, 1) },
           { node: (function () {
             var box = App.h('input', { type: 'checkbox' });
             box.checked = !!phase.jitter;
             box.addEventListener('change', function () {
-              phase.jitter = box.checked;
+              editPhase(index, { jitter: box.checked });
               App.refresh();
             });
             return box;
@@ -300,26 +310,16 @@
           { node: App.h('div', { class: 'btn-row tight' }, [
             App.iconButton('↑', 'Move up', function () {
               if (index === 0) return;
-              var moved = trial.phases.splice(index, 1)[0];
-              trial.phases.splice(index - 1, 0, moved);
+              App.act('phase.move', { trial: trial.id, phase: index, delta: -1 });
               renderPhases();
-              App.refresh();
             }),
             App.iconButton('↓', 'Move down', function () {
               if (index >= trial.phases.length - 1) return;
-              var moved = trial.phases.splice(index, 1)[0];
-              trial.phases.splice(index + 1, 0, moved);
+              App.act('phase.move', { trial: trial.id, phase: index, delta: 1 });
               renderPhases();
-              App.refresh();
             }),
             App.iconButton('×', 'Remove this phase', function () {
-              if (trial.phases.length <= 1) {
-                App.toast('A trial needs at least one phase.', 'bad');
-                return;
-              }
-              trial.phases.splice(index, 1);
-              renderPhases();
-              App.refresh();
+              if (App.act('phase.remove', { trial: trial.id, phase: index })) renderPhases();
             }, 'danger')
           ]), copy: '' }
         ];
@@ -354,24 +354,21 @@
       phaseHost.appendChild(table);
       phaseHost.appendChild(App.h('div', { class: 'btn-row mt' }, [
         App.iconButton('Add phase', 'Append a phase to the trial', function () {
-          trial.phases.push({
-            name: 'Phase ' + (trial.phases.length + 1), role: 'baseline',
-            min: 2, max: 2, jitter: false
-          });
-          renderPhases();
-          App.refresh();
+          if (App.act('phase.add', { trial: trial.id })) renderPhases();
         }, ''),
         App.iconButton('Reset to the objective default',
           'Replace the phases with the recommended timing for this objective', function () {
-            App.adopt(M.applyRecommendedTiming(App.state, trial.id));
-            App.toast('Recommended timing applied', 'ok');
+            if (App.act('trial.resetTiming', { trial: trial.id })) {
+              App.toast('Recommended timing applied', 'ok');
+            }
           }),
         App.iconButton('Optimise delay and tail',
           'Search the delay and post-response fixation for this objective', function () {
             App.toast('Searching the timing grid…');
             setTimeout(function () {
-              App.adopt(M.optimiseTiming(App.state, App.boot, trial.id, 'auto'));
-              App.toast('Timing optimised for the objective', 'ok');
+              if (App.act('trial.optimiseTiming', { trial: trial.id })) {
+                App.toast('Timing optimised for the objective', 'ok');
+              }
             }, 30);
           })
       ]));
@@ -574,9 +571,9 @@
 
     var presets = App.h('div', { class: 'btn-row' }, [1, 4, 10, 25, 45].map(function (value) {
       return App.iconButton(value + ' %', 'Solve at a ' + value + '% residual', function () {
-        App.adopt(M.applySeparationTiming(App.state, trial.id, value,
-          M.representativeTr(App.state, App.boot, trial)));
-        App.toast('Timing solved at a ' + value + '% residual', 'ok');
+        if (App.act('trial.solveSeparation', { trial: trial.id, tolerancePct: value })) {
+          App.toast('Timing solved at a ' + value + '% residual', 'ok');
+        }
       });
     }));
 
@@ -590,10 +587,9 @@
           App.h('button', {
             class: 'btn gold sm', type: 'button', text: 'Apply this solution',
             onclick: function () {
-              App.adopt(M.applySeparationTiming(App.state, trial.id,
-                H.num(trial.separationTolerancePct, 4),
-                M.representativeTr(App.state, App.boot, trial)));
-              App.toast('Solved timing written into the trial', 'ok');
+              if (App.act('trial.solveSeparation', { trial: trial.id })) {
+                App.toast('Solved timing written into the trial', 'ok');
+              }
             }
           })
         ])
@@ -605,20 +601,13 @@
   function buildRuns() {
     return libraryPanel({
       id: 'runs',
+      kind: 'run',
       noun: 'run design',
       title: 'Run designs',
       blurb: 'A trial design laid out into blocks and bound to an acquisition card. '
         + 'A run is what the scanner and the presentation computer actually execute.',
       listTitle: 'Run designs',
       items: function (state) { return state.runs; },
-      add: function (state) {
-        var card = (App.boot.manifest || []).filter(function (entry) {
-          return entry.role === 'functional';
-        })[0];
-        return M.Library.addRun(state, (state.trials[0] || {}).id, card ? card.slug : null);
-      },
-      duplicate: function (state, id) { return M.Library.duplicateRun(state, id); },
-      remove: function (state, id) { return M.Library.removeRun(state, id); },
       meta: function (run) {
         var trial = M.trialById(App.state, run.trial);
         var ctx = M.protocolContext(App.boot, run.protocol);
@@ -696,8 +685,9 @@
           'Search the block structure for this trial design\'s objective', function () {
             App.toast('Searching the structure grid…');
             setTimeout(function () {
-              App.adopt(M.optimiseStructure(App.state, App.boot, run.id, 'auto'));
-              App.toast('Run structure optimised', 'ok');
+              if (App.act('run.optimiseStructure', { run: run.id })) {
+                App.toast('Run structure optimised', 'ok');
+              }
             }, 30);
           })
       ])
@@ -818,6 +808,7 @@
   function buildSessions() {
     return libraryPanel({
       id: 'sessions',
+      kind: 'session',
       noun: 'session',
       title: 'Sessions',
       blurb: 'A named session: one ordered list of setup steps, structural and reference '
@@ -825,11 +816,6 @@
         + 'block off, and the session solves in the order you leave it. Experiments combine these.',
       listTitle: 'Session library',
       items: function (state) { return state.sessions; },
-      add: function (state) {
-        return M.Library.addSession(state, (state.runs[0] || {}).id);
-      },
-      duplicate: function (state, id) { return M.Library.duplicateSession(state, id); },
-      remove: function (state, id) { return M.Library.removeSession(state, id); },
       meta: function (session) {
         var record = App.report && App.report.sessions.filter(function (item) {
           return item.id === session.id;
@@ -906,12 +892,16 @@
       }
     }
 
+    /* Buttons run block and session actions, then redraw the list. */
+    function runAction(name, args) {
+      var done = App.act(name, Object.assign({ session: sessionId }, args || {}));
+      render();
+      return done;
+    }
+
     function move(from, to) {
-      var list = blocks();
-      if (from === to || from < 0 || from >= list.length) return;
-      var moved = list.splice(from, 1)[0];
-      list.splice(Math.max(0, Math.min(list.length, to)), 0, moved);
-      commit();
+      if (from === to || from < 0 || from >= blocks().length) return;
+      runAction('block.move', { block: from, to: to });
     }
 
     function blockMinutes(block) {
@@ -1057,21 +1047,13 @@
         }),
         App.iconButton('↓', 'Move later in the session', function () {
           var here = indexOf(block.id);
-          if (here >= 0 && here < blocks().length - 1) move(here, here + 2);
+          if (here >= 0 && here < blocks().length - 1) move(here, here + 1);
         }),
         App.iconButton('⧉', 'Duplicate this block', function () {
-          var here = indexOf(block.id);
-          if (here < 0) return;
-          var copy = H.deepCopy(blocks()[here]);
-          copy.id = M.makeId('blk');
-          blocks().splice(here + 1, 0, copy);
-          commit();
+          if (indexOf(block.id) >= 0) runAction('block.duplicate', { block: block.id });
         }),
         App.iconButton('×', 'Remove this block', function () {
-          var here = indexOf(block.id);
-          if (here < 0) return;
-          blocks().splice(here, 1);
-          commit();
+          if (indexOf(block.id) >= 0) runAction('block.remove', { block: block.id });
         }, 'danger')
       ]));
       return node;
@@ -1160,23 +1142,7 @@
      * aim at rather than the bottom edge of the final row. */
     var tail = App.h('div', { class: 'seq-tail', text: 'Drop here to run last' });
 
-    function addBlock(kind) {
-      var extra = {};
-      if (kind === 'structural') {
-        var cards = cardOptions();
-        if (!cards.length) { App.toast('No acquisition cards to add.', 'bad'); return; }
-        extra.protocol = cards[0].value;
-      }
-      if (kind === 'run') {
-        if (!App.state.runs.length) {
-          App.toast('Build a run design first, in the Runs panel.', 'bad');
-          return;
-        }
-        extra.run = App.state.runs[0].id;
-      }
-      blocks().push(M.makeBlock(kind, extra));
-      commit();
-    }
+    function addBlock(kind) { runAction('block.add', { kind: kind }); }
 
     var adders = App.h('div', { class: 'btn-row mt' }, [
       App.iconButton('+ Setup step', 'Append a non-scan step', function () { addBlock('prep'); }),
@@ -1186,12 +1152,7 @@
       App.iconButton('+ Break', 'Append a break you place yourself',
         function () { addBlock('break'); }),
       App.iconButton('Reset to the default order', 'Setup, then structurals, then runs',
-        function () {
-          var list = blocks();
-          var rank = { prep: 0, structural: 1, run: 2, break: 3 };
-          list.sort(function (a, b) { return rank[a.kind] - rank[b.kind]; });
-          commit();
-        })
+        function () { runAction('session.resetOrder'); })
     ]);
 
     function render() {
@@ -1312,6 +1273,7 @@
   function buildExperiments() {
     return libraryPanel({
       id: 'experiments',
+      kind: 'experiment',
       noun: 'experiment',
       title: 'Experiments',
       blurb: 'Sessions combined into an experiment, and experiments combined into one '
@@ -1320,11 +1282,6 @@
       listTitle: 'Experiments',
       items: function (state) { return state.experiments; },
       colour: function (item) { return App.experimentColour(item.id); },
-      add: function (state) {
-        return M.Library.addExperiment(state, (state.sessions[0] || {}).id);
-      },
-      duplicate: function (state, id) { return M.Library.duplicateExperiment(state, id); },
-      remove: function (state, id) { return M.Library.removeExperiment(state, id); },
       meta: function (experiment) {
         var record = App.report && App.report.experiments.filter(function (item) {
           return item.id === experiment.id;
@@ -1351,9 +1308,8 @@
       App.checkbox({
         owner: owner, label: 'Include this experiment in the budget',
         get: function () { return experiment.enabled !== false; },
-        set: function (value, state) {
-          experiment.enabled = value;
-          M.normaliseAllocation(state, null);
+        set: function (value) {
+          App.write('experiment.update', { experiment: experiment.id, enabled: value });
         }
       })
     ]));
@@ -1409,32 +1365,29 @@
         owner: owner, label: 'Share of scanner time', min: 0, max: 100, step: 0.5,
         decimals: 1, unit: '%',
         get: function () { return H.num(experiment.requestedPct); },
-        set: function (value, state) {
-          experiment.requestedPct = H.clamp(value, 0, 100);
-          M.normaliseAllocation(state, experiment.id);
+        set: function (value) {
+          App.write('experiment.update', {
+            experiment: experiment.id, requestedPct: H.clamp(value, 0, 100)
+          });
         },
         disabledWhen: function () { return !!experiment.locked; }
       }),
       App.checkbox({
         owner: owner, label: 'Lock this share while the others redistribute',
         get: function () { return !!experiment.locked; },
-        set: function (value) { experiment.locked = value; }
+        set: function (value) {
+          App.write('allocation.lock', { experiment: experiment.id, locked: value });
+        }
       }),
       App.slider({
-        owner: owner, label: 'Sessions (session-count mode)', min: 0, max: 400, step: 1,
+        owner: owner, label: 'Total sessions (session-count mode)', min: 0, max: 400, step: 1,
         unit: 'sess',
+        hint: 'One total, split across the session plan by the mix column below',
         get: function () { return H.num(experiment.manualSessions); },
         set: function (value) { experiment.manualSessions = Math.max(0, Math.round(value)); },
         disabledWhen: function (state) {
           return state.budget.solveMode !== 'manual' || !!experiment.lockPlan;
         }
-      }),
-      App.checkbox({
-        owner: owner,
-        label: 'Run the plan exactly as written, whatever the budget says',
-        hint: 'The counts below become literal instead of a mix the solver scales',
-        get: function () { return !!experiment.lockPlan; },
-        set: function (value) { experiment.lockPlan = value; }
       })
     ]));
 
@@ -1480,22 +1433,17 @@
             { node: App.h('div', { class: 'btn-row tight' }, [
               App.iconButton('↑', 'Move up', function () {
                 if (index === 0) return;
-                var moved = experiment.plan.splice(index, 1)[0];
-                experiment.plan.splice(index - 1, 0, moved);
+                App.act('plan.move', { experiment: experiment.id, row: index, delta: -1 });
                 renderPlan();
-                App.refresh();
               }),
               App.iconButton('↓', 'Move down', function () {
                 if (index >= experiment.plan.length - 1) return;
-                var moved = experiment.plan.splice(index, 1)[0];
-                experiment.plan.splice(index + 1, 0, moved);
+                App.act('plan.move', { experiment: experiment.id, row: index, delta: 1 });
                 renderPlan();
-                App.refresh();
               }),
               App.iconButton('×', 'Remove from the plan', function () {
-                experiment.plan.splice(index, 1);
+                App.act('plan.remove', { experiment: experiment.id, row: index });
                 renderPlan();
-                App.refresh();
               }, 'danger')
             ]), copy: '' }
           ]
@@ -1503,7 +1451,8 @@
       });
 
       var table = App.dataTable(
-        [{ label: 'Session' }, { label: 'Asked for', num: true },
+        [{ label: 'Session' },
+          { label: experiment.lockPlan ? 'Sessions' : 'Mix', num: true },
           { label: 'Scheduled', num: true }, { label: 'Minutes each', num: true },
           { label: M.unitOf(experiment).plural + ' each', num: true },
           { label: 'Total ' + M.unitOf(experiment).plural, num: true },
@@ -1531,9 +1480,11 @@
       planHost.appendChild(App.h('div', {
         class: 'notice mt',
         text: experiment.lockPlan
-          ? 'The plan is locked, so "asked for" is what runs, whatever the budget says.'
+          ? 'Session counts are set by hand: each number above is how many of that session '
+            + 'run, whatever the budget says.'
           : 'The counts are a mix, not a total: the solver buys as many whole sessions as the '
-            + 'budget or the goal allows and splits them in this ratio.'
+            + 'budget or the goal allows and splits them in this ratio. Tick the box above to '
+            + 'type the session counts yourself instead.'
       }));
 
       var picker = App.h('select', {});
@@ -1544,16 +1495,28 @@
         picker,
         App.iconButton('Add session to the plan', 'Append a session', function () {
           if (!picker.value) return;
-          experiment.plan.push({ session: picker.value, count: 1 });
+          App.act('plan.add', { experiment: experiment.id, session: picker.value });
           renderPlan();
-          App.refresh();
         })
       ]));
     }
     renderPlan();
     App.registerView(function () { renderPlan(); }, owner);
 
-    host.appendChild(App.card('Session plan', 'Which sessions this experiment runs', [planHost]));
+    /* Built once, outside renderPlan, so the redraws renderPlan does on every
+     * refresh do not stack up another registered control each time.  Toggling
+     * it redraws the table through that same view. */
+    var directCounts = App.checkbox({
+      owner: owner,
+      label: 'Set the session counts here by hand',
+      hint: 'The solver stops sizing this experiment: the number you type on each row is '
+        + 'how many of that session run',
+      get: function () { return !!experiment.lockPlan; },
+      set: function (value) { experiment.lockPlan = value; }
+    });
+
+    host.appendChild(App.card('Session plan', 'Which sessions this experiment runs',
+      [directCounts, planHost]));
 
     /* --- solved experiment --------------------------------------------- */
     var readout = App.h('div', { class: 'readout' });
@@ -2078,11 +2041,7 @@
       App.h('div', { class: 'btn-row mt' }, [
         App.iconButton('Reset to the canonical response',
           'SPM double gamma: peak 6 s, undershoot 16 s, ratio 6', function () {
-            App.state.hrf = Object.assign(M.defaultHrf(), {
-              objectives: App.state.hrf.objectives
-            });
-            App.refresh();
-            App.toast('Canonical HRF restored', 'ok');
+            if (App.act('hrf.reset')) App.toast('Canonical HRF restored', 'ok');
           })
       ])
     ]);

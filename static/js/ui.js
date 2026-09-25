@@ -19,6 +19,7 @@
 
   var App = {
     boot: null,
+    designName: 'current',
     state: null,
     report: null,
     protocols: {},
@@ -1909,27 +1910,17 @@
     return record ? record.derived.sessions : 0;
   }
 
-  /* Switching to the session unit means the numbers on the sliders have to be
-   * the ones the solver is using, so seed them and move into manual mode. */
-  function adoptSessionUnit() {
-    App.state.experiments.forEach(function (experiment) {
-      if (!experiment.enabled) return;
-      experiment.manualSessions = solvedSessions(experiment.id);
-    });
-    App.state.budget.solveMode = 'manual';
-  }
-
+  /* Switching to the session unit seeds the sliders from the solved plan and
+   * moves into manual mode; budget.update does that part. */
   function allocationUnitToggle(label) {
     return segmented({
       label: label || 'Drive the sliders in',
-      path: 'budget.allocationUnit',
       hint: 'Percent of scanner time, hours of it, or sessions',
       options: M.ALLOCATION_UNITS.map(function (unit) {
         return { value: unit.id, label: unit.label };
       }),
-      onChange: function (value) {
-        if (value === 'sessions') adoptSessionUnit();
-      }
+      get: function (state) { return state.budget.allocationUnit; },
+      set: function (value) { write('budget.update', { allocationUnit: value }); }
     });
   }
 
@@ -1954,22 +1945,13 @@
         }
         return H.num(target && target.requestedPct);
       },
-      set: function (value, state) {
-        var target = M.experimentById(state, id);
-        if (!target) return;
+      set: function (value) {
         var unit = allocationUnit();
-        if (unit === 'sessions') {
-          target.manualSessions = Math.max(0, Math.round(value));
-          state.budget.solveMode = 'manual';
-          return;
-        }
-        if (unit === 'hours') {
-          var hours = usableHours(state);
-          target.requestedPct = hours > 0 ? H.clamp(value / hours * 100, 0, 100) : 0;
-        } else {
-          target.requestedPct = H.clamp(value, 0, 100);
-        }
-        M.normaliseAllocation(state, id);
+        var args = { experiment: id };
+        if (unit === 'sessions') args.sessions = Math.max(0, Math.round(value));
+        else if (unit === 'hours') args.hours = Math.max(0, value);
+        else args.percent = H.clamp(value, 0, 100);
+        write('allocation.set', args);
       },
       dynamicMax: function (state) {
         var unit = allocationUnit();
@@ -2003,8 +1985,7 @@
           text: experiment.locked ? 'Locked' : 'Lock',
           title: 'Hold this share while the others redistribute',
           onclick: function () {
-            experiment.locked = !experiment.locked;
-            App.refresh();
+            act('allocation.lock', { experiment: experiment.id, locked: !experiment.locked });
           }
         });
         var row = h('div', { class: 'alloc-row' }, [
@@ -2253,18 +2234,12 @@
           iconButton('Balance to the goals',
             'Set the shares implied by each experiment\'s own goal',
             function () {
-              var next = M.balanceToTarget(App.state, App.boot);
-              App.adopt(next);
-              toast('Shares balanced against the per-experiment goals', 'ok');
+              if (act('allocation.balanceToGoals')) {
+                toast('Shares balanced against the per-experiment goals', 'ok');
+              }
             }),
           iconButton('Even split', 'Give every enabled experiment the same share', function () {
-            var active = M.enabledExperiments(App.state);
-            active.forEach(function (experiment) {
-              experiment.locked = false;
-              experiment.requestedPct = active.length ? H.round(100 / active.length, 2) : 0;
-            });
-            M.normaliseAllocation(App.state, null);
-            App.refresh();
+            act('allocation.evenSplit');
           })
         ])
       ]);
@@ -2599,18 +2574,206 @@
     workspace.scrollTop = 0;
   }
 
+  /* ------------------------------------------------------------ addresses */
+
+  /* Every saved design opens at its own address and the page works on that
+   * design: its edits save there and it follows changes made there.  The
+   * working design, `current`, is the root. */
+  function designPath(name) {
+    return !name || name === 'current' ? '/' : '/designs/' + encodeURIComponent(name);
+  }
+
+  function designLink(name) {
+    return global.location.origin + designPath(name);
+  }
+
+  /* The name a design is stored under, as planner/designs.py derives it:
+   * anything but letters, digits, dot, dash and underscore becomes a dash. */
+  function cleanName(name) {
+    return String(name === null || name === undefined ? '' : name).trim()
+      .replace(/[^A-Za-z0-9._-]+/g, '-').slice(0, 80) || 'untitled';
+  }
+
+  /* The masthead names the design this page works on and hands out its link:
+   * the address bar has it too, but this is where people look. */
+  function buildDesignBadge() {
+    var host = document.getElementById('mast-design');
+    if (!host) return;
+    clear(host);
+    var working = App.designName === 'current';
+    host.appendChild(h('div', {
+      class: 'name',
+      title: working
+        ? 'The working design, presets/current.json. Saved designs open at their own links: '
+          + 'Report and export > Saved designs.'
+        : 'The saved design presets/' + App.designName + '.json. Changes made here save to it, '
+          + 'and every page open on its link shows them.'
+    }, [
+      h('span', { class: 'k', text: 'Design' }),
+      h('span', { class: 'v', text: working ? 'Working design' : App.designName })
+    ]));
+    host.appendChild(iconButton('Copy link', 'Copy a link that opens this design', function () {
+      copy(designLink(App.designName), 'Link');
+    }));
+  }
+
+  /* An address for a design that is not there: deleted, or mistyped.  Say so
+   * and offer the ones that exist, rather than opening the defaults under a
+   * name the first autosave would then create. */
+  function showMissingDesign(veil, boot) {
+    var names = (boot.presets || []).map(function (preset) { return preset.name; })
+      .filter(function (name) { return name !== 'current'; });
+    clear(veil);
+    veil.appendChild(h('div', { class: 'veil-box' }, [
+      h('div', { class: 'title', text: boot.designError }),
+      h('div', { text: 'It may have been deleted, or the link mistyped. '
+        + (names.length ? 'Open one of these instead:' : 'Open the working design instead:') }),
+      h('div', { class: 'links' }, [h('a', { href: '/', text: 'Working design' })]
+        .concat(names.map(function (name) {
+          return h('a', { href: designPath(name), text: name });
+        })))
+    ]));
+  }
+
   /* -------------------------------------------------------------- runtime */
 
+  /* The design is saved with the revision it was loaded at.  If another page
+   * or the HTTP API changed it in the meantime the server refuses, and the
+   * page takes that version instead of writing over it.  `keepalive` lets the
+   * last save outlive the page, when it is left inside the autosave delay. */
   var saveTimer = null;
+  var saving = null;
+
+  function saveWorking(options) {
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+    var request = fetch('/api/design', {
+      method: 'POST',
+      keepalive: !!(options && options.keepalive),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: App.designName, design: App.state, baseRev: App.designRev || ''
+      })
+    }).then(function (response) {
+      return response.json().then(function (body) {
+        if (response.status === 409 && body.design) {
+          App.designRev = body.rev;
+          adopt(body.design, { quiet: true });
+          toast('This design was changed in another window or through the API; '
+            + 'showing that version.', 'bad');
+        } else if (body.rev) {
+          App.designRev = body.rev;
+        }
+        return body;
+      });
+    });
+    saving = request;
+    function settle() { if (saving === request) saving = null; }
+    request.then(settle, settle);
+    return request;
+  }
+
   function scheduleAutosave() {
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(function () {
-      fetch('/api/design', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'current', design: App.state })
-      }).catch(function () { /* autosave is best-effort */ });
+      saveTimer = null;
+      saveWorking().catch(function () { /* autosave is best-effort */ });
     }, 1200);
+  }
+
+  function busySaving() { return !!(saving || saveTimer); }
+
+  /* Following a link to another design, reloading or closing the tab inside
+   * the autosave delay would drop the last edit: send it on the way out. */
+  function saveOnLeave() {
+    global.addEventListener('pagehide', function () {
+      if (!saveTimer) return;
+      try {
+        saveWorking({ keepalive: true }).catch(function () { /* the page is gone */ });
+      } catch (error) { /* too large to outlive the page; nothing more to try */ }
+    });
+  }
+
+  /* Take the stored design, when something other than this page wrote it. */
+  function pullDesign(announce) {
+    return fetch('/api/design?name=' + encodeURIComponent(App.designName)).then(function (response) {
+      return response.json();
+    }).then(function (body) {
+      if (!body.design || busySaving() || body.rev === App.designRev) return;
+      App.designRev = body.rev;
+      adopt(body.design, { quiet: true });
+      if (announce) toast('Design updated from another window or the API', 'ok');
+    });
+  }
+
+  /* Cards changed on the server.  Not while the card editor is open: it holds
+   * unsaved edits in the very objects a reload would replace. */
+  function pullCards() {
+    if (App.activePanel === 'acquisition') return;
+    fetch('/api/bootstrap').then(function (response) { return response.json(); })
+      .then(function (boot) {
+        if (App.activePanel === 'acquisition') return;
+        App.cardsRev = boot.cardsRev;
+        ['manifest', 'protocols', 'acquisition'].forEach(function (key) {
+          App.boot[key] = boot[key];
+        });
+        App.protocols = boot.protocols || {};
+        delete App.panels.acquisition;
+        refresh('quiet');
+      }).catch(function () { /* next poll */ });
+  }
+
+  /* A light poll: the API can change the design or the cards at any time,
+   * and the page should show it.  The browser slows timers in background
+   * tabs, so a tab also checks the moment it is brought back. */
+  function checkServer() {
+    if (busySaving()) return;
+    fetch('/api/design/rev?name=' + encodeURIComponent(App.designName)).then(function (response) {
+      return response.json();
+    }).then(function (body) {
+      if (busySaving()) return null;
+      if (body.cardsRev && body.cardsRev !== App.cardsRev) pullCards();
+      if (body.rev && body.rev !== App.designRev) return pullDesign(true);
+      return null;
+    }).catch(function () { /* the server may be restarting */ });
+  }
+
+  function watchServer() {
+    setInterval(checkServer, 3000);
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) checkServer();
+    });
+  }
+
+  /* Every button that changes the design runs a named action from api.js -
+   * the same call POST /api/v1/designs/<name>/actions makes - so the
+   * interface and the API cannot disagree about what a button does.  Returns
+   * the action's result, or null after telling the user why it was refused. */
+  function perform(name, args) {
+    try {
+      return global.PlannerActions.execute(App.state, App.boot,
+        Object.assign({ action: name }, args || {}));
+    } catch (error) {
+      if (!error.planner && global.console) global.console.error(error);
+      toast(error.message, 'bad');
+      return null;
+    }
+  }
+
+  function act(name, args) {
+    var out = perform(name, args);
+    if (!out) return null;
+    if (out.state !== App.state) adopt(out.state);
+    else refresh();
+    return out.result || {};
+  }
+
+  /* The same, from inside a control's setter: the control refreshes once the
+   * setter returns, so this only writes. */
+  function write(name, args) {
+    var out = perform(name, args);
+    if (!out) return null;
+    if (out.state !== App.state) adopt(out.state);
+    return out.result || {};
   }
 
   function syncControls() {
@@ -2670,8 +2833,10 @@
     }
   }
 
-  /* Replace the working state wholesale (import, reset, an optimiser result). */
-  function adopt(next) {
+  /* Replace the working state wholesale (import, reset, an optimiser result,
+   * a change made through the API).  `quiet` takes it without saving it back:
+   * it came from the server, so the server already has it. */
+  function adopt(next, options) {
     var merged = M.migrateState(H.deepCopy(next));
     Object.keys(App.state).forEach(function (key) {
       if (!(key in merged)) delete App.state[key];
@@ -2682,6 +2847,10 @@
     App.views = [];
     buildMetrics();
     show(App.activePanel);
+    if (options && options.quiet && saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
   }
 
   function mergeState(saved) {
@@ -2690,15 +2859,24 @@
 
   function start() {
     var veil = document.getElementById('veil');
-    fetch('/api/bootstrap').then(function (response) {
+    var wanted = document.body.getAttribute('data-design') || 'current';
+    fetch('/api/bootstrap?design=' + encodeURIComponent(wanted)).then(function (response) {
       return response.json();
     }).then(function (boot) {
+      if (boot.designError) {
+        showMissingDesign(veil, boot);
+        return;
+      }
       App.boot = boot;
+      App.designName = boot.designName || 'current';
       App.protocols = boot.protocols || {};
+      App.designRev = boot.designRev || null;
+      App.cardsRev = boot.cardsRev || null;
       App.state = boot.design ? mergeState(boot.design) : M.defaultState();
       M.applyHrf(App.state);
       buildMetrics();
       buildRail();
+      buildDesignBadge();
 
       document.getElementById('btn-save-design').addEventListener('click', function () {
         global.PlannerExport.saveDesign();
@@ -2708,6 +2886,8 @@
       });
 
       show('overview');
+      watchServer();
+      saveOnLeave();
       if (veil && veil.parentNode) veil.parentNode.removeChild(veil);
     }).catch(function (error) {
       if (veil) {
@@ -2761,9 +2941,42 @@
   App.buildWarningsCard = buildWarningsCard;
   App.refresh = refresh;
   App.adopt = adopt;
+  App.act = act;
+  App.write = write;
+  App.saveWorking = saveWorking;
+  App.designPath = designPath;
+  App.designLink = designLink;
+  App.cleanName = cleanName;
   App.mergeState = mergeState;
   App.show = show;
   App.start = start;
 
   global.PlannerApp = App;
+
+  /* For an agent, or a person at the console, driving this page: the same
+   * actions as the HTTP API, run through the server on the design open here,
+   * which the page then shows.
+   *
+   *   PlannerAPI.actions()                      every action and its arguments
+   *   PlannerAPI.run([{action: 'budget.update', totalScannerHours: 80}])
+   *                                             -> Promise of the API's answer
+   *
+   * API.md and GET /api/v1/docs describe every action. */
+  global.PlannerAPI = {
+    actions: function () { return global.PlannerActions.catalogue(); },
+    run: function (actions, options) {
+      var list = Array.isArray(actions) ? actions : [actions];
+      return saveWorking().then(function () {
+        return fetch('/api/v1/designs/' + encodeURIComponent(App.designName) + '/actions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(Object.assign({}, options || {}, { actions: list }))
+        });
+      }).then(function (response) { return response.json(); })
+        .then(function (answer) {
+          if (!answer.saved) return answer;
+          return pullDesign(false).then(function () { return answer; });
+        });
+    }
+  };
 }(window));

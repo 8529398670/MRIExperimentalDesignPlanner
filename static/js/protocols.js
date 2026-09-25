@@ -184,16 +184,11 @@
     var record = App.report.runs.filter(function (item) {
       return item.id === runs[0].id;
     })[0];
-    if (!record || record.missing) return null;
-    return {
-      run: record,
-      updates: {
-        'dyn scans': String(record.acquisition.dynScansSolved),
-        'dummy scans': String(record.acquisition.dummyScansSolved),
-        'Total scan duration': record.acquisition.durationSolved
-      }
-    };
+    var solved = global.PlannerActions.solvedCardUpdates(App.report, runs[0].id);
+    if (!record || !solved) return null;
+    return { run: record, updates: solved.updates };
   }
+
 
   function renderList() {
     var host = state.listHost;
@@ -691,14 +686,7 @@
    * design or a session's sequence never ends up pointing at nothing. */
   function repoint(from, to) {
     if (from === to) return;
-    (App.state.runs || []).forEach(function (run) {
-      if (run.protocol === from) run.protocol = to;
-    });
-    (App.state.sessions || []).forEach(function (session) {
-      (session.blocks || []).forEach(function (block) {
-        if (block.kind === 'structural' && block.protocol === from) block.protocol = to;
-      });
-    });
+    global.PlannerActions.repointCard(App.state, from, to);
   }
 
   function renameCard(slug, label, renameFile) {
@@ -749,27 +737,21 @@
 
   function applyDerived(runId) {
     if (!App.report) return;
-    var record = App.report.runs.filter(function (item) { return item.id === runId; })[0];
-    if (!record || record.missing) return;
+    /* The same values card.applySolvedTiming writes through the API. */
+    var solved = global.PlannerActions.solvedCardUpdates(App.report, runId);
+    if (!solved) return;
     api('/api/apply-derived', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        slug: record.protocol,
-        updates: {
-          'dyn scans': String(record.acquisition.dynScansSolved),
-          'dummy scans': String(record.acquisition.dummyScansSolved),
-          'Total scan duration': record.acquisition.durationSolved
-        }
-      })
+      body: JSON.stringify({ slug: solved.card, updates: solved.updates })
     }).then(function (result) {
       absorb(result);
-      delete state.dirty[record.protocol];
-      syncAcquisition(record.protocol);
+      delete state.dirty[solved.card];
+      syncAcquisition(solved.card);
       renderList();
-      if (state.active === record.protocol) renderEditor();
+      if (state.active === solved.card) renderEditor();
       App.refresh();
-      App.toast('Wrote solved dynamics and duration into ' + record.protocol + '.json', 'ok');
+      App.toast('Wrote solved dynamics and duration into ' + solved.card + '.json', 'ok');
     }).catch(function (error) { App.toast(error.message, 'bad'); });
   }
 

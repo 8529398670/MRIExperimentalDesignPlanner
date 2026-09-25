@@ -9,6 +9,8 @@ hierarchy consistent with the acquisition parameters actually recorded on the ca
 
 New to the tool? **[TUTORIAL.md](TUTORIAL.md)** is a step-by-step walkthrough that builds a
 costed study from scratch. This file is the reference for what every control does.
+Building a study from a script or an agent? **[API.md](API.md)** covers the HTTP API: every
+button is an action you can send as JSON.
 
 ## The hierarchy
 
@@ -46,15 +48,35 @@ First-time setup on a machine without the virtual environment:
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ```
 
+### Links to saved designs
+
+Every saved design opens at its own address, so it can be shared as a link:
+
+| Address | Opens |
+|---|---|
+| `/` | The working design, `presets/current.json` |
+| `/designs/<name>` | The saved design `presets/<name>.json` |
+
+The page works on the design its address names: edits made there save to that design, and
+every page open on the same link follows them within a few seconds. The masthead shows which
+design is open and has a **Copy link** button; *Report and export → Saved designs* has one per
+design, and each name there is its link. To keep a version fixed while you experiment, save a
+copy under a new name first. An address naming a design that does not exist says so and lists
+the ones that do.
+
 ## Layout
 
 | Path | Purpose |
 |---|---|
 | `server.py` | Flask application and waitress entry point |
+| `planner/api.py` | The agent-facing design API under `/api/v1` |
+| `planner/engine.py` | Runs the planner's own JavaScript on the server, in QuickJS |
+| `planner/designs.py` | Saved designs, with revisions so the page and the API cannot overwrite each other |
 | `planner/protocols.py` | Loading, validation, atomic writes and backups for the acquisition cards |
 | `planner/report.py` | XLSX workbook generation |
 | `planner/bundle.py` | The full-export zip |
 | `static/js/model.js` | Design state, constraint solver, optimisers, Markdown and methods text |
+| `static/js/api.js` | One named action per button, shared by the interface and the HTTP API |
 | `static/js/efficiency.js` | HRF convolution, contrast efficiency, design diagnostics |
 | `static/js/ui.js` | Control factories, figures, overview and budget panels |
 | `static/js/library.js` | The trial, run, session, experiment, jitter and HRF panels |
@@ -62,7 +84,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 | `static/js/export.js` | Clipboard, Markdown, PsychoPy, workbook and zip export |
 | `scanner-parameters/*.json` | The acquisition cards, edited in place |
 | `scanner-parameters/.backups/` | Timestamped snapshot before every save |
-| `presets/` | Saved designs; `current.json` is the autosaved working design |
+| `presets/` | Saved designs, each open at `/designs/<name>`; `current.json` is the autosaved working design, at `/` |
 | `exports/` | Every generated workbook and zip is archived here |
 
 ## Trial designs
@@ -379,10 +401,14 @@ Three figures, each downloadable as SVG or PNG and all of them included in the z
 
 ## API
 
+To build or change a design from a script or an agent, use the design API: see
+**[API.md](API.md)**, or `GET /api/v1` on a running planner. The interface's own endpoints are
+below.
+
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/health` | Liveness and card count |
-| GET | `/api/bootstrap` | Manifest, all cards, acquisition summary, saved design, presets |
+| GET | `/api/bootstrap` | Manifest, all cards, acquisition summary, presets, and the design the page opens on (`?design=`, default `current`) |
 | GET | `/api/protocols` | Card manifest |
 | POST | `/api/protocols` | Create a card, blank or from a base |
 | GET/PUT/DELETE | `/api/protocols/<slug>` | Read, save or delete one card |
@@ -392,7 +418,8 @@ Three figures, each downloadable as SVG or PNG and all of them included in the z
 | GET | `/api/protocols/<slug>/backups` | List snapshots |
 | POST | `/api/protocols/<slug>/restore` | Restore a snapshot |
 | POST | `/api/apply-derived` | Write solved acquisition values into a card |
-| GET/POST | `/api/design` | Load or save a design (`?name=`, default `current`) |
+| GET/POST | `/api/design` | Load or save a design (`?name=`, default `current`); a save with `baseRev` is refused (409) if the design changed since |
+| GET | `/api/design/rev` | Revision of a design and of the card set, polled by the page |
 | DELETE | `/api/design/<name>` | Delete a preset |
 | POST | `/api/export/xlsx` | Build and download the workbook |
 | POST | `/api/export/bundle` | Build and download the full-export zip |

@@ -193,14 +193,38 @@
 
   /* -------------------------------------------------------------- presets */
 
+  /* How the design open in this page is named in a question. */
+  function openHere() {
+    return App.designName === 'current' ? 'the working design' : '"' + App.designName + '"';
+  }
+
+  /* False when the user declined to write over an existing design. */
   function saveDesign(name) {
-    var target = name || 'current';
-    fetch('/api/design', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: target, design: App.state })
-    }).then(function (response) { return response.json(); })
+    var target = App.cleanName(name || App.designName);
+    var ownDesign = target === App.designName;
+    /* Saved designs are shared by link, so writing over one somebody may have
+     * open is worth a question. */
+    var taken = (App.boot.presets || []).some(function (preset) { return preset.name === target; });
+    if (!ownDesign && taken && !global.confirm(target === 'current'
+      ? 'Replace the working design with a copy of ' + openHere() + '?'
+      : 'Replace the saved design "' + target + '" with a copy of ' + openHere()
+        + '? Every page open on its link will show the change.')) return false;
+    /* The design open here goes through the page's own save, which knows the
+     * revision it started from; any other name is a plain copy. */
+    var request = ownDesign ? App.saveWorking()
+      : fetch('/api/design', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: target, design: App.state })
+      }).then(function (response) { return response.json(); });
+    request
       .then(function (result) {
+        /* A refused save of the design open here has already said why, and
+         * the page is now showing the version that won. */
+        if (result.error) {
+          if (!result.design) App.toast(result.error, 'bad');
+          return;
+        }
         App.boot.presets = result.presets || App.boot.presets;
         renderPresets();
         App.toast('Design saved as "' + target + '"', 'ok');
@@ -208,25 +232,25 @@
   }
 
   /* Accepts either a bare design object or a downloaded {design, report}
-   * envelope, and fills anything the file is missing from the defaults so an
-   * older or hand-edited file still loads. */
+   * envelope; design.replace fills anything the file is missing from the
+   * defaults, so an older or hand-edited file still loads.  False when it was
+   * refused, and the user has already been told why. */
   function adopt(payload) {
-    var design = payload && payload.design ? payload.design : payload;
-    if (!design || typeof design !== 'object'
-      || !(design.experiments || design.aims)) {
-      throw new Error('That file does not contain a planner design.');
-    }
-    App.adopt(design);
-    return design;
+    return !!App.act('design.replace', { design: payload });
   }
 
+  /* Copy a saved design's contents into the design open here.  Opening it
+   * instead is its link. */
   function loadDesign(name) {
+    if (App.designName !== 'current' && !global.confirm('Replace ' + openHere()
+      + ' with a copy of "' + name + '"? Every page open on its link will show the change.')) {
+      return;
+    }
     fetch('/api/design?name=' + encodeURIComponent(name))
       .then(function (response) { return response.json(); })
       .then(function (result) {
         if (result.error) throw new Error(result.error);
-        adopt(result.design);
-        App.toast('Loaded design "' + name + '"', 'ok');
+        if (adopt(result.design)) App.toast('Loaded design "' + name + '"', 'ok');
       }).catch(function (error) { App.toast(error.message, 'bad'); });
   }
 
@@ -252,18 +276,19 @@
   function importDesign(file, saveAs) {
     var reader = new FileReader();
     reader.onload = function () {
+      var parsed;
       try {
-        adopt(JSON.parse(String(reader.result)));
+        parsed = JSON.parse(String(reader.result));
       } catch (error) {
         App.toast('Import failed: ' + error.message, 'bad');
         return;
       }
+      if (!adopt(parsed)) return;
       var target = (saveAs || '').trim();
-      if (target) {
-        saveDesign(target);
-        App.toast('Imported ' + file.name + ' and saved as "' + target + '"', 'ok');
+      if (target && saveDesign(target) !== false) {
+        App.toast('Imported ' + file.name + ' and saved as "' + App.cleanName(target) + '"', 'ok');
       } else {
-        App.toast('Imported ' + file.name + ' into the working design', 'ok');
+        App.toast('Imported ' + file.name + ' into ' + openHere(), 'ok');
       }
     };
     reader.onerror = function () { App.toast('Could not read ' + file.name, 'bad'); };
@@ -271,6 +296,7 @@
   }
 
   function deleteDesign(name) {
+    if (!global.confirm('Delete the saved design "' + name + '"? Its link will stop working.')) return;
     fetch('/api/design/' + encodeURIComponent(name), { method: 'DELETE' })
       .then(function (response) { return response.json(); })
       .then(function (result) {
@@ -290,12 +316,20 @@
       return;
     }
 
+    /* Each name is the design's own link: following it opens that design,
+     * and the page then works on it. */
     var table = App.dataTable(
       [{ label: 'Name' }, { label: 'Study title' }, { label: 'Saved', num: true },
         { label: 'Actions' }],
       presets.map(function (preset) {
+        var here = preset.name === App.designName;
         return [
-          { text: preset.name },
+          {
+            html: '<a href="' + App.designPath(preset.name) + '">'
+              + App.escapeHtml(preset.name === 'current' ? 'current (working design)' : preset.name)
+              + '</a>' + (here ? ' <span class="muted">open here</span>' : ''),
+            copy: preset.name
+          },
           { text: preset.title, className: 'seq' },
           { text: new Date(preset.modified * 1000).toLocaleString(), num: true },
           { text: '', copy: '' }
@@ -310,19 +344,37 @@
       var row = rows[index];
       if (!row) return;
       var cell = row.children[3];
+      var here = preset.name === App.designName;
       App.clear(cell);
       var actions = App.h('div', { class: 'btn-row' }, [
-        App.iconButton('Load', 'Replace the working design with this one',
-          function () { loadDesign(preset.name); }),
-        App.iconButton('Download', 'Write this saved design out as a JSON file',
-          function () { downloadPreset(preset.name); })
+        App.iconButton('Copy link', 'Copy a link that opens this design; changes made there '
+          + 'save to it', function () {
+          App.copy(App.designLink(preset.name), 'Link for "' + preset.name + '"');
+        })
       ]);
-      if (preset.name !== 'current') {
-        actions.appendChild(App.iconButton('Delete', 'Remove this preset',
-          function () { deleteDesign(preset.name); }, 'danger'));
+      if (!here) {
+        actions.appendChild(App.iconButton('Load', 'Replace ' + openHere()
+          + ' with a copy of this one', function () { loadDesign(preset.name); }));
+      }
+      actions.appendChild(App.iconButton('Download', 'Write this saved design out as a JSON file',
+        function () { downloadPreset(preset.name); }));
+      if (preset.name !== 'current' && !here) {
+        actions.appendChild(App.iconButton('Delete', 'Remove this saved design; its link stops '
+          + 'working', function () { deleteDesign(preset.name); }, 'danger'));
       }
       cell.appendChild(actions);
     });
+  }
+
+  /* Another page or the API may have saved or deleted designs since this page
+   * loaded; take the list fresh whenever the card is built. */
+  function refreshPresets() {
+    fetch('/api/v1/designs').then(function (response) { return response.json(); })
+      .then(function (result) {
+        if (!Array.isArray(result.designs)) return;
+        App.boot.presets = result.designs;
+        renderPresets();
+      }).catch(function () { /* keep the list from boot */ });
   }
 
   /* ------------------------------------------------------------- markdown */
@@ -509,7 +561,8 @@
       importPicker.value = '';
     });
 
-    var presetCard = App.card('Saved designs', 'Stored server-side in presets/', [
+    var presetCard = App.card('Saved designs',
+      'Stored server-side in presets/. Each opens at its own link; changes made there save to it', [
       App.h('div', { class: 'split-inline' }, [
         presetName,
         App.h('button', {
@@ -522,29 +575,29 @@
             saveDesign(presetName.value.trim());
           }
         }),
-        App.iconButton('Save working design', 'Overwrite current.json',
-          function () { saveDesign('current'); }),
+        App.iconButton('Save working design', 'Save the design open here to presets/'
+          + App.designName + '.json now; it also saves as you work',
+          function () { saveDesign(App.designName); }),
         App.iconButton('Reset to defaults', 'Start from the shipped design', function () {
-          if (!global.confirm('Replace the working design with the built-in defaults?')) return;
-          App.adopt(M.defaultState());
-          App.toast('Design reset to the built-in defaults');
+          if (!global.confirm('Replace ' + openHere() + ' with the built-in defaults?')) return;
+          if (App.act('design.reset')) App.toast('Design reset to the built-in defaults');
         })
       ]),
       App.h('div', { class: 'btn-row mt' }, [
         App.iconButton('Import JSON file',
-          'Load a design file into the working design; name it above to save it as a preset too',
+          'Load a design file into the design open here; name it above to save it as a preset too',
           function () { importPicker.click(); }),
         App.iconButton('Download working design', 'Write the design as it stands to a file',
           function () {
             var blob = new Blob([JSON.stringify(App.state, null, 2)],
               { type: 'application/json' });
-            download(blob, fileStem(presetName.value || 'current') + '.json');
+            download(blob, fileStem(presetName.value || App.designName) + '.json');
             App.toast('Working design downloaded', 'ok');
           }),
         importPicker,
         App.h('span', {
           class: 'muted',
-          text: 'Import replaces the working design; anything the file omits falls back to '
+          text: 'Import replaces the design open here; anything the file omits falls back to '
             + 'the defaults. Designs from the earlier aim-based planner are converted on load.'
         })
       ]),
@@ -565,6 +618,7 @@
     });
 
     renderPresets();
+    refreshPresets();
     return panel;
   }
 
@@ -573,7 +627,7 @@
     downloadXlsx: downloadXlsx,
     downloadJson: downloadJson,
     downloadBundle: downloadBundle,
-    saveDesign: function () { saveDesign('current'); },
+    saveDesign: function () { saveDesign(App.designName); },
     loadDesign: loadDesign,
     downloadPreset: downloadPreset,
     downloadPsychopy: downloadPsychopy,
