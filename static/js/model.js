@@ -2469,11 +2469,14 @@
 
   /* ------------------------------------------------------------ psychopy */
 
+  /* The lab template - the builder's own config, section for section.  Its
+   * loader refuses a file without `paths.bank`, and a `show` outside
+   * fixation / question / cue / blank, so these are not cosmetic. */
   var PSYCHOPY_PRESENTATION = [
     'paths:',
     '  data_dir: data                 # the common JSON database lives here',
-    '  stimuli: stimuli/index.json',
-    '  images_dir: stimuli/images',
+    '  bank: questions/bank.json',
+    '  images_dir: questions/images',
     '',
     'window:',
     '  size: [1280, 800]',
@@ -2501,15 +2504,32 @@
   ];
 
   var PSYCHOPY_KEYS = [
+    'console:                         # operator readout in the terminal',
+    '  refresh_hz: 10                 # live redraw rate; 0 for one plain line per trial',
+    '  colour: true',
+    '',
     'keys:',
     '  quit: ["escape"]',
     '  advance: ["space"]'
   ];
 
+  /* The builder's trial conditions, which its loader requires and checks sum
+   * to the run.  Which conditions exist and what they present is the lab's;
+   * the planner fills in only how many of each a run holds.  `primary` takes
+   * the primary trials and the rest share the control trials. */
+  var PSYCHOPY_CONDITIONS = [
+    { name: 'primary', spec: 'cue: "\u25CF", show_question: true,  response: answer' },
+    { name: 'passive_read', spec: 'cue: "\u25CB", show_question: true,  response: none' },
+    { name: 'cue_only',
+      spec: 'cue: "\u25C6", show_question: false, response: answer, cue_from_response: true' },
+    { name: 'constant_word', spec: 'cue: "\u25B2", show_question: true,  response: ready' },
+    { name: 'opposite', spec: 'cue: "\u2716", show_question: true,  response: opposite' }
+  ];
+
   /* What the screen shows during a phase, by the phase's planner role. */
   var PSYCHOPY_SHOW = {
     baseline: 'fixation',
-    stimulus: 'stimulus',
+    stimulus: 'question',
     delay: 'blank',
     response: 'cue',
     other: 'blank'
@@ -2533,9 +2553,12 @@
     return String(text === undefined || text === null ? '' : text).replace(/\s+/g, ' ').trim();
   }
 
+  /* Four places, as the builder rounds its own draws: two would move a
+   * geometric window's top off its rung at a TR like 0.735 s, and the builder
+   * would then count one rung fewer than the run was sized for. */
   function yamlSeconds(value) {
-    var rounded = round(num(value), 2);
-    return Math.abs(rounded - Math.round(rounded)) < 0.005
+    var rounded = round(num(value), 4);
+    return Math.abs(rounded - Math.round(rounded)) < 0.00005
       ? Math.round(rounded).toFixed(1) : String(rounded);
   }
 
@@ -2614,8 +2637,8 @@
     lines.push('# The plan calls for ' + fmtNumber(derived.totalRuns) + ' '
       + plural(derived.totalRuns, 'run') + ' in total, '
       + fmtNumber(derived.totalRuns * trialsPerRun) + ' trials.');
-    lines.push('# The scanner, run and trial blocks are filled in from the solved');
-    lines.push('# design. Everything else is the lab template, unchanged.');
+    lines.push('# The scanner, run and trial blocks and the condition counts are filled');
+    lines.push('# in from the solved design. Everything else is the lab template, unchanged.');
     lines.push('');
     lines.push('experiment: ' + yamlSlug(runReport.name));
     lines.push('');
@@ -2644,68 +2667,106 @@
 
     lines.push('');
     lines.push('trial:');
-    /* Which distribution each phase's wait is drawn from - and, when it is the
-     * truncated geometric, the two numbers PsychoPy needs to reproduce exactly
-     * the distribution the planner sized this run against.  `n_max` is derived
-     * from the window and the TR rather than set by hand, so it is written out
-     * here instead of being left for the presentation script to guess. */
-    var jitterProfile = trial.jitter || { mode: 'uniform' };
+    /* The builder's own jitter keys.  Its geometric sampler takes
+     * n_max = floor((hi - lo) / tr) from the window, so the window is written
+     * to stop on the top rung the planner sized against - which also carries a
+     * stated TR cap, since the cap only ever lowers that rung.  The profile is
+     * worked out at this run's TR: one trial design can run on several cards,
+     * and the trial-level profile only holds for the first of them. */
+    var trSeconds = num(runReport.trMs, 2000) / 1000;
+    var profile = jitterProfile(trial, trSeconds, jitterSettings(report.state));
+    var geometric = profile.mode === 'geometric';
     var geometricPhases = {};
-    (jitterProfile.phases || []).forEach(function (entry) {
-      geometricPhases[entry.index] = entry;
-    });
+    profile.phases.forEach(function (entry) { geometricPhases[entry.index] = entry; });
 
-    lines.push('  round_jitter_to_tr: true');
-    if (jitterProfile.mode === 'geometric') {
-      lines.push('  jitter_distribution: geometric   # truncated; waits are whole TRs');
-      lines.push(yamlSetting('jitter_p', trim(num(jitterProfile.p), 3),
-        'P(delay = n TRs) = p(1-p)^n, renormalised over 0..n_max'));
-      lines.push(yamlSetting('jitter_truncation', jitterProfile.truncation,
-        jitterProfile.truncation === 'trs'
-          ? 'longest delay capped at ' + jitterProfile.nMaxCap + ' '
-            + plural(jitterProfile.nMaxCap, 'TR') + ', or the phase max'
-          : 'longest delay is whatever each phase max allows'));
-    } else {
-      lines.push('  jitter_distribution: uniform');
+    /* Uniform draws are sized as continuous, so the builder must not snap
+     * them to the TR grid - it would turn a 1-2 s window at TR 2 s into a
+     * fixed 2 s. */
+    lines.push(yamlSetting('round_jitter_to_tr', 'false',
+      'uniform phases are sized as continuous draws; geometric is always whole TRs'));
+    lines.push(yamlSetting('jitter', profile.mode,
+      'uniform | exponential | geometric, for every [lo, hi] phase'));
+    if (geometric) {
+      lines.push(yamlSetting('jitter_p', trim(num(profile.p), 3),
+        'geometric: chance the event comes on the next TR'));
+      if (profile.truncation === 'trs' && profile.cappedByLimit.length) {
+        lines.push('  # windows stop at the design\'s cap of ' + profile.nMaxCap + ' '
+          + plural(profile.nMaxCap, 'TR') + ' where it is tighter than the phase max');
+      }
     }
     lines.push('  phases:');
     var nameWidth = 0;
     names.forEach(function (name) { nameWidth = Math.max(nameWidth, name.length + 2); });
-    phases.forEach(function (phase, index) {
+    var phaseLines = phases.map(function (phase, index) {
       var lo = Math.max(0, num(phase.min));
       var hi = Math.max(lo, num(phase.max));
-      var geometric = geometricPhases[index];
+      var drawn = geometricPhases[index];
       /* Under geometric sampling the window's top rung can sit below the
        * stated max - a 2-7 s window at TR 2 s only ever reaches 6 s - and the
-       * run was sized against the rung, so that is what gets exported. */
-      if (geometric) hi = num(geometric.effMax, hi);
+       * run was sized against the rung, so that is what gets exported.  A
+       * window narrower than one TR has no rung above its minimum and goes
+       * out fixed: the builder refuses a geometric window that short. */
+      if (drawn) hi = lo + drawn.nMax * trSeconds;
       var jittered = hi - lo > 0.001;
-      var draw = '';
-      if (jittered) {
-        draw = geometric
-          ? ', jitter: geometric, n_max: ' + geometric.nMax
-          : ', jitter: uniform';
-      }
-      lines.push('    - {name: ' + padRight(names[index] + ',', nameWidth)
-        + 'show: ' + padRight((PSYCHOPY_SHOW[normaliseRole(phase.role)] || 'blank') + ',', 10)
-        + 'dur: ' + (jittered ? '[' + yamlSeconds(lo) + ', ' + yamlSeconds(hi) + ']' : yamlSeconds(lo))
-        + draw
-        + '}');
+      return {
+        note: drawn && drawn.degenerate
+          ? '    # ' + names[index] + ': [' + yamlSeconds(lo) + ', '
+            + yamlSeconds(Math.max(lo, num(phase.max))) + '] is shorter than one '
+            + yamlSeconds(trSeconds) + ' s TR, so it cannot step geometrically - fixed at '
+            + yamlSeconds(lo) + ' s'
+          : null,
+        text: '    - {name: ' + padRight(names[index] + ',', nameWidth)
+          + 'show: ' + padRight((PSYCHOPY_SHOW[normaliseRole(phase.role)] || 'blank') + ',', 10)
+          + 'dur: ' + (jittered ? '[' + yamlSeconds(lo) + ', ' + yamlSeconds(hi) + ']' : yamlSeconds(lo))
+          /* A ranged phase the planner sizes as uniform inside a geometric
+           * design (its Jitter box is off) has to say so, or it inherits
+           * the trial-level geometric. */
+          + (jittered && geometric && !drawn ? ', jitter: uniform' : '')
+          + '}',
+        comment: jittered && drawn ? 'n_max ' + drawn.nMax : null
+      };
     });
-    (jitterProfile.degenerate || []).forEach(function (name) {
-      lines.push('    # ' + name + ': window is shorter than one TR, so the wait is fixed.');
+    var textWidth = 0;
+    phaseLines.forEach(function (row) { textWidth = Math.max(textWidth, row.text.length + 2); });
+    phaseLines.forEach(function (row) {
+      if (row.note) lines.push(row.note);
+      lines.push(row.comment ? padRight(row.text, textWidth) + '# ' + row.comment : row.text);
     });
 
+    /* Counts only: the primary trials, then the control trials spread as
+     * evenly as the count allows, earlier conditions taking the remainder. */
+    var controlNames = PSYCHOPY_CONDITIONS.length - 1;
+    var counts = PSYCHOPY_CONDITIONS.map(function (condition, index) {
+      if (index === 0) return primaryTrials;
+      var position = index - 1;
+      return Math.floor(controlTrials / controlNames)
+        + (position < controlTrials % controlNames ? 1 : 0);
+    });
+    var conditionWidth = 0;
+    PSYCHOPY_CONDITIONS.forEach(function (condition) {
+      conditionWidth = Math.max(conditionWidth, condition.name.length + 2);
+    });
+    var countWidth = String(trialsPerRun).length + 2;
+
     lines.push('');
-    lines.push('# How many trials a run holds. What is presented in each of them, and in');
-    lines.push('# what order, is this file\'s business - the planner only sizes the run.');
-    lines.push('trials:');
-    lines.push('  ' + padRight('per_run:', 14) + trialsPerRun);
-    lines.push('  ' + padRight('primary:', 14) + primaryTrials);
+    lines.push('# Trial conditions. `per_run` must sum to n_blocks * trials_per_block ('
+      + trialsPerRun + ').');
     if (controlTrials > 0) {
-      lines.push('  ' + padRight('control:', 14) + controlTrials
-        + '   # embedded control / null trials (' + controlPct + '%)');
+      lines.push('# The control share is the trial design\'s embedded control-trial share ('
+        + controlPct + '%),');
+      lines.push('# split as evenly as the count allows across the four control conditions.');
+    } else {
+      lines.push('# The trial design embeds no control trials, so every trial is primary.');
     }
+    lines.push('# response = the token the participant actually repeats during the answer window.');
+    lines.push('#   answer   -> the true answer          none  -> stay silent');
+    lines.push('#   opposite -> the inverted answer      ready -> the constant word "ready"');
+    lines.push('# cue_from_response: the cue displays the token itself (used for cue-only trials).');
+    lines.push('conditions:');
+    PSYCHOPY_CONDITIONS.forEach(function (condition, index) {
+      lines.push('  ' + padRight(condition.name + ':', conditionWidth)
+        + '{per_run: ' + padRight(counts[index] + ',', countWidth) + condition.spec + '}');
+    });
 
     lines.push('');
     lines = lines.concat(PSYCHOPY_KEYS);
@@ -2757,7 +2818,10 @@
         sentence += 'Each trial runs ' + trialReport.sequence + ', '
           + fmtRange(trialReport.timing.min, trialReport.timing.max) + ' in total, '
           + 'targeting ' + trialReport.objectiveLabel.toLowerCase() + '. ';
-        var profile = trialReport.jitter;
+        /* At the lead run's own TR: the trial-level profile borrows the TR of
+         * whichever run uses the trial first, which need not be this one. */
+        var profile = jitterProfile(trialReport, num(runReport.trMs, 2000) / 1000,
+          jitterSettings(report.state));
         var drawn = ((profile && profile.phases) || []).filter(function (entry) {
           return !entry.degenerate;
         });

@@ -524,14 +524,16 @@
     var psychopyCard = App.card('PsychoPy task config', 'One experiment YAML per run design', [
       App.h('div', {
         class: 'notice',
-        text: 'Each file is the lab template with the scanner block (TR, dummy volumes), '
-          + 'run: (lead-in and lead-out, blocks per run, trials per block, inter-block rest, '
-          + 'inter-trial gap), trial.phases: (the trial design\'s phase list, durations and '
-          + 'jitter - including the distribution each jittered wait is drawn from, so the '
-          + 'script reproduces exactly the timing the planner sized against) and trials: '
-          + '(how many trials a run holds, and how many of them are control) filled in. What is presented in each trial, and in what order, stays '
-          + 'this file\'s business. Window, text, keys and instructions are passed through '
-          + 'unchanged.'
+        text: 'Each file is the PsychoPy builder\'s lab template with the scanner block (TR, '
+          + 'dummy volumes), run: (lead-in and lead-out, blocks per run, trials per block, '
+          + 'inter-block rest, inter-trial gap), trial: (the phase list, durations and jitter, '
+          + 'in the builder\'s own jitter and jitter_p keys, with each geometric window '
+          + 'stopping on its top rung at this run\'s TR, so the builder reproduces exactly '
+          + 'the timing the planner sized against) and the per_run counts of conditions: '
+          + '(primary trials, and the control share spread over the control conditions) '
+          + 'filled in. The conditions themselves, what each trial presents and in what '
+          + 'order stay the lab\'s. Window, text, console, keys and instructions are passed '
+          + 'through unchanged.'
       }),
       psychopyButtons,
       App.h('div', { class: 'split-inline mt mb' }, [

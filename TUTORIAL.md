@@ -284,7 +284,10 @@ shorter design. Turn it off to compare.
 
 **"Where did the Conditions card go?"** Removed deliberately. Condition labels, balance and
 ordering are the presentation software's job. If two trial types genuinely differ in
-*timing*, model them as two trial designs combined at the run level.
+*timing*, model them as two trial designs combined at the run level. The exported YAML still
+carries the builder's `conditions:` block, because the builder will not load without it, but
+only its `per_run` counts come from the planner (primary trials and the control share); the
+conditions themselves are the lab template's.
 
 ---
 

@@ -233,9 +233,11 @@ Two consequences worth knowing before you switch it on:
 - **Jitter panel**: every jittered phase in the design, rung by rung, grouped by trial, with
   the step arithmetic above it.
 - **Markdown tables and the workbook**: one table per jittered phase, same columns.
-- **PsychoPy YAML**: `jitter_distribution`, `jitter_p`, `jitter_truncation` and a per-phase
-  `n_max`, which is everything needed to reproduce the exact distribution the planner sized
-  against.
+- **PsychoPy YAML**: the builder's own `jitter: geometric` and `jitter_p`. The builder takes
+  `n_max = floor((hi - lo) / TR)` from each phase's window, so the window is exported to stop
+  on the top rung the planner sized against, at that run's TR - which also carries a stated
+  TR cap. `n_max` is repeated as a comment on the phase line. A window narrower than one TR
+  goes out as a fixed wait, since the builder refuses a geometric window that short.
 - **Methods text**: a citable sentence naming `p`, the truncation and where it came from.
 
 All of them come from one `truncGeometric()` in `static/js/model.js`, so they cannot drift
@@ -379,11 +381,14 @@ rather than a table; its solved timeline underneath copies as a table.
 - **XLSX workbook** — summary, experiments, trial designs, run designs, sessions, session
   timelines, budget and allocation, efficiency diagnostics, data volume, methods text,
   Markdown tables, and one sheet per acquisition card with every parameter as saved.
-- **PsychoPy task config** — one YAML per run design, on the lab template, with the scanner
-  block (TR, dummy volumes), `run:` (lead-in and lead-out, blocks per run, trials per block,
-  inter-block rest, condition ordering), `trial.phases:` (phase list, durations and jitter)
-  and `conditions:` (per-run counts split between the two named conditions and the control
-  share) taken from that run's solved design.
+- **PsychoPy task config** — one YAML per run design for the lab's PsychoPy builder, on its
+  template, with the scanner block (TR, dummy volumes), `run:` (lead-in and lead-out, blocks
+  per run, trials per block, inter-block rest, inter-trial gap), `trial:` (jitter
+  distribution, phase list and durations) and the `per_run` counts of `conditions:` (primary
+  trials, and the control share spread over the four control conditions) taken from that
+  run's solved design. The conditions themselves - names, cues, responses - are the lab
+  template's. The builder loads these files unchanged. It does not yet run `inter_block_rest`
+  or `inter_trial_gap`, so a multi-block run it presents is shorter than the planner books.
 - **Copy methods text** — a paste-ready narrative generated from the solved design.
 - **Design JSON** — the full state plus the solved report; it reloads through
   *Saved designs → Import JSON file*.
