@@ -48,21 +48,64 @@ First-time setup on a machine without the virtual environment:
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ```
 
-### Links to saved designs
+### Signing in
 
-Every saved design opens at its own address, so it can be shared as a link:
+Anyone who can reach the planner can **look** at it: every panel, every saved design, and
+changes made elsewhere as they happen. Changing anything (a design, an acquisition card, a
+saved design) and exporting anything (downloads, the zip, copying tables or configs) needs a
+sign-in. Without one the page runs **view only**: the masthead says so, the edit, download and
+copy buttons are gone, the fields are greyed out, and the server refuses every write and every
+export with 401.
+
+The only way in is a **one-time login link**. The first browser to open it is signed in for
+good, and after that the link is spent. There are no passwords and no roles: everyone signed in
+can do everything, including adding and removing people.
+
+- **The first link** comes from the shell:
+
+  ```bash
+  ./dockerRun.sh --link "Your Name"                 # the container
+  python3 -m planner.auth link "Your Name"          # a checkout run with ./run.sh
+  ```
+
+  The same command gets somebody back in if nobody left inside can make them a link.
+  `./dockerRun.sh --users` (or `python3 -m planner.auth users`) lists who can sign in.
+- **Every other link** comes from the **People** panel, which is only there when signed in.
+  There you can add someone (their first link comes straight up), make anyone a new link,
+  cancel an unused one, remove someone (their browsers are signed out at once), and sign out
+  of this browser. Nobody can remove themselves.
+- Unopened links stop working after 7 days (`PLANNER_LINK_DAYS`).
+- When the planner is reached through a proxy or a tunnel, set
+  `PLANNER_PUBLIC_URL=https://planner.example.org` so that links are built on that address
+  rather than on whatever address the person making them is using.
+
+`accounts/users.json` (`PLANNER_AUTH_DIR`) keeps people, sessions and links. It stores only
+sha256 hashes of the tokens, so a copy of the file lets nobody in. The session cookie is
+`HttpOnly` and `SameSite=Lax`, and it is renewed each time the planner is opened. Writes from
+another origin, including another port on the same host, are refused.
+
+### Links
+
+Every view has its own address, and the address bar follows what is on screen. To share
+exactly what you are looking at, copy the address, or use **Copy link** in the masthead:
 
 | Address | Opens |
 |---|---|
-| `/` | The working design, `presets/current.json` |
-| `/designs/<name>` | The saved design `presets/<name>.json` |
+| `/` | The working design, `presets/current.json`, on the overview |
+| `/sessions/<id>` | One of its sessions; likewise `/trials/<id>`, `/runs/<id>`, `/experiments/<id>` |
+| `/acquisition/<card>` | One acquisition card |
+| `/budget`, `/jitter`, `/hrf`, `/study`, `/export` | That panel |
+| `/designs/<name>` | The saved design `presets/<name>.json`, on the overview |
+| `/designs/<name>/runs/<id>` | The same panels and items, in that saved design |
+
+Clicking the rail or an item in a list adds a history entry, so Back and Forward move between
+views. An id that is not in the design opens the first item instead and says so.
 
 The page works on the design its address names: edits made there save to that design, and
-every page open on the same link follows them within a few seconds. The masthead shows which
-design is open and has a **Copy link** button; *Report and export → Saved designs* has one per
-design, and each name there is its link. To keep a version fixed while you experiment, save a
-copy under a new name first. An address naming a design that does not exist says so and lists
-the ones that do.
+every page open on the same design follows them within a few seconds. *Report and export →
+Saved designs* lists every design, and each name there is its link. To keep a version fixed
+while you experiment, save a copy under a new name first. An address naming a design that does
+not exist says so and lists the ones that do.
 
 ## Layout
 
@@ -70,6 +113,8 @@ the ones that do.
 |---|---|
 | `server.py` | Flask application and waitress entry point |
 | `planner/api.py` | The agent-facing design API under `/api/v1` |
+| `planner/auth.py` | People, sessions and one-time login links; `python3 -m planner.auth link <name>` |
+| `planner/access.py` | Who may do what: view-only for everyone, a session for writes and exports; `/login`, `/api/auth/*` |
 | `planner/engine.py` | Runs the planner's own JavaScript on the server, in QuickJS |
 | `planner/designs.py` | Saved designs, with revisions so the page and the API cannot overwrite each other |
 | `planner/protocols.py` | Loading, validation, atomic writes and backups for the acquisition cards |
@@ -82,10 +127,13 @@ the ones that do.
 | `static/js/library.js` | The trial, run, session, experiment, jitter and HRF panels |
 | `static/js/protocols.js` | Acquisition card editor |
 | `static/js/export.js` | Clipboard, Markdown, PsychoPy, workbook and zip export |
+| `static/js/people.js` | The People panel: login links, removing people, signing out |
+| `static/js/login.js` | The page a login link opens |
 | `scanner-parameters/*.json` | The acquisition cards, edited in place |
 | `scanner-parameters/.backups/` | Timestamped snapshot before every save |
 | `presets/` | Saved designs, each open at `/designs/<name>`; `current.json` is the autosaved working design, at `/` |
 | `exports/` | Every generated workbook and zip is archived here |
+| `accounts/` | `users.json`: who can sign in (hashes only; not in git) |
 
 ## Trial designs
 
@@ -408,7 +456,9 @@ Three figures, each downloadable as SVG or PNG and all of them included in the z
 
 To build or change a design from a script or an agent, use the design API: see
 **[API.md](API.md)**, or `GET /api/v1` on a running planner. The interface's own endpoints are
-below.
+below. Anyone may use the GETs (the `/api/v1` exports excepted). Everything else needs a session,
+either the cookie a login link sets or `Authorization: Bearer <token>`; without one the answer
+is 401.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -429,6 +479,15 @@ below.
 | POST | `/api/export/xlsx` | Build and download the workbook |
 | POST | `/api/export/bundle` | Build and download the full-export zip |
 | POST | `/api/export/json` | Download the design payload |
+| GET | `/login` | The page a login link (`/login#<token>`) opens |
+| POST | `/api/auth/redeem` | Spend a login link's token: `{"token"}` → a session (cookie, and `token` in the body) |
+| POST | `/api/auth/resume` | Hand back a session a browser kept, when its cookie went |
+| GET | `/api/auth/me` | Who is signed in |
+| POST | `/api/auth/logout` | Sign this browser out |
+| GET/POST | `/api/auth/users` | List people; add someone (answers with their first link) |
+| POST | `/api/auth/users/<id>/link` | A new one-time link for someone |
+| DELETE | `/api/auth/users/<id>` | Remove someone, and every session they have |
+| DELETE | `/api/auth/links/<id>` | Cancel a link nobody has opened |
 
 ## Loading an older design
 

@@ -20,11 +20,13 @@ import os
 import re
 import sys
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, Optional
+from urllib.parse import quote
 
 from flask import (
     Flask,
     Response,
+    g,
     jsonify,
     redirect,
     render_template,
@@ -32,7 +34,9 @@ from flask import (
     send_from_directory,
 )
 
+from planner.access import install as install_access
 from planner.api import create_blueprint, render_docs
+from planner.auth import AUTH_DIR, PUBLIC_URL, Accounts, Throttle
 from planner.bundle import build_bundle
 from planner.designs import DesignConflict, DesignStore, clean_name, page_path
 from planner.engine import Engine
@@ -68,6 +72,10 @@ app.json.sort_keys = False  # card pages must keep console order
 
 store = ProtocolStore(PROTOCOL_DIR)
 designs = DesignStore(PRESET_DIR)
+accounts = Accounts(AUTH_DIR)
+
+# Everybody may look; changes and exports need a login link (planner/access.py).
+install_access(app, accounts, Throttle(), PUBLIC_URL)
 
 SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -154,25 +162,46 @@ def _cards_rev() -> str:
 
 # ------------------------------------------------------------------- pages
 
+# The interface's panels, each with an address of its own inside a design:
+# /<view> and /<view>/<item id>, or the same under /designs/<name>.  The page
+# reads the rest from the address (ui.js, readAddress); keep this list and
+# PANELS there together.
+VIEWS = (
+    "overview", "experiments", "sessions", "runs", "trials", "jitter", "hrf",
+    "budget", "acquisition", "study", "export", "people",
+)
+VIEW = "<any(" + ", ".join(VIEWS) + "):view>"
+
+
+def _view_suffix(view: Optional[str], item: Optional[str]) -> str:
+    if not view:
+        return ""
+    return f"/{view}" + (f"/{item}" if item else "")
+
 
 @app.route("/")
-def index() -> Response:
+@app.route(f"/{VIEW}")
+@app.route(f"/{VIEW}/<item>")
+def index(view: Optional[str] = None, item: Optional[str] = None) -> Response:
     return _page("index.html", design="current")
 
 
 @app.route("/designs/<name>")
 @app.route("/designs/<name>/")
-def design_page(name: str) -> Response:
-    """A saved design's own address: the interface, working on that design.
+@app.route(f"/designs/<name>/{VIEW}")
+@app.route(f"/designs/<name>/{VIEW}/<item>")
+def design_page(name: str, view: Optional[str] = None, item: Optional[str] = None) -> Response:
+    """A saved design's own address: the interface, working on that design,
+    optionally opened on one panel and one item in it.
 
     Anything that is not the canonical spelling - a trailing slash, a name
     with characters the store replaces, ``current`` - is redirected to it, so
     the address bar always shows the link worth sharing.  An unknown name
     still gets the page, which says so and lists the designs that exist.
     """
-    target = page_path(name)
+    target = page_path(name).rstrip("/") + _view_suffix(view, item) or "/"
     if request.path != target:
-        return redirect(target)
+        return redirect(quote(target))
     status = 200 if designs.exists(name) else 404
     return _page("index.html", status=status, design=clean_name(name))
 
@@ -205,6 +234,8 @@ def bootstrap() -> Response:
     design.  The working design starts from the defaults when its file is
     missing or unreadable; any other design reports ``designError`` instead,
     and the page stops there rather than autosaving over it.
+
+    ``me`` is who is signed in, or null: the page runs view-only without one.
     """
     name = clean_name(request.args.get("design") or "current")
     design, rev, error = None, None, None
@@ -223,6 +254,8 @@ def bootstrap() -> Response:
             "designName": name,
             "designRev": rev,
             "designError": error,
+            "me": g.user,
+            "publicUrl": PUBLIC_URL,
             "cardsRev": _cards_rev(),
             "presets": designs.list(),
             "generated": datetime.now().isoformat(timespec="seconds"),
@@ -609,6 +642,11 @@ def main() -> int:
         print(f"  wrote {API_DOCS}")
         return 0
 
+    people = accounts.users()
+    signin = (
+        f"{len(people)} people, signed in on {sum(p['devices'] for p in people)} browser(s)"
+        if people else "nobody yet - python -m planner.auth link <name> makes the first login link"
+    )
     banner = (
         f"\n  MRI Experimental Design Planner\n"
         f"  Wright State University\n"
@@ -616,6 +654,9 @@ def main() -> int:
         f"  acquisition cards : {PROTOCOL_DIR} ({len(store.slugs())} files)\n"
         f"  presets           : {PRESET_DIR}\n"
         f"  exports           : {EXPORT_DIR}\n"
+        f"  accounts          : {AUTH_DIR}\n"
+        f"  sign-in           : {signin}\n"
+        f"                      (everyone else can view, not change or export)\n"
         f"  agent API         : /api/v1 ({'ready' if engine.available else 'needs the quickjs package'})\n"
         f"  listening on      : http://{args.host}:{args.port}\n"
     )

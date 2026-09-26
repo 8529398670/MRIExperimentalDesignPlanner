@@ -224,6 +224,7 @@
           ]) : null
         ]);
         button.addEventListener('click', function () { select(entry.slug); });
+        App.view(button);
         host.appendChild(button);
       });
     });
@@ -381,6 +382,7 @@
       state.filter = search.value.toLowerCase();
       renderSections();
     });
+    App.view(search);
 
     var actions = App.h('div', { class: 'btn-row' }, [
       App.h('button', {
@@ -534,6 +536,7 @@
           state.collapsed[section] = !state.collapsed[section];
           renderSections();
         });
+        App.view(head);
         body.style.display = open ? '' : 'none';
         sectionsHost.appendChild(App.h('div', { class: 'section-block' }, [head, body]));
       });
@@ -727,7 +730,7 @@
         delete App.protocols[slug];
         delete App.boot.acquisition[slug];
         absorb(result);
-        state.active = null;
+        setActive(null);
         renderList();
         renderEditor();
         App.refresh();
@@ -801,11 +804,19 @@
     }).catch(function (error) { App.toast(error.message, 'bad'); });
   }
 
-  function select(slug) {
+  /* The card on screen, kept where ui.js reads it for the address
+   * (/acquisition/<card>), so a rebuild and a link both come back to it. */
+  function setActive(slug) {
     state.active = slug;
+    App.selection.acquisition = { selected: slug };
+  }
+
+  function select(slug) {
+    setActive(slug);
     state.filter = '';
     renderList();
     renderEditor();
+    App.address('push');
   }
 
   /* --------------------------------------------------------------- build */
@@ -844,13 +855,18 @@
       if (state.active && !state.editorHost.firstChild) renderEditor();
     });
 
+    /* The card a link named, or the one on screen before a rebuild; failing
+     * that, the first functional card. */
+    var wanted = (App.selection.acquisition || {}).selected;
     var firstFunctional = (App.boot.manifest || []).filter(function (entry) {
       return entry.role === 'functional';
     })[0];
-    state.active = firstFunctional ? firstFunctional.slug
-      : ((App.boot.manifest || [])[0] || {}).slug || null;
+    setActive(wanted && App.protocols[wanted] ? wanted
+      : firstFunctional ? firstFunctional.slug
+        : ((App.boot.manifest || [])[0] || {}).slug || null);
     renderList();
     renderEditor();
+    panel.select = select;
     return panel;
   }
 

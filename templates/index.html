@@ -25,13 +25,14 @@
 
   <div class="mast-actions">
     <div class="mast-design" id="mast-design"></div>
+    <div class="mast-account" id="mast-account" data-view></div>
     <button class="btn quiet sm" id="btn-save-design" type="button">Save design</button>
     <button class="btn gold" id="btn-export-bundle" type="button">Download everything</button>
   </div>
 </header>
 
 <div class="shell">
-  <nav class="rail" id="rail"></nav>
+  <nav class="rail" id="rail" data-view></nav>
   <main class="workspace" id="workspace"></main>
 </div>
 
@@ -44,6 +45,7 @@
 <script src="{{ asset('js/library.js') }}"></script>
 <script src="{{ asset('js/protocols.js') }}"></script>
 <script src="{{ asset('js/export.js') }}"></script>
+<script src="{{ asset('js/people.js') }}"></script>
 <script>window.addEventListener('DOMContentLoaded', function () { window.PlannerApp.start(); });</script>
 </body>
 </html>

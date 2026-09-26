@@ -44,10 +44,13 @@
       return found;
     }
 
+    /* A person picking an item: the address follows (ui.js), so it can be
+     * shared as /<panel>/<id>. */
     function select(id) {
       local.selected = id;
       renderList();
       renderEditor();
+      App.address('push');
     }
 
     function renderList() {
@@ -76,7 +79,7 @@
           return App.h('div', { class: 'meta', text: line });
         })));
         button.addEventListener('click', function () { select(item.id); });
-        listHost.appendChild(button);
+        listHost.appendChild(App.view(button));
 
         var tools = App.h('div', { class: 'proto-tools' }, [
           App.iconButton('↑', 'Move up', function () {
@@ -97,8 +100,10 @@
           App.iconButton('Delete', 'Remove this ' + spec.noun, function () {
             if (!App.act(spec.kind + '.remove', itemArgs(item))) return;
             if (local.selected === item.id) local.selected = null;
+            current();          // falls back to the first, so the list can mark it
             renderList();
             renderEditor();
+            App.address();
             App.toast('Deleted "' + item.name + '"');
           }, 'danger')
         ]);

@@ -381,6 +381,11 @@ def create_blueprint(
                     "liveUi": "Every design opens in the interface at its own url: / for "
                               "`current`, /designs/<name> for the rest. A page open on a "
                               "design shows changes made here within a few seconds.",
+                    "auth": "GETs are open to anyone (exports excepted). Every write and "
+                            "every export needs a session: send Authorization: Bearer "
+                            "<token>, where the token comes from POST /api/auth/redeem "
+                            "{\"token\": <the part of a login link after #>}. Without one "
+                            "the answer is 401.",
                 },
                 "endpoints": [
                     {"method": method, "path": path, "summary": summary}

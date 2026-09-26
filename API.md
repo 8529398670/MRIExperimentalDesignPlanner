@@ -10,14 +10,38 @@ interpreter, so the API and the interface always agree.
 - Base URL: wherever the planner runs, e.g. `http://127.0.0.1:8761` (Docker) or
   `http://127.0.0.1:8760` (`./run.sh`)
 
+## Authentication
+
+Reading is open: anyone may use every `GET`, except the exports. Every write (any other method,
+including a batch of read-only actions) and every `GET .../export/<format>` needs a session.
+Without one the answer is `401` with `"viewOnly": true`.
+
+A script or an agent gets a session the same way a person does, from a one-time login link.
+Make one for it: `./dockerRun.sh --link "Agent"`, `python3 -m planner.auth link "Agent"`, or
+**People** in the interface. Then spend the link once:
+
+```bash
+# The part of the link after "#"
+curl -s -X POST localhost:8761/api/auth/redeem \
+  -H 'Content-Type: application/json' -d '{"token": "<link token>"}'
+# -> {"ok": true, "token": "<session token>", "name": "Agent", ...}
+```
+
+From then on, send `Authorization: Bearer <session token>` with every call. The session does
+not expire. It ends when someone removes that person in **People**, or when the agent calls
+`POST /api/auth/logout`. Browsers carry the same session in an `HttpOnly` cookie instead.
+
 ## Quick start
 
 ```bash
+TOKEN=<session token>        # see Authentication
+
 # 1. Look at the working design, the one at / in the interface (ids, names, and a solved summary)
 curl -s localhost:8761/api/v1/designs/current
 
 # 2. Change it: a list of actions, run in order, then solved and saved
 curl -s -X POST localhost:8761/api/v1/designs/current/actions \
+  -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"actions": [
         {"action": "budget.update", "totalScannerHours": 80},
@@ -25,14 +49,18 @@ curl -s -X POST localhost:8761/api/v1/designs/current/actions \
       ]}'
 
 # 3. Take the results away
-curl -s localhost:8761/api/v1/designs/current/export/methods
-curl -s -o study.zip localhost:8761/api/v1/designs/current/export/bundle
+curl -s -H "Authorization: Bearer $TOKEN" localhost:8761/api/v1/designs/current/export/methods
+curl -s -H "Authorization: Bearer $TOKEN" -o study.zip \
+  localhost:8761/api/v1/designs/current/export/bundle
 ```
 
 Any page open on the design shows the change within a few seconds. Every design has a page of
 its own: `/` for the working design `current`, and `/designs/<name>` for each saved design.
 That page works on its design - edits made there save to it - so the link is the way to hand
-a design to a person.
+a design to a person. Inside a design, each panel and item has an address too, so a link can
+point at exactly the thing to look at. Use the ids `design.get` returns: `/sessions/<id>`,
+`/trials/<id>`, `/runs/<id>`, `/experiments/<id>`, `/acquisition/<card slug>`, or
+`/designs/<name>/sessions/<id>` in a saved design.
 
 ## The shape of a call
 

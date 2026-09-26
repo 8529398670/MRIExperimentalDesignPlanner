@@ -13,6 +13,7 @@ __pycache__
 # Runtime state lives in bind-mounted volumes, never baked into the image.
 exports/*
 presets/*
+accounts
 scanner-parameters/.backups
 
 # Container tooling itself.  docker-entrypoint.sh is NOT listed here: the

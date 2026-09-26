@@ -58,6 +58,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PLANNER_PROTOCOL_DIR=/data/scanner-parameters \
     PLANNER_PRESET_DIR=/data/presets \
     PLANNER_EXPORT_DIR=/data/exports \
+    PLANNER_AUTH_DIR=/data/accounts \
     PLANNER_SEED_DIR=/app/seed
 
 COPY --from=build /opt/venv /opt/venv
@@ -85,7 +86,7 @@ RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh \
  && python -m compileall -q /app/server.py /app/planner \
  && install -d -o "${APP_UID}" -g "${APP_GID}" -m 0755 /data \
  && install -d -o "${APP_UID}" -g "${APP_GID}" -m 0770 \
-      /data/scanner-parameters /data/presets /data/exports
+      /data/scanner-parameters /data/presets /data/exports /data/accounts
 
 VOLUME ["/data"]
 EXPOSE 8761

@@ -10,6 +10,7 @@ set -eu
 PROTOCOL_DIR="${PLANNER_PROTOCOL_DIR:-/data/scanner-parameters}"
 PRESET_DIR="${PLANNER_PRESET_DIR:-/data/presets}"
 EXPORT_DIR="${PLANNER_EXPORT_DIR:-/data/exports}"
+AUTH_DIR="${PLANNER_AUTH_DIR:-/data/accounts}"
 SEED_DIR="${PLANNER_SEED_DIR:-/app/seed}"
 
 die() {
@@ -32,6 +33,7 @@ is_empty() {
 ensure_dir "$PROTOCOL_DIR"
 ensure_dir "$PRESET_DIR"
 ensure_dir "$EXPORT_DIR"
+ensure_dir "$AUTH_DIR"
 
 # First start against an empty volume: lay down the protocol cards that shipped
 # with the image.  An existing card set is never touched.

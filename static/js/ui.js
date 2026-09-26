@@ -28,7 +28,11 @@
     views: [],
     panels: {},
     railItems: {},
-    suspend: false
+    suspend: false,
+    selection: {},     // panel -> { selected: id }, kept across rebuilds
+    routing: false,    // true while following Back/Forward
+    me: null,          // who is signed in, or null
+    readOnly: true     // view only until the server says otherwise
   };
 
   function colourFor(index) {
@@ -252,6 +256,7 @@
     }
 
     function commit(raw) {
+      if (App.readOnly) return;
       var value = H.clamp(H.num(raw), options.min, options.max);
       if (decimals >= 0) value = H.round(value, decimals);
       if (options.set) options.set(value, App.state);
@@ -282,8 +287,8 @@
       if (document.activeElement !== box) box.value = H.round(value, Math.max(decimals, 0));
       paintRange(range);
       var off = options.disabledWhen ? options.disabledWhen(App.state) : false;
-      range.disabled = !!off;
-      box.disabled = !!off;
+      range.disabled = !!off || App.readOnly;
+      box.disabled = !!off || App.readOnly;
       node.style.opacity = off ? '.5' : '1';
       if (options.dynamicMax) {
         var top = options.dynamicMax(App.state, App.report);
@@ -334,6 +339,7 @@
     fillOptions();
 
     function commit() {
+      if (App.readOnly) return;
       var value = options.type === 'number' ? H.num(input.value) : input.value;
       if (options.set) options.set(value, App.state);
       else setPath(App.state, options.path, value);
@@ -359,7 +365,7 @@
         input.value = value === undefined || value === null ? '' : value;
       }
       var off = options.disabledWhen ? options.disabledWhen(App.state) : false;
-      input.disabled = !!off;
+      input.disabled = !!off || App.readOnly;
     }, options.owner);
     return node;
   }
@@ -367,6 +373,7 @@
   function checkbox(options) {
     var input = h('input', { type: 'checkbox' });
     input.addEventListener('change', function () {
+      if (App.readOnly) return;
       if (options.set) options.set(input.checked, App.state);
       else setPath(App.state, options.path, input.checked);
       if (options.onChange) options.onChange(input.checked);
@@ -384,6 +391,7 @@
     var buttons = options.options.map(function (option) {
       var button = h('button', { type: 'button', text: option.label, title: option.hint || '' });
       button.addEventListener('click', function () {
+        if (App.readOnly) return;
         if (options.set) options.set(option.value, App.state);
         else setPath(App.state, options.path, option.value);
         if (options.onChange) options.onChange(option.value);
@@ -405,7 +413,7 @@
       var off = options.disabledWhen ? options.disabledWhen(App.state) : false;
       buttons.forEach(function (button) {
         button.classList.toggle('active', button.dataset.value === String(value));
-        button.disabled = !!off;
+        button.disabled = !!off || App.readOnly;
       });
       node.style.opacity = off ? '.5' : '1';
     }, options.owner);
@@ -442,6 +450,80 @@
       class: 'btn ' + (kind || 'quiet') + ' sm', type: 'button', text: label,
       title: title, onclick: action
     });
+  }
+
+  /* ------------------------------------------------------------ view only */
+
+  /* Without a sign-in the page is for looking at: nothing on it may change
+   * the design, the cards or the saved designs, nor take any of it away as an
+   * export (the server refuses those too).  Rather than every panel deciding
+   * which of its buttons edit, every control is locked unless it - or
+   * something around it - is marked as only choosing what to look at: the
+   * rail, a list's items, a plot's zoom.  A button added tomorrow is locked
+   * until someone says it is safe. */
+  function view(node) {
+    node.setAttribute('data-view', '');
+    return node;
+  }
+
+  var LOCKABLE = 'button, input, select, textarea';
+
+  function lockOne(node) {
+    if (node.closest('[data-view]')) return;
+    node.setAttribute('data-locked', '');
+    /* A text box keeps its words readable and selectable; the rest go grey. */
+    if (node.tagName === 'TEXTAREA') node.readOnly = true;
+    else node.disabled = true;
+  }
+
+  function lockEditing(root) {
+    if (!root || root.nodeType !== 1) return;
+    if (root.matches(LOCKABLE)) lockOne(root);
+    Array.prototype.forEach.call(root.querySelectorAll(LOCKABLE), lockOne);
+  }
+
+  function watchLocks() {
+    lockEditing(document.body);
+    new MutationObserver(function (changes) {
+      changes.forEach(function (change) {
+        Array.prototype.forEach.call(change.addedNodes, lockEditing);
+      });
+    }).observe(document.body, { childList: true, subtree: true });
+  }
+
+  /* The masthead says which it is: view only, or who is signed in - which
+   * opens the people panel, where login links are made. */
+  function buildAccount() {
+    var host = document.getElementById('mast-account');
+    if (!host) return;
+    clear(host);
+    if (App.readOnly) {
+      host.appendChild(h('span', {
+        class: 'view-pill',
+        text: 'View only',
+        title: 'Anyone can look; changing or exporting anything needs a sign-in. '
+          + 'Ask someone who is signed in for a login link.'
+      }));
+      return;
+    }
+    host.appendChild(h('button', {
+      class: 'account-btn', type: 'button',
+      title: 'Signed in as ' + App.me.name + '. People, login links and signing out',
+      onclick: function () { go('people'); }
+    }, [
+      h('span', { class: 'k', text: 'Signed in' }),
+      h('span', { class: 'v', text: App.me.name })
+    ]));
+  }
+
+  /* The session went while the page was open: the person was removed, or
+   * signed out in another tab.  Load again, view only. */
+  var leaving = false;
+  function signedOut() {
+    if (leaving) return;
+    leaving = true;
+    toast('You are no longer signed in; this page is view only now.', 'bad');
+    setTimeout(function () { global.location.reload(); }, 1600);
   }
 
   /* ------------------------------------------------------------- tables */
@@ -1052,7 +1134,7 @@
 
     var api = { fit: fit, setZoom: setZoom, zoomToStart: zoomToStart, repaint: paint };
 
-    var toolbar = h('div', { class: 'plot-toolbar' }, [
+    var toolbar = h('div', { class: 'plot-toolbar', 'data-view': true }, [
       h('span', { class: 'k', text: 'Zoom' }),
       zoomRange,
       iconButton('-', 'Zoom out', function () { setZoom(currentZoom() / 1.6); }),
@@ -2540,18 +2622,21 @@
       build: function () { return global.PlannerProtocols.build(); } },
     { id: 'study', label: 'Study details', hint: 'Titles and identifiers', build: buildStudyPanel },
     { id: 'export', label: 'Report and export', hint: 'Markdown, PsychoPy, XLSX, zip',
-      build: function () { return global.PlannerExport.build(); } }
+      build: function () { return global.PlannerExport.build(); } },
+    { id: 'people', label: 'People', hint: 'Who can edit, and login links', signedIn: true,
+      build: function () { return global.PlannerPeople.build(); } }
   ];
 
   function buildRail() {
     var rail = document.getElementById('rail');
     clear(rail);
     PANELS.forEach(function (entry) {
+      if (entry.signedIn && App.readOnly) return;
       var button = h('button', { class: 'rail-item', type: 'button' }, [
         h('span', { class: 'label', text: entry.label }),
         h('span', { class: 'hint', text: entry.hint })
       ]);
-      button.addEventListener('click', function () { show(entry.id); });
+      button.addEventListener('click', function () { go(entry.id); });
       rail.appendChild(button);
       App.railItems[entry.id] = button;
     });
@@ -2565,7 +2650,9 @@
     });
     clear(workspace);
     if (!App.panels[id]) {
-      var entry = PANELS.filter(function (item) { return item.id === id; })[0];
+      var entry = PANELS.filter(function (item) {
+        return item.id === id && !(item.signedIn && App.readOnly);
+      })[0];
       App.panels[id] = entry ? entry.build() : h('div', { class: 'panel' });
     }
     App.panels[id].classList.add('active');
@@ -2585,6 +2672,88 @@
 
   function designLink(name) {
     return global.location.origin + designPath(name);
+  }
+
+  /* And inside a design, every view has its own address.  The address bar
+   * follows what is on screen - the panel, and the item selected in it - so
+   * whatever is showing can be shared by copying the address:
+   *
+   *   /                           the working design's overview
+   *   /sessions/<id>              one of its sessions
+   *   /acquisition/<card>         one acquisition card
+   *   /designs/V1/runs/<id>       a run in the saved design V1
+   *
+   * Clicking the rail or a list pushes a history entry, so Back works; a
+   * change that moves the selection by itself (a delete, a change through the
+   * API) only corrects the address.  server.py serves the page on the same
+   * paths (VIEWS there lists the panels). */
+  function viewPath(panel, item) {
+    var base = designPath(App.designName).replace(/\/$/, '');
+    if (!panel || panel === 'overview') return base || '/';
+    return base + '/' + panel + (item ? '/' + encodeURIComponent(item) : '');
+  }
+
+  function panelAllowed(id) {
+    return PANELS.some(function (entry) {
+      return entry.id === id && !(entry.signedIn && App.readOnly);
+    });
+  }
+
+  /* The panel and item the address names; anything unknown is the overview. */
+  function readAddress() {
+    var parts = global.location.pathname.split('/').filter(Boolean).map(function (part) {
+      try { return decodeURIComponent(part); } catch (error) { return part; }
+    });
+    if (parts[0] === 'designs') parts = parts.slice(2);
+    var panel = parts[0] && panelAllowed(parts[0]) ? parts[0] : 'overview';
+    return { panel: panel, item: panel === 'overview' ? null : parts[1] || null };
+  }
+
+  function selectedItem(panel) {
+    var held = App.selection[panel];
+    return held ? held.selected || null : null;
+  }
+
+  /* Bring the address bar up to what is on screen.  `push` makes it a new
+   * history entry: the next call after go() does, whatever triggers it. */
+  var pushNext = false;
+  function address(mode) {
+    if (App.routing || !App.state) return;
+    var push = mode === 'push' || pushNext;
+    pushNext = false;
+    var target = viewPath(App.activePanel, selectedItem(App.activePanel));
+    if (global.location.pathname === target) return;
+    try {
+      global.history[push ? 'pushState' : 'replaceState']({ planner: true }, '', target);
+    } catch (error) { /* a sandboxed frame; the page still works */ }
+  }
+
+  /* A person asking for a panel: show it, and give it an address of its own. */
+  function go(id) {
+    pushNext = true;
+    show(id);
+    address();
+  }
+
+  /* Open the item an address names in its panel, if the design has it. */
+  function openItem(panel, item) {
+    if (!item || selectedItem(panel) === item) return;
+    var built = App.panels[panel];
+    if (built && built.select) built.select(item);
+  }
+
+  function followHistory() {
+    global.addEventListener('popstate', function () {
+      var route = readAddress();
+      App.routing = true;
+      try {
+        if (route.panel !== App.activePanel) show(route.panel);
+        openItem(route.panel, route.item);
+      } finally {
+        App.routing = false;
+      }
+      address();
+    });
   }
 
   /* The name a design is stored under, as planner/designs.py derives it:
@@ -2612,9 +2781,9 @@
       h('span', { class: 'k', text: 'Design' }),
       h('span', { class: 'v', text: working ? 'Working design' : App.designName })
     ]));
-    host.appendChild(iconButton('Copy link', 'Copy a link that opens this design', function () {
-      copy(designLink(App.designName), 'Link');
-    }));
+    host.appendChild(view(iconButton('Copy link',
+      'Copy a link to what is on screen: this design, this panel and what is selected in it',
+      function () { copy(global.location.href, 'Link'); })));
   }
 
   /* An address for a design that is not there: deleted, or mistyped.  Say so
@@ -2646,6 +2815,7 @@
 
   function saveWorking(options) {
     if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+    if (App.readOnly) return Promise.resolve({});
     var request = fetch('/api/design', {
       method: 'POST',
       keepalive: !!(options && options.keepalive),
@@ -2655,7 +2825,9 @@
       })
     }).then(function (response) {
       return response.json().then(function (body) {
-        if (response.status === 409 && body.design) {
+        if (response.status === 401) {
+          signedOut();
+        } else if (response.status === 409 && body.design) {
           App.designRev = body.rev;
           adopt(body.design, { quiet: true });
           toast('This design was changed in another window or through the API; '
@@ -2673,6 +2845,7 @@
   }
 
   function scheduleAutosave() {
+    if (App.readOnly) return;
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(function () {
       saveTimer = null;
@@ -2748,7 +2921,22 @@
    * the same call POST /api/v1/designs/<name>/actions makes - so the
    * interface and the API cannot disagree about what a button does.  Returns
    * the action's result, or null after telling the user why it was refused. */
+  var CHANGES = null;
+  function changesDesign(name) {
+    if (!CHANGES) {
+      CHANGES = {};
+      global.PlannerActions.catalogue().forEach(function (entry) {
+        CHANGES[entry.name] = entry.changesDesign;
+      });
+    }
+    return CHANGES[name] !== false;
+  }
+
   function perform(name, args) {
+    if (App.readOnly && changesDesign(name)) {
+      toast('View only: sign in with a login link to make changes.', 'bad');
+      return null;
+    }
     try {
       return global.PlannerActions.execute(App.state, App.boot,
         Object.assign({ action: name }, args || {}));
@@ -2827,7 +3015,8 @@
         }
       });
       syncControls();
-      if (force !== 'quiet') scheduleAutosave();
+      address();
+      if (force !== 'quiet' && !App.readOnly) scheduleAutosave();
     } finally {
       App.suspend = false;
     }
@@ -2867,34 +3056,63 @@
         showMissingDesign(veil, boot);
         return;
       }
-      App.boot = boot;
-      App.designName = boot.designName || 'current';
-      App.protocols = boot.protocols || {};
-      App.designRev = boot.designRev || null;
-      App.cardsRev = boot.cardsRev || null;
-      App.state = boot.design ? mergeState(boot.design) : M.defaultState();
-      M.applyHrf(App.state);
-      buildMetrics();
-      buildRail();
-      buildDesignBadge();
-
-      document.getElementById('btn-save-design').addEventListener('click', function () {
-        global.PlannerExport.saveDesign();
-      });
-      document.getElementById('btn-export-bundle').addEventListener('click', function () {
-        global.PlannerExport.downloadBundle();
-      });
-
-      show('overview');
-      watchServer();
-      saveOnLeave();
-      if (veil && veil.parentNode) veil.parentNode.removeChild(veil);
+      App.me = boot.me || null;
+      App.readOnly = !App.me;
+      document.body.classList.toggle('view-only', App.readOnly);
+      /* No session, but this browser kept one: its cookie went (a browser
+       * drops one after 400 days, or they were cleared).  Hand it back and
+       * load again, rather than showing a signed-in person the view-only page. */
+      if (App.readOnly && global.PlannerPeople) {
+        return global.PlannerPeople.resume().then(function (resumed) {
+          if (!resumed) begin(boot, veil);
+        });
+      }
+      begin(boot, veil);
+      return null;
     }).catch(function (error) {
       if (veil) {
         veil.textContent = 'Could not reach the planner API: ' + error.message;
         veil.classList.add('bad');
       }
     });
+  }
+
+  /* Build the page on what bootstrap returned. */
+  function begin(boot, veil) {
+    if (App.readOnly) watchLocks();
+    App.boot = boot;
+    App.designName = boot.designName || 'current';
+    App.protocols = boot.protocols || {};
+    App.designRev = boot.designRev || null;
+    App.cardsRev = boot.cardsRev || null;
+    App.state = boot.design ? mergeState(boot.design) : M.defaultState();
+    M.applyHrf(App.state);
+    buildMetrics();
+    buildRail();
+    buildDesignBadge();
+    buildAccount();
+
+    document.getElementById('btn-save-design').addEventListener('click', function () {
+      global.PlannerExport.saveDesign();
+    });
+    document.getElementById('btn-export-bundle').addEventListener('click', function () {
+      global.PlannerExport.downloadBundle();
+    });
+
+    /* Open what the address names.  The list panels read their selection
+     * from App.selection when they are built. */
+    var route = readAddress();
+    if (route.item) App.selection[route.panel] = { selected: route.item };
+    show(route.panel);
+    address();
+    if (route.item && selectedItem(route.panel) !== route.item) {
+      toast('Nothing with the id ' + route.item + ' in this design; showing the first instead.',
+        'bad');
+    }
+    followHistory();
+    watchServer();
+    saveOnLeave();
+    if (veil && veil.parentNode) veil.parentNode.removeChild(veil);
   }
 
   App.h = h;
@@ -2910,6 +3128,8 @@
   App.flushCard = flushCard;
   App.readoutCell = readoutCell;
   App.iconButton = iconButton;
+  App.view = view;
+  App.busySaving = busySaving;
   App.slider = slider;
   App.field = field;
   App.checkbox = checkbox;
@@ -2945,6 +3165,9 @@
   App.write = write;
   App.saveWorking = saveWorking;
   App.designPath = designPath;
+  App.viewPath = viewPath;
+  App.address = address;
+  App.go = go;
   App.designLink = designLink;
   App.cleanName = cleanName;
   App.mergeState = mergeState;
@@ -2972,11 +3195,13 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(Object.assign({}, options || {}, { actions: list }))
         });
-      }).then(function (response) { return response.json(); })
-        .then(function (answer) {
-          if (!answer.saved) return answer;
-          return pullDesign(false).then(function () { return answer; });
-        });
+      }).then(function (response) {
+        if (response.status === 401 && !App.readOnly) signedOut();
+        return response.json();
+      }).then(function (answer) {
+        if (!answer.saved) return answer;
+        return pullDesign(false).then(function () { return answer; });
+      });
     }
   };
 }(window));

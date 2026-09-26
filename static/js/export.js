@@ -347,10 +347,10 @@
       var here = preset.name === App.designName;
       App.clear(cell);
       var actions = App.h('div', { class: 'btn-row' }, [
-        App.iconButton('Copy link', 'Copy a link that opens this design; changes made there '
-          + 'save to it', function () {
+        App.view(App.iconButton('Copy link', 'Copy a link that opens this design; changes '
+          + 'made there save to it', function () {
           App.copy(App.designLink(preset.name), 'Link for "' + preset.name + '"');
-        })
+        }))
       ]);
       if (!here) {
         actions.appendChild(App.iconButton('Load', 'Replace ' + openHere()
@@ -495,7 +495,7 @@
     ]);
 
     /* --- markdown ------------------------------------------------------- */
-    markdownPicker = App.h('select', {});
+    markdownPicker = App.view(App.h('select', {}));
     markdownPicker.addEventListener('change', refreshMarkdown);
     markdownBox = App.h('pre', { class: 'code-box' });
     var markdownCard = App.card('Tables', 'Markdown, or straight into Word', [
@@ -517,7 +517,7 @@
 
     /* --- psychopy ------------------------------------------------------- */
     psychopyButtons = App.h('div', { class: 'btn-row' });
-    psychopyPicker = App.h('select', {});
+    psychopyPicker = App.view(App.h('select', {}));
     psychopyPicker.addEventListener('change', renderPsychopyPreview);
     psychopyBox = App.h('pre', { class: 'code-box', style: 'max-height:360px' });
 

@@ -39,6 +39,12 @@ First time on a new machine:
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ```
 
+To change anything you need to be signed in. Without that the planner is view only: you can
+look at everything, but not edit or export it. Sign in by opening a one-time login link. The
+first one comes from `python3 -m planner.auth link "Your Name"` (or
+`./dockerRun.sh --link "Your Name"` for the container). After that, anyone signed in can make
+more in the **People** panel.
+
 Your work autosaves to `presets/current.json` as you go. You do not need to press save.
 Designs you save under a name open at their own link, `/designs/<name>`, which you can send
 to someone: see [Where things live](#6-where-things-live).
@@ -301,8 +307,10 @@ conditions themselves are the lab template's.
 | `scanner-parameters/.backups/` | Timestamped snapshot before every card save |
 | `exports/` | Every workbook and zip you generated |
 
-To share a saved design, send its link: **Copy link** in the masthead, or next to it in
-**Report and export → Saved designs**. Whoever opens it is working on that design, and their
+The address bar always shows what you are looking at, for example `/sessions/<id>` or
+`/designs/V1/acquisition/<card>`. To point someone at one thing, copy the address, or use
+**Copy link** in the masthead. To share a saved design, send its link: **Copy link** in the
+masthead, or next to it in **Report and export → Saved designs**. Whoever opens it is working on that design, and their
 changes save to it; save a copy under a new name first if you want a version kept as it is.
 
 To reload an old design: **Report and export → Saved designs → Import JSON file**.

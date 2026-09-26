@@ -910,3 +910,54 @@ table.data td.cell { padding: 3px 6px; }
   .seq-minutes { grid-area: minutes; text-align: left; }
   .seq-actions { grid-area: actions; }
 }
+
+/* ------------------------------------------------------------- sign-in */
+
+/* Who this page is signed in as, or that it is view only. */
+.mast-account:empty { display: none; }
+.view-pill {
+  display: inline-block; padding: 3px 10px; border: 1px solid var(--wsu-gold); border-radius: 11px;
+  font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--wsu-gold); white-space: nowrap; cursor: help;
+}
+.account-btn {
+  display: flex; flex-direction: column; line-height: 1.2; min-width: 0;
+  padding: 2px 10px; border: 0; border-left: 2px solid rgba(203, 160, 82, .5);
+  background: transparent; color: #fff; font: inherit; text-align: left; cursor: pointer;
+}
+.account-btn .k {
+  font-size: 9px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--wsu-beige); white-space: nowrap;
+}
+.account-btn .v {
+  font-family: var(--mono); font-size: 12px; font-weight: 600;
+  max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.account-btn:hover .v { color: var(--wsu-gold); }
+
+/* View only: every control not marked as only choosing what to look at is
+ * locked (ui.js).  Locked buttons go - an edit, a download or a copy nobody
+ * may use is clutter - except a segmented control's, which still show which
+ * option the design has.  Locked fields stay, greyed, so values can be read. */
+body.view-only :not(.seg) > button[data-locked] { display: none; }
+/* A button that is a cell of a grid row keeps its cell, or the rest shift. */
+body.view-only .seq-row > .seq-handle[data-locked] { display: block; visibility: hidden; }
+body.view-only [data-locked] { cursor: default; }
+body.view-only .seg button[data-locked]:not(.active):hover { background: var(--surface); }
+
+/* The people panel. */
+.people-list { display: flex; flex-direction: column; }
+.people-row { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.people-row:first-child { padding-top: 0; }
+.people-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.people-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.people-name { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--wsu-dark-green); }
+.people-meta { margin-top: 2px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); }
+.people-pending {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-top: 6px; padding: 4px 8px; background: var(--wsu-off-white);
+  font-size: 11px; color: var(--ink-soft);
+}
+.people-link { font-family: var(--mono); font-size: 11.5px; }
+.people-hint { margin: 8px 0 0; font-size: 12px; color: var(--ink-faint); }
+.people-add > .btn, .people-self > .btn, .people-link-row > .btn { flex: none; }
