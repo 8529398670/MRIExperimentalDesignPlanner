@@ -644,7 +644,8 @@ def main() -> int:
 
     people = accounts.users()
     signin = (
-        f"{len(people)} people, signed in on {sum(p['devices'] for p in people)} browser(s)"
+        f"{len(people)} people, signed in on {sum(p['devices'] for p in people)} browser(s), "
+        f"{len(accounts.keys())} API key(s)"
         if people else "nobody yet - python -m planner.auth link <name> makes the first login link"
     )
     banner = (

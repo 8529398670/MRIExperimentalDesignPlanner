@@ -13,35 +13,40 @@ interpreter, so the API and the interface always agree.
 ## Authentication
 
 Reading is open: anyone may use every `GET`, except the exports. Every write (any other method,
-including a batch of read-only actions) and every `GET .../export/<format>` needs a session.
-Without one the answer is `401` with `"viewOnly": true`.
+including a batch of read-only actions) and every `GET .../export/<format>` needs an **API key**
+(or a person's session). Without one the answer is `401` with `"viewOnly": true`.
 
-A script or an agent gets a session the same way a person does, from a one-time login link.
-Make one for it: `./dockerRun.sh --link "Agent"`, `python3 -m planner.auth link "Agent"`, or
-**People** in the interface. Then spend the link once:
+Someone signed in makes the key: **People → API keys**, name it for what will use it
+**Make a key**. It is shown once, so copy it then; only a hash is kept. Send
+it with every call:
 
 ```bash
-# The part of the link after "#"
-curl -s -X POST localhost:8761/api/auth/redeem \
-  -H 'Content-Type: application/json' -d '{"token": "<link token>"}'
-# -> {"ok": true, "token": "<session token>", "name": "Agent", ...}
+KEY=mrip_...                 # the key, as shown once in People
+curl -s -H "Authorization: Bearer $KEY" localhost:8761/api/auth/me
+# -> {"id": "key:3f9c...", "name": "req-1", "key": "3f9c...", "by": "asdf"}
 ```
 
-From then on, send `Authorization: Bearer <session token>` with every call. The session does
-not expire. It ends when someone removes that person in **People**, or when the agent calls
-`POST /api/auth/logout`. Browsers carry the same session in an `HttpOnly` cookie instead.
+A key can do everything a person signed in can: change any design, run actions, change the
+acquisition cards, save and delete designs, and export. It cannot manage people, login links or
+keys (`/api/auth/*` answers `403`, except `GET /api/auth/me`), so revoking a key that got out
+is the end of it. A key does not expire. It stops working when someone revokes it in
+**People**, or when the person who made it is removed; the answer is then `401` saying the token
+is not recognised. Keys are only accepted in the `Authorization` header, never as a cookie.
+
+A person's session token (from spending a login link with `POST /api/auth/redeem`) works as a
+Bearer token too, but a key can be named, listed and revoked on its own, so prefer one.
 
 ## Quick start
 
 ```bash
-TOKEN=<session token>        # see Authentication
+KEY=mrip_...                 # an API key: see Authentication
 
 # 1. Look at the working design, the one at / in the interface (ids, names, and a solved summary)
 curl -s localhost:8761/api/v1/designs/current
 
 # 2. Change it: a list of actions, run in order, then solved and saved
 curl -s -X POST localhost:8761/api/v1/designs/current/actions \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $KEY" \
   -H 'Content-Type: application/json' \
   -d '{"actions": [
         {"action": "budget.update", "totalScannerHours": 80},
@@ -49,8 +54,8 @@ curl -s -X POST localhost:8761/api/v1/designs/current/actions \
       ]}'
 
 # 3. Take the results away
-curl -s -H "Authorization: Bearer $TOKEN" localhost:8761/api/v1/designs/current/export/methods
-curl -s -H "Authorization: Bearer $TOKEN" -o study.zip \
+curl -s -H "Authorization: Bearer $KEY" localhost:8761/api/v1/designs/current/export/methods
+curl -s -H "Authorization: Bearer $KEY" -o study.zip \
   localhost:8761/api/v1/designs/current/export/bundle
 ```
 
@@ -147,6 +152,7 @@ one batch:
 
 ```bash
 curl -s -X POST localhost:8761/api/v1/designs \
+  -H "Authorization: Bearer $KEY" \
   -H 'Content-Type: application/json' -d '{"name": "pilot", "from": "blank"}'
 ```
 

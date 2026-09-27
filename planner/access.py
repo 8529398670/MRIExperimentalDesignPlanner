@@ -4,10 +4,15 @@ Everybody may look.  Every page, every saved design and every read of the
 API answers anyone who can reach the port, so a design can be shown to
 whoever needs to see it.  Changing anything - any request that is not a GET
 - and the export endpoints need a session: the cookie a login link set, or
-``Authorization: Bearer <token>`` for a script or an agent.  Without one the
+``Authorization: Bearer <API key>`` for a script or an agent.  Without one the
 answer is 401, and the page, told the same thing at bootstrap, runs view-only.
 
-The accounts themselves - people, sessions, links - are ``planner/auth.py``.
+An API key may do all of that, but none of /api/auth: it cannot add or
+remove people, or make links or keys.  A key that got out is then ended by
+revoking it, and only a person signed in with a login link can do that.
+
+The accounts themselves - people, sessions, links, keys - are
+``planner/auth.py``.
 """
 
 from __future__ import annotations
@@ -18,7 +23,7 @@ from urllib.parse import urlsplit
 
 from flask import Blueprint, Flask, Response, g, jsonify, render_template, request
 
-from planner.auth import COOKIE, COOKIE_AGE, Accounts, Throttle, log
+from planner.auth import COOKIE, COOKIE_AGE, KEY_PREFIX, Accounts, Throttle, log
 
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
@@ -35,6 +40,16 @@ EXPORT_READ = re.compile(r"^/api/v1/designs/[^/]+/export(/|$)")
 PAGE_ENDPOINTS = frozenset({"index", "design_page"})
 
 VIEW_ONLY = "View only: sign in with a login link to make changes."
+
+# Said to a script whose Bearer token matched nothing, rather than VIEW_ONLY,
+# which is for a browser.
+UNKNOWN_TOKEN = ("That token is not recognised: the API key was revoked or the person who "
+                 "made it was removed, or the session ended. Make a new key in People.")
+
+# What an API key may ask of /api/auth: who it is, and nothing else.
+KEY_AUTH_ROUTES = frozenset({("GET", "/api/auth/me")})
+KEY_REFUSED = ("An API key cannot manage people, login links or keys: that takes a person "
+               "signed in with a login link.")
 
 
 def _fail(status: int, message: str, **extra: Any) -> Tuple[Response, int]:
@@ -101,16 +116,26 @@ def install(app: Flask, accounts: Accounts, throttle: Throttle, public_url: str 
         token, via_cookie = presented()
         if token:
             g.token, g.via_cookie = token, via_cookie
-            g.user = accounts.user_for(token)
+            # A key only ever comes in the header: the cookie is a browser's,
+            # and nothing turns a key into one.
+            if token.startswith(KEY_PREFIX):
+                g.user = None if via_cookie else accounts.key_for(token)
+            else:
+                g.user = accounts.user_for(token)
+        if (g.user and g.user.get("key") and request.path.startswith("/api/auth/")
+                and (request.method, request.path) not in KEY_AUTH_ROUTES):
+            return _fail(403, KEY_REFUSED)
+        # A browser with a dead cookie is simply signed out; a script is told why.
+        unknown = UNKNOWN_TOKEN if token and not via_cookie and g.user is None else ""
         if request.method not in SAFE_METHODS:
             if not same_origin():
                 return _fail(403, "Refused: that came from another site.")
             if request.path in OPEN_POSTS:
                 return None
             if g.user is None:
-                return _fail(401, VIEW_ONLY, viewOnly=True, signIn="/login")
+                return _fail(401, unknown or VIEW_ONLY, viewOnly=True, signIn="/login")
         elif g.user is None and EXPORT_READ.match(request.path):
-            return _fail(401, "Exports need a sign-in with a login link.",
+            return _fail(401, unknown or "Exports need a sign-in with a login link.",
                          viewOnly=True, signIn="/login")
         return None
 
@@ -208,7 +233,7 @@ def install(app: Flask, accounts: Accounts, throttle: Throttle, public_url: str 
     def list_users():
         if g.user is None:
             return _fail(401, "Not signed in.")
-        return jsonify({"me": g.user["id"], "users": accounts.users()})
+        return jsonify({"me": g.user["id"], "users": accounts.users(), "keys": accounts.keys()})
 
     @bp.post("/api/auth/users")
     def add_user():
@@ -247,6 +272,24 @@ def install(app: Flask, accounts: Accounts, throttle: Throttle, public_url: str 
         if not accounts.revoke(link_id):
             return _fail(404, "No unused link with that id.")
         log(f"{g.user['name']} cancelled an unused login link")
+        return jsonify({"ok": True})
+
+    @bp.post("/api/auth/keys")
+    def make_key():
+        payload = request.get_json(silent=True)
+        name = payload.get("name") if isinstance(payload, dict) else None
+        made, why = accounts.make_key(g.user["id"], name)
+        if not made:
+            return _fail(400, why)
+        log(f"{g.user['name']} made an API key: {made['name']}")
+        return jsonify({"ok": True, "key": made}), 201
+
+    @bp.delete("/api/auth/keys/<key_id>")
+    def revoke_key(key_id: str):
+        name = accounts.revoke_key(key_id)
+        if name is None:
+            return _fail(404, "No API key with that id.")
+        log(f"{g.user['name']} revoked the API key {name}")
         return jsonify({"ok": True})
 
     app.register_blueprint(bp)

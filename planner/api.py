@@ -382,10 +382,11 @@ def create_blueprint(
                               "`current`, /designs/<name> for the rest. A page open on a "
                               "design shows changes made here within a few seconds.",
                     "auth": "GETs are open to anyone (exports excepted). Every write and "
-                            "every export needs a session: send Authorization: Bearer "
-                            "<token>, where the token comes from POST /api/auth/redeem "
-                            "{\"token\": <the part of a login link after #>}. Without one "
-                            "the answer is 401.",
+                            "every export needs an API key: send Authorization: Bearer "
+                            "<key>, a key someone signed in made under People -> API "
+                            "keys. Without one the answer is 401. A key can do everything "
+                            "a person can except manage people and keys (/api/auth/* is "
+                            "403, bar GET /api/auth/me).",
                 },
                 "endpoints": [
                     {"method": method, "path": path, "summary": summary}

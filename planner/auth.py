@@ -10,15 +10,23 @@ Everybody who has a session can do everything.  There are no roles, only
 names: each person is somebody, and every one of them can add people, remove
 them, and make the links that let them in.
 
-The only way in is one of those links.  It works once: the first browser to
-open it is signed in as that person for good, and the link is spent.  There
-is no password to forget and none to guess - a token is 256 random bits.
+The only way in for a person is one of those links.  It works once: the
+first browser to open it is signed in as that person for good, and the link
+is spent.  There is no password to forget and none to guess - a token is 256
+random bits.
+
+A script or an agent gets an API key instead: made by someone signed in,
+named for what will use it, sent as ``Authorization: Bearer <key>``.  It can
+change and export anything a person can, but it cannot add or remove people
+or make links or keys - so revoking a key that got out is the end of it.  A
+key is its maker's: when they are removed, their keys stop working too.
 
 What is kept, in ``<PLANNER_AUTH_DIR>/users.json``:
 
     users     id -> name, and who added them
     sessions  sha256(token) -> whose, since when, last seen
     links     sha256(token) -> whose, until when
+    keys      sha256(key) -> whose, what it is called, since when, last used
 
 Only hashes are written down.  A copy of the file - a backup, a paste into a
 bug report - lets nobody in; the tokens themselves exist only in the browsers
@@ -86,9 +94,15 @@ SEEN_EVERY = 3600
 MAX_USERS = 200
 MAX_SESSIONS = 2000
 MAX_LINKS = 500
+MAX_KEYS = 200
 NAME_MAX = 32
 
 TOKEN_SHAPE = re.compile(r"[A-Za-z0-9_-]{20,128}")
+
+# What an API key starts with, so that one is recognisable wherever it turns
+# up, and so that the server knows which list to look it up in.
+KEY_PREFIX = "mrip_"
+KINDS = ("sessions", "links", "keys")
 
 
 def log(message: str) -> None:
@@ -135,7 +149,7 @@ def clean_person(raw: object) -> str:
 
 
 def _blank() -> dict:
-    return {"schema": 1, "users": {}, "sessions": {}, "links": {}}
+    return {"schema": 1, "users": {}, "sessions": {}, "links": {}, "keys": {}}
 
 
 def _clean(raw: object) -> dict:
@@ -150,11 +164,16 @@ def _clean(raw: object) -> dict:
                 "createdAt": str(user.get("createdAt") or ""),
                 "createdBy": str(user.get("createdBy") or ""),
             }
-    for kind in ("sessions", "links"):
+    for kind in KINDS:
         for key, entry in (raw.get(kind) or {}).items():
             if (isinstance(key, str) and len(key) == 64 and isinstance(entry, dict)
                     and entry.get("user") in data["users"]):
-                data[kind][key] = {k: str(v) for k, v in entry.items() if isinstance(v, str)}
+                kept = {k: str(v) for k, v in entry.items() if isinstance(v, str)}
+                if kind == "keys":
+                    kept["name"] = clean_person(kept.get("name"))
+                    if not kept["name"]:
+                        continue
+                data[kind][key] = kept
     return data
 
 
@@ -231,11 +250,11 @@ class Accounts:
     def _tidy(self) -> bool:
         """Fold in who has been seen, and drop links that have lapsed."""
         changed = False
-        sessions = self.data["sessions"]
+        sessions, keys = self.data["sessions"], self.data["keys"]
         for key, when in self.seen.items():
-            session = sessions.get(key)
-            if session and (session.get("seenAt") or "") < when:
-                session["seenAt"] = when
+            entry = sessions.get(key) or keys.get(key)
+            if entry and (entry.get("seenAt") or "") < when:
+                entry["seenAt"] = when
                 changed = True
         self.seen.clear()
         now = now_iso()
@@ -264,30 +283,45 @@ class Accounts:
 
     # ------------------------------------------------------------ sessions
 
-    def user_for(self, token: str) -> Optional[dict]:
-        """Whose session this is, or None.  Asked on every request."""
+    def _lookup(self, kind: str, token: str, found: Callable[[str, dict, dict], dict]):
+        """The session or key this token is, as `found(key, entry, user)` puts
+        it, or None.  Notes it as seen, and writes that down now and then."""
         if not well_formed(token):
             return None
         key = _hash(token)
         with self.lock:
             self._fresh()
-            session = self.data["sessions"].get(key)
-            user = self.data["users"].get(session["user"]) if session else None
+            entry = self.data[kind].get(key)
+            user = self.data["users"].get(entry["user"]) if entry else None
             if not user:
                 return None
             now = now_iso()
             self.seen[key] = now
-            stale = _age(session.get("seenAt")) > SEEN_EVERY
+            stale = _age(entry.get("seenAt")) > SEEN_EVERY
             if stale:
                 # A page load is a dozen requests at once; one write is enough.
-                session["seenAt"] = now
-            found = {"id": session["user"], "name": user["name"]}
+                entry["seenAt"] = now
+            answer = found(key, entry, user)
         if stale:
             try:
                 self._change(lambda data: (None, False))
             except OSError as exc:
-                log(f"!! could not note a session as seen: {exc}")
-        return found
+                log(f"!! could not note a {kind[:-1]} as seen: {exc}")
+        return answer
+
+    def user_for(self, token: str) -> Optional[dict]:
+        """Whose session this is, or None.  Asked on every request."""
+        return self._lookup("sessions", token, lambda key, session, user: {
+            "id": session["user"], "name": user["name"]})
+
+    def key_for(self, token: str) -> Optional[dict]:
+        """The API key this is, as who is asking, or None.  It is named for
+        itself, not its maker: what it changes is the agent's doing."""
+        if not str(token or "").startswith(KEY_PREFIX):
+            return None
+        return self._lookup("keys", token, lambda key, entry, user: {
+            "id": "key:" + key[:12], "name": entry["name"], "key": key[:12],
+            "by": user["name"]})
 
     def redeem(self, token: str, agent: str = "") -> Optional[Tuple[str, dict]]:
         """Spend a link.  A new session for whoever it was made for, or None."""
@@ -393,15 +427,32 @@ class Accounts:
         return self._change(make)
 
     def remove(self, uid: str) -> Optional[str]:
-        """Take someone out, and every browser they are signed in on with them.
-        Their name, or None if there was nobody by that id."""
+        """Take someone out, and every browser they are signed in on and every
+        key they made with them.  Their name, or None if there was nobody by
+        that id."""
         def drop(data):
             user = data["users"].pop(uid, None)
             if not user:
                 return None, False
-            for kind in ("sessions", "links"):
+            for kind in KINDS:
                 data[kind] = {k: v for k, v in data[kind].items() if v["user"] != uid}
             return user["name"], True
+
+        return self._change(drop)
+
+    def _drop_by_id(self, kind: str, short: str) -> Optional[dict]:
+        """Take out a link or a key by the id the listings gave it: the first
+        12 hex of its hash, which names one and gives nothing away.  What was
+        taken out, or None."""
+        short = str(short or "").lower()
+        if not re.fullmatch(r"[0-9a-f]{12}", short):
+            return None
+
+        def drop(data):
+            hits = [key for key in data[kind] if key.startswith(short)]
+            if len(hits) != 1:
+                return None, False
+            return data[kind].pop(hits[0]), True
 
         return self._change(drop)
 
@@ -426,18 +477,51 @@ class Accounts:
 
     def revoke(self, link_id: str) -> bool:
         """Cancel a link nobody has opened yet, by the id `users()` gave it."""
-        link_id = str(link_id or "").lower()
-        if not re.fullmatch(r"[0-9a-f]{12}", link_id):
-            return False
+        return self._drop_by_id("links", link_id) is not None
 
-        def drop(data):
-            hits = [key for key in data["links"] if key.startswith(link_id)]
-            if len(hits) != 1:
-                return False, False
-            del data["links"][hits[0]]
-            return True, True
+    # ----------------------------------------------------------------- keys
 
-        return self._change(drop)
+    def keys(self) -> List[dict]:
+        """Every API key, oldest first: what it is called, who made it, and
+        when it was last used.  Never the key itself - that is not kept."""
+        with self.lock:
+            self._fresh()
+            users = self.data["users"]
+            found = [{"id": key[:12], "name": entry["name"], "user": entry["user"],
+                      "madeBy": (users.get(entry["user"]) or {}).get("name", ""),
+                      "createdAt": entry.get("createdAt") or "",
+                      "seenAt": max(entry.get("seenAt") or "", self.seen.get(key) or "")}
+                     for key, entry in self.data["keys"].items()]
+        return sorted(found, key=lambda made: made["createdAt"])
+
+    def make_key(self, uid: str, name: object) -> Tuple[Optional[dict], str]:
+        """A new API key, made by this person and named for what will use it.
+        The key is in the answer and nowhere else - it cannot be looked up
+        again, only made again.  None and why not, if it cannot be made."""
+        clean = clean_person(name)
+        if not clean:
+            return None, "a key's name needs a letter or a number in it"
+
+        def make(data):
+            if uid not in data["users"]:
+                return (None, "nobody by that id"), False
+            # Full is a refusal, not the oldest dropped: some agent depends on it.
+            if len(data["keys"]) >= MAX_KEYS:
+                return (None, "that is as many API keys as this will hold; revoke one "
+                              "first"), False
+            token = KEY_PREFIX + secrets.token_urlsafe(32)
+            key = _hash(token)
+            now = now_iso()
+            data["keys"][key] = {"user": uid, "name": clean, "createdAt": now, "seenAt": ""}
+            return ({"token": token, "id": key[:12], "name": clean, "createdAt": now}, ""), True
+
+        return self._change(make)
+
+    def revoke_key(self, key_id: str) -> Optional[str]:
+        """Stop an API key working, by the id `keys()` gave it.  Its name, or
+        None if there was no such key."""
+        dropped = self._drop_by_id("keys", key_id)
+        return dropped["name"] if dropped else None
 
 
 class Throttle:

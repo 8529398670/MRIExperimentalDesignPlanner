@@ -1,11 +1,12 @@
-/* MRI Experimental Design Planner - who can change things, and the one-time
- * links that let them.
+/* MRI Experimental Design Planner - who can change things, the one-time
+ * links that let them, and the API keys that let scripts and agents.
  *
  * Anyone can look at the planner.  Changing anything, or exporting it, needs
  * a session, and the only way to get one is a link made here and opened
- * once.  Everybody signed in can do all of it - add someone, remove someone,
- * make anyone a link - so it is a panel for everyone rather than something
- * behind a role nobody has. */
+ * once - or, for an agent, a key made here.  Everybody signed in can do all
+ * of it - add someone, remove someone, make anyone a link, make or revoke a
+ * key - so it is a panel for everyone rather than something behind a role
+ * nobody has. */
 
 (function (global) {
   'use strict';
@@ -99,14 +100,22 @@
     return Date.now() - new Date(iso).getTime() < 60000 ? 'active now' : 'active ' + ago(iso);
   }
 
+  function used(iso) {
+    if (!iso) return 'never used';
+    return Date.now() - new Date(iso).getTime() < 60000 ? 'used just now' : 'used ' + ago(iso);
+  }
+
   /* ---------------------------------------------------------------- panel */
 
   function build() {
     var h = App.h;
     var listHost = h('div', { class: 'people-list' }, [h('div', { class: 'muted', text: 'Loading…' })]);
+    var keyHost = h('div', { class: 'people-list' });
     var linkHost = h('div');
+    var keyShown = h('div');
     var loadedAt = 0;
     var mine = '';
+    var keys = [];
 
     var nameBox = h('input', {
       type: 'text', placeholder: 'Their name', maxlength: 32, autocomplete: 'off',
@@ -114,17 +123,46 @@
     });
     var addButton = h('button', { class: 'btn sm', type: 'button', text: 'Add and make a link' });
 
+    var keyBox = h('input', {
+      type: 'text', placeholder: 'name', maxlength: 32,
+      autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Name of the API key to make'
+    });
+    var keyButton = h('button', { class: 'btn sm', type: 'button', text: 'Make a key' });
+
     function load() {
       loadedAt = Date.now();
       return api('GET', '/api/auth/users').then(function (got) {
         mine = got.me || '';
+        keys = got.keys || [];
         App.clear(listHost);
         (got.users || []).forEach(function (person) { listHost.appendChild(row(person)); });
+        App.clear(keyHost);
+        keys.forEach(function (made) { keyHost.appendChild(keyRow(made)); });
+        if (!keys.length) keyHost.appendChild(h('div', { class: 'muted', text: 'No API keys yet.' }));
       }).catch(function (error) {
         if (error.status === 401) { global.location.reload(); return; }
         App.clear(listHost);
         listHost.appendChild(h('div', { class: 'notice bad', text: error.message }));
       });
+    }
+
+    function keysMadeBy(person) {
+      return keys.filter(function (made) { return made.user === person.id; }).length;
+    }
+
+    function keyRow(made) {
+      var meta = [made.madeBy ? 'made by ' + made.madeBy : 'made', ago(made.createdAt), used(made.seenAt)];
+      return h('div', { class: 'people-row' }, [
+        h('div', { class: 'people-top' }, [
+          h('div', { class: 'people-main' }, [
+            h('div', { class: 'people-name' }, [h('span', { text: made.name })]),
+            h('div', { class: 'people-meta', text: meta.join(' · ') })
+          ]),
+          h('div', { class: 'btn-row' }, [
+            App.iconButton('Revoke', 'Stop this key working', function () { revokeKey(made); }, 'danger')
+          ])
+        ])
+      ]);
     }
 
     function row(person) {
@@ -197,9 +235,13 @@
       var where = !person.devices ? ''
         : person.devices === 1 ? person.name + ' is signed out of the browser they use, straight away. '
           : person.name + ' is signed out of all ' + person.devices + ' browsers they use, straight away. ';
+      var made = keysMadeBy(person);
+      var theirKeys = !made ? ''
+        : made === 1 ? 'The API key they made stops working too. '
+          : 'The ' + made + ' API keys they made stop working too. ';
       if (!global.confirm('Remove ' + person.name + '?\n\n' + where + 'Any link made for them '
-        + 'stops working. They can still look at the planner, like anyone. Nothing in the designs '
-        + 'changes.')) return;
+        + 'stops working. ' + theirKeys + 'They can still look at the planner, like anyone. '
+        + 'Nothing in the designs changes.')) return;
       api('DELETE', '/api/auth/users/' + encodeURIComponent(person.id)).then(function () {
         App.toast(person.name + ' removed', 'ok');
       }).catch(function (error) {
@@ -215,36 +257,73 @@
       }).then(load);
     }
 
-    /* The link, once.  Only its hash is kept on the server, so dismissing this
-     * is the last anyone sees of it - another is a click away. */
-    function showLink(name, made) {
+    function makeKey() {
+      var wanted = keyBox.value.trim();
+      if (!wanted) { keyBox.focus(); return; }
+      keyButton.disabled = true;
+      api('POST', '/api/auth/keys', { name: wanted }).then(function (got) {
+        keyBox.value = '';
+        showKey(got.key);
+        return load();
+      }).catch(function (error) {
+        App.toast(error.message, 'bad');
+      }).then(function () { keyButton.disabled = false; });
+    }
+
+    function revokeKey(made) {
+      if (!global.confirm('Revoke the API key ' + made.name + '?\n\nWhatever uses it is refused '
+        + 'from its next call. Nothing it has already changed is undone.')) return;
+      api('DELETE', '/api/auth/keys/' + encodeURIComponent(made.id)).then(function () {
+        App.toast('API key ' + made.name + ' revoked', 'ok');
+      }).catch(function (error) {
+        App.toast(error.message, 'bad');
+      }).then(load);
+    }
+
+    /* A link or a key, once.  Only its hash is kept on the server, so
+     * dismissing this is the last anyone sees of it - another is a click away. */
+    function showSecret(host, title, value, doneTip, hints) {
       var box = h('input', {
-        type: 'text', readonly: true, class: 'people-link', 'aria-label': 'Login link for ' + name
+        type: 'text', readonly: true, class: 'people-link', 'aria-label': title
       });
-      box.value = made.url;
+      box.value = value;
       box.addEventListener('focus', function () { box.select(); });
-      App.clear(linkHost);
-      linkHost.appendChild(App.card('Login link for ' + name, 'Shown once', [
+      App.clear(host);
+      host.appendChild(App.card(title, 'Shown once', [
         h('div', { class: 'split-inline people-link-row' }, [
           box,
           h('button', {
             class: 'btn sm', type: 'button', text: 'Copy',
-            onclick: function () { App.copy(made.url, 'Login link for ' + name); }
+            onclick: function () { App.copy(value, title); }
           }),
-          App.iconButton('Done', 'Put the link away; it keeps working until it is used',
-            function () { App.clear(linkHost); })
-        ]),
-        h('p', {
-          class: 'people-hint',
-          text: 'It works once: whoever opens it first is signed in as ' + name + ' on that '
-            + 'browser, for good. Unopened, it stops working ' + ago(made.expiresAt) + '.'
-        }),
-        h('p', {
-          class: 'people-hint',
-          text: 'Do not open it yourself: it would sign this browser in as ' + name + '.'
-        })
-      ]));
+          App.iconButton('Done', doneTip, function () { App.clear(host); })
+        ])
+      ].concat(hints.map(function (hint) {
+        return h('p', { class: 'people-hint', text: hint });
+      }))));
       box.focus();
+    }
+
+    function showLink(name, made) {
+      showSecret(linkHost, 'Login link for ' + name, made.url,
+        'Put the link away; it keeps working until it is used', [
+          'It works once: whoever opens it first is signed in as ' + name + ' on that '
+            + 'browser, for good. Unopened, it stops working ' + ago(made.expiresAt) + '.',
+          'Do not open it yourself: it would sign this browser in as ' + name + '.'
+        ]);
+    }
+
+    function showKey(made) {
+      showSecret(keyShown, 'API key for ' + made.name, made.token,
+        'Put the key away; it keeps working until it is revoked', [
+          'Send it with every call to the API, as the header Authorization: Bearer <key>. '
+            + 'API.md, or /api/v1/docs on this server, has the rest.',
+          'It can change and export anything, like someone signed in, but cannot add or remove '
+            + 'people or make links or keys. It works until it is revoked here, or until '
+            + App.me.name + ' is removed.',
+          'This is the only time it is shown: only a hash of it is kept. If it is lost, make '
+            + 'another and revoke this one.'
+        ]);
     }
 
     function signOut() {
@@ -267,14 +346,19 @@
     nameBox.addEventListener('keydown', function (event) {
       if (event.key === 'Enter') { event.preventDefault(); addPerson(); }
     });
+    keyButton.addEventListener('click', makeKey);
+    keyBox.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter') { event.preventDefault(); makeKey(); }
+    });
 
     var panel = h('div', { class: 'panel' });
     panel.appendChild(h('div', { class: 'panel-head' }, [
       h('h2', { text: 'People' }),
       h('p', {
         text: 'Everyone listed here can change the designs and the acquisition cards and take '
-          + 'exports, and can add and remove people. Anyone else who opens the planner can only '
-          + 'look.'
+          + 'exports, and can add and remove people. So can a script or an agent given an API '
+          + 'key, except for managing people and keys. Anyone else who opens the planner can '
+          + 'only look.'
       })
     ]));
     panel.appendChild(App.card('People', 'Everyone who can sign in', [listHost]));
@@ -282,6 +366,11 @@
       h('div', { class: 'split-inline people-add' }, [nameBox, addButton])
     ]));
     panel.appendChild(linkHost);
+    panel.appendChild(App.card('API keys', 'For scripts and agents', [
+      keyHost,
+      h('div', { class: 'split-inline people-add people-key-add' }, [keyBox, keyButton])
+    ]));
+    panel.appendChild(keyShown);
     panel.appendChild(App.card('This browser', null, [
       h('div', { class: 'split-inline people-self' }, [
         h('span', { text: 'Signed in as ' + App.me.name + '.' }),

@@ -74,15 +74,20 @@ can do everything, including adding and removing people.
   There you can add someone (their first link comes straight up), make anyone a new link,
   cancel an unused one, remove someone (their browsers are signed out at once), and sign out
   of this browser. Nobody can remove themselves.
+- **Scripts and agents** get an **API key** instead, also from **People**: name it for what
+  will use it, copy it (it is shown once), and the agent sends `Authorization: Bearer <key>`.
+  A key can change and export anything a person can, but cannot add or remove people or make
+  links or keys. Each key is listed with who made it and when it was last used, and can be
+  revoked on its own; removing the person who made it revokes it too. See [API.md](API.md).
 - Unopened links stop working after 7 days (`PLANNER_LINK_DAYS`).
 - When the planner is reached through a proxy or a tunnel, set
   `PLANNER_PUBLIC_URL=https://planner.example.org` so that links are built on that address
   rather than on whatever address the person making them is using.
 
-`accounts/users.json` (`PLANNER_AUTH_DIR`) keeps people, sessions and links. It stores only
-sha256 hashes of the tokens, so a copy of the file lets nobody in. The session cookie is
-`HttpOnly` and `SameSite=Lax`, and it is renewed each time the planner is opened. Writes from
-another origin, including another port on the same host, are refused.
+`accounts/users.json` (`PLANNER_AUTH_DIR`) keeps people, sessions, links and API keys. It
+stores only sha256 hashes of the tokens and keys, so a copy of the file lets nobody in. The
+session cookie is `HttpOnly` and `SameSite=Lax`, and it is renewed each time the planner is
+opened. Writes from another origin, including another port on the same host, are refused.
 
 ### Links
 
@@ -113,7 +118,7 @@ not exist says so and lists the ones that do.
 |---|---|
 | `server.py` | Flask application and waitress entry point |
 | `planner/api.py` | The agent-facing design API under `/api/v1` |
-| `planner/auth.py` | People, sessions and one-time login links; `python3 -m planner.auth link <name>` |
+| `planner/auth.py` | People, sessions, one-time login links and API keys; `python3 -m planner.auth link <name>` |
 | `planner/access.py` | Who may do what: view-only for everyone, a session for writes and exports; `/login`, `/api/auth/*` |
 | `planner/engine.py` | Runs the planner's own JavaScript on the server, in QuickJS |
 | `planner/designs.py` | Saved designs, with revisions so the page and the API cannot overwrite each other |
@@ -127,7 +132,7 @@ not exist says so and lists the ones that do.
 | `static/js/library.js` | The trial, run, session, experiment, jitter and HRF panels |
 | `static/js/protocols.js` | Acquisition card editor |
 | `static/js/export.js` | Clipboard, Markdown, PsychoPy, workbook and zip export |
-| `static/js/people.js` | The People panel: login links, removing people, signing out |
+| `static/js/people.js` | The People panel: login links, API keys, removing people, signing out |
 | `static/js/login.js` | The page a login link opens |
 | `scanner-parameters/*.json` | The acquisition cards, edited in place |
 | `scanner-parameters/.backups/` | Timestamped snapshot before every save |
