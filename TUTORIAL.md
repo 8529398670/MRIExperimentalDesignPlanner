@@ -45,9 +45,11 @@ first one comes from `python3 -m planner.auth link "Your Name"` (or
 `./dockerRun.sh --link "Your Name"` for the container). After that, anyone signed in can make
 more in the **People** panel.
 
-Your work autosaves to `presets/current.json` as you go. You do not need to press save.
-Designs you save under a name open at their own link, `/designs/<name>`, which you can send
-to someone: see [Where things live](#6-where-things-live).
+The first page lists every design. Click **Add new**, give the design a name, and it opens,
+starting from the default settings. Your work autosaves to it as you go, so you do not need to
+press save. Each design opens at its own link, `/designs/<name>`, which you can send to someone:
+see [Where things live](#6-where-things-live). Click the design's name in the masthead to get
+back to the list.
 
 ---
 
@@ -301,16 +303,19 @@ conditions themselves are the lab template's.
 
 | Path | What |
 |---|---|
-| `presets/current.json` | Your autosaved working design, at `/` |
-| `presets/*.json` | Named designs you saved, each at `/designs/<name>` |
+| `presets/*.json` | Your designs, each autosaved and open at `/designs/<name>`; `/` lists them |
 | `scanner-parameters/*.json` | Acquisition cards |
 | `scanner-parameters/.backups/` | Timestamped snapshot before every card save |
 | `exports/` | Every workbook and zip you generated |
 
-The address bar always shows what you are looking at, for example `/sessions/<id>` or
-`/designs/V1/acquisition/<card>`. To point someone at one thing, copy the address, or use
-**Copy link** in the masthead. To share a saved design, send its link: **Copy link** in the
-masthead, or next to it in **Report and export → Saved designs**. Whoever opens it is working on that design, and their
-changes save to it; save a copy under a new name first if you want a version kept as it is.
+The address bar always shows what you are looking at, for example `/designs/V1/sessions/<id>`
+or `/designs/V1/acquisition/<card>`. To point someone at one thing, copy the address. To share
+a design, send its link, or use **Copy link** next to it in **Report and export → Designs**.
+Whoever opens it is working on that design, and their changes save to it; save a copy under a
+new name first (**Save a copy as**) if you want a version kept as it is.
 
-To reload an old design: **Report and export → Saved designs → Import JSON file**.
+To bring back a design you downloaded: **Report and export → Designs → Import JSON file**. It
+comes back as a new design, named in the box or after the file.
+
+To delete a design, use **Delete** next to it on the first page or in **Report and export →
+Designs**. It asks first, and there is no undo.

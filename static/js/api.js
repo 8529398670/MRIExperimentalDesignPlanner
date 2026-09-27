@@ -821,14 +821,14 @@
 
   action({
     name: 'design.get', group: 'Design', query: true,
-    ui: 'Report and export > Download working design',
+    ui: 'Report and export > Designs > Download this design',
     summary: 'The whole design as stored: every trial, run, session, experiment and setting, with ids',
     run: function (ctx) { return H.deepCopy(ctx.state); }
   });
 
   action({
     name: 'design.reset', group: 'Design',
-    ui: 'Report and export > Reset to defaults',
+    ui: 'Report and export > Designs > Reset to defaults',
     summary: 'Start again. The shipped example study, or with blank=true one trial, run, '
       + 'session and experiment wired together',
     args: {
@@ -844,7 +844,7 @@
 
   action({
     name: 'design.replace', group: 'Design',
-    ui: 'Report and export > Import JSON file',
+    ui: 'Report and export > Designs > Import JSON file (into a new design)',
     summary: 'Replace the design with a JSON design (a bare design or a downloaded '
       + '{design, report} file); anything missing is filled from the defaults',
     args: { design: required(object('The design object, as design.get returns it')) },
@@ -893,17 +893,10 @@
 
   action({
     name: 'design.saveAs', group: 'Design', host: 'server',
-    ui: 'Report and export > Saved designs > Save as',
+    ui: 'Report and export > Designs > Save a copy as',
     summary: 'Save a copy of this design under another name (the design you are editing is saved '
       + 'automatically)',
     args: { name: required(name('Name for the saved copy; letters, digits, dot, dash, underscore')) }
-  });
-
-  action({
-    name: 'design.loadPreset', group: 'Design', host: 'server',
-    ui: 'Report and export > Saved designs > Load',
-    summary: 'Replace this design with a saved one',
-    args: { name: required(name('Name of the saved design (GET /api/v1/designs lists them)')) }
   });
 
   /* --- study details and budget -------------------------------------- */

@@ -50,9 +50,9 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 ### Signing in
 
-Anyone who can reach the planner can **look** at it: every panel, every saved design, and
-changes made elsewhere as they happen. Changing anything (a design, an acquisition card, a
-saved design) and exporting anything (downloads, the zip, copying tables or configs) needs a
+Anyone who can reach the planner can **look** at it: every panel, every design, and
+changes made elsewhere as they happen. Changing anything (a design, an acquisition card,
+adding or deleting a design) and exporting anything (downloads, the zip, copying tables or configs) needs a
 sign-in. Without one the page runs **view only**: the masthead says so, the edit, download and
 copy buttons are gone, the fields are greyed out, and the server refuses every write and every
 export with 401.
@@ -89,28 +89,37 @@ stores only sha256 hashes of the tokens and keys, so a copy of the file lets nob
 session cookie is `HttpOnly` and `SameSite=Lax`, and it is renewed each time the planner is
 opened. Writes from another origin, including another port on the same host, are refused.
 
-### Links
+### Designs and links
+
+Every design is the same kind of thing: a name, a file `presets/<name>.json`, and its own
+address. `/` lists them all, newest first. **Add new** (on that list, or in the masthead)
+asks for a name and starts a design from the default settings. Any design can be deleted,
+after a confirmation, from the list or from *Report and export → Designs*.
 
 Every view has its own address, and the address bar follows what is on screen. To share
-exactly what you are looking at, copy the address, or use **Copy link** in the masthead:
+exactly what you are looking at, copy the address:
 
 | Address | Opens |
 |---|---|
-| `/` | The working design, `presets/current.json`, on the overview |
-| `/sessions/<id>` | One of its sessions; likewise `/trials/<id>`, `/runs/<id>`, `/experiments/<id>` |
-| `/acquisition/<card>` | One acquisition card |
-| `/budget`, `/jitter`, `/hrf`, `/study`, `/export` | That panel |
-| `/designs/<name>` | The saved design `presets/<name>.json`, on the overview |
-| `/designs/<name>/runs/<id>` | The same panels and items, in that saved design |
+| `/` | Every design, and **Add new** |
+| `/designs/<name>` | The design `presets/<name>.json`, on the overview |
+| `/designs/<name>/sessions/<id>` | One of its sessions; likewise `/trials/<id>`, `/runs/<id>`, `/experiments/<id>` |
+| `/designs/<name>/acquisition/<card>` | One acquisition card |
+| `/designs/<name>/budget`, `.../jitter`, `.../hrf`, `.../study`, `.../export` | That panel |
 
 Clicking the rail or an item in a list adds a history entry, so Back and Forward move between
-views. An id that is not in the design opens the first item instead and says so.
+views. An id that is not in the design opens the first item instead and says so. The design's
+name in the masthead goes back to the list.
 
-The page works on the design its address names: edits made there save to that design, and
-every page open on the same design follows them within a few seconds. *Report and export →
-Saved designs* lists every design, and each name there is its link. To keep a version fixed
-while you experiment, save a copy under a new name first. An address naming a design that does
-not exist says so and lists the ones that do.
+The page works on the design its address names: edits made there save to that design as you
+work, and every page open on the same design follows them within a few seconds. To keep a
+version fixed while you experiment, save a copy under a new name first (*Report and export →
+Designs → Save a copy as*). An address naming a design that does not exist says so and lists
+the ones that do. A page open on a design that is deleted says so too, and cannot save it back.
+
+Before this, `/` was a "working design" kept in `presets/current.json`. The first time this
+version starts, that file is renamed after its study title (for example
+`presets/Inner-Speech-Decoding.json`) and becomes a design like the others.
 
 ## Layout
 
@@ -121,7 +130,7 @@ not exist says so and lists the ones that do.
 | `planner/auth.py` | People, sessions, one-time login links and API keys; `python3 -m planner.auth link <name>` |
 | `planner/access.py` | Who may do what: view-only for everyone, a session for writes and exports; `/login`, `/api/auth/*` |
 | `planner/engine.py` | Runs the planner's own JavaScript on the server, in QuickJS |
-| `planner/designs.py` | Saved designs, with revisions so the page and the API cannot overwrite each other |
+| `planner/designs.py` | The designs, with revisions so the page and the API cannot overwrite each other, and the old working design renamed on first start |
 | `planner/protocols.py` | Loading, validation, atomic writes and backups for the acquisition cards |
 | `planner/report.py` | XLSX workbook generation |
 | `planner/bundle.py` | The full-export zip |
@@ -133,10 +142,11 @@ not exist says so and lists the ones that do.
 | `static/js/protocols.js` | Acquisition card editor |
 | `static/js/export.js` | Clipboard, Markdown, PsychoPy, workbook and zip export |
 | `static/js/people.js` | The People panel: login links, API keys, removing people, signing out |
+| `static/js/designs.js` | Adding a design from the defaults and deleting one; the list at `/` (`templates/designs.html`) |
 | `static/js/login.js` | The page a login link opens |
 | `scanner-parameters/*.json` | The acquisition cards, edited in place |
 | `scanner-parameters/.backups/` | Timestamped snapshot before every save |
-| `presets/` | Saved designs, each open at `/designs/<name>`; `current.json` is the autosaved working design, at `/` |
+| `presets/` | The designs, each open at `/designs/<name>` and saved as you work |
 | `exports/` | Every generated workbook and zip is archived here |
 | `accounts/` | `users.json`: who can sign in (hashes only; not in git) |
 
@@ -443,8 +453,8 @@ rather than a table; its solved timeline underneath copies as a table.
   template's. The builder loads these files unchanged. It does not yet run `inter_block_rest`
   or `inter_trial_gap`, so a multi-block run it presents is shorter than the planner books.
 - **Copy methods text** — a paste-ready narrative generated from the solved design.
-- **Design JSON** — the full state plus the solved report; it reloads through
-  *Saved designs → Import JSON file*.
+- **Design JSON** — the full state plus the solved report; it comes back as a new design through
+  *Designs → Import JSON file*.
 
 ## Figures
 
@@ -468,7 +478,7 @@ is 401.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/health` | Liveness and card count |
-| GET | `/api/bootstrap` | Manifest, all cards, acquisition summary, presets, and the design the page opens on (`?design=`, default `current`) |
+| GET | `/api/bootstrap` | Manifest, all cards, acquisition summary, the designs, and the design the page opens on (`?design=`) |
 | GET | `/api/protocols` | Card manifest |
 | POST | `/api/protocols` | Create a card, blank or from a base |
 | GET/PUT/DELETE | `/api/protocols/<slug>` | Read, save or delete one card |
@@ -478,9 +488,9 @@ is 401.
 | GET | `/api/protocols/<slug>/backups` | List snapshots |
 | POST | `/api/protocols/<slug>/restore` | Restore a snapshot |
 | POST | `/api/apply-derived` | Write solved acquisition values into a card |
-| GET/POST | `/api/design` | Load or save a design (`?name=`, default `current`); a save with `baseRev` is refused (409) if the design changed since |
+| GET/POST | `/api/design` | Load or save a design (`name` required); a save with `baseRev` is refused if the design changed since (409) or was deleted since (410) |
 | GET | `/api/design/rev` | Revision of a design and of the card set, polled by the page |
-| DELETE | `/api/design/<name>` | Delete a preset |
+| DELETE | `/api/design/<name>` | Delete a design |
 | POST | `/api/export/xlsx` | Build and download the workbook |
 | POST | `/api/export/bundle` | Build and download the full-export zip |
 | POST | `/api/export/json` | Download the design payload |

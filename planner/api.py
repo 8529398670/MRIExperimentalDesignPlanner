@@ -36,12 +36,10 @@ REFERENCE_END = "<!-- action-reference:end -->"
 ENDPOINTS = [
     ("GET", "/api/v1", "This index: endpoints, conventions and every action with its arguments"),
     ("GET", "/api/v1/docs", "The same as Markdown, with a quick start"),
-    ("GET", "/api/v1/designs",
-     "Saved designs, each with the `url` that opens it in the interface; `current` is the "
-     "working design, at /"),
+    ("GET", "/api/v1/designs", "Every design, each with the `url` that opens it in the interface"),
     ("POST", "/api/v1/designs", "Create a design: {name, from: default|blank|<design>, design?, overwrite?}"),
     ("GET", "/api/v1/designs/<name>", "The stored design, its revision, its `url` and a solved summary"),
-    ("DELETE", "/api/v1/designs/<name>", "Delete a saved design (not `current`)"),
+    ("DELETE", "/api/v1/designs/<name>", "Delete a design"),
     ("POST", "/api/v1/designs/<name>/actions", "Run actions in order: {actions: [...], dryRun?, include?}"),
     ("GET", "/api/v1/designs/<name>/report", "Solve and report: ?view=summary|full|warnings"),
     ("GET", "/api/v1/designs/<name>/export/<format>",
@@ -143,12 +141,10 @@ def create_blueprint(
     # ------------------------------------------------------------- helpers
 
     def load(name: str) -> tuple:
-        """``(design, rev)``; the working design starts from the defaults."""
+        """``(design, rev)``."""
         try:
             return designs.read(name)
         except FileNotFoundError:
-            if clean_name(name) == "current":
-                return None, None
             raise ApiError(
                 404, f"No design named {clean_name(name)}.",
                 hint="POST /api/v1/designs {\"name\": ...} creates one; "
@@ -175,14 +171,6 @@ def create_blueprint(
         target = clean_name(args["name"])
         done = ctx.finish()
         return {"saved": target, "rev": designs.write(target, done["state"]), "url": link(target)}
-
-    def load_preset(ctx, args):
-        try:
-            design, _rev = designs.read(args["name"])
-        except FileNotFoundError:
-            raise ActionRefused(f"No saved design named {clean_name(args['name'])}.")
-        ctx.replace(design)
-        return {"loaded": clean_name(args["name"])}
 
     def card_create(ctx, args):
         slug = store.create(
@@ -262,7 +250,6 @@ def create_blueprint(
 
     SERVER_ACTIONS = {
         "design.saveAs": save_as,
-        "design.loadPreset": load_preset,
         "card.create": card_create,
         "card.duplicate": card_duplicate,
         "card.rename": card_rename,
@@ -361,8 +348,11 @@ def create_blueprint(
                 "engine": engine.available,
                 "docs": "/api/v1/docs",
                 "quickStart": [
-                    "GET /api/v1/designs/current - the working design (the page at /), with ids",
-                    "POST /api/v1/designs/current/actions {\"actions\": [{\"action\": "
+                    "GET /api/v1/designs - every design, each with the url that opens it",
+                    "POST /api/v1/designs {\"name\": \"pilot\"} - a new design, from the "
+                    "default settings",
+                    "GET /api/v1/designs/pilot - the design, with ids",
+                    "POST /api/v1/designs/pilot/actions {\"actions\": [{\"action\": "
                     "\"budget.update\", \"totalScannerHours\": 80}]} - change it; the "
                     "answer carries the solved summary",
                     "Refer to trials, runs, sessions, experiments and cards by id or by name",
@@ -378,9 +368,9 @@ def create_blueprint(
                              "name already taken.",
                     "solver": "Every batch ends with a solve. Repairs the solver makes "
                               "against the caps are saved, and reported in warnings.",
-                    "liveUi": "Every design opens in the interface at its own url: / for "
-                              "`current`, /designs/<name> for the rest. A page open on a "
-                              "design shows changes made here within a few seconds.",
+                    "liveUi": "Every design opens in the interface at its own url, "
+                              "/designs/<name>; / lists them. A page open on a design shows "
+                              "changes made here within a few seconds.",
                     "auth": "GETs are open to anyone (exports excepted). Every write and "
                             "every export needs an API key: send Authorization: Bearer "
                             "<key>, a key someone signed in made under People -> API "
@@ -450,8 +440,6 @@ def create_blueprint(
 
     @bp.delete("/designs/<name>")
     def delete_design(name: str) -> Response:
-        if clean_name(name) == "current":
-            raise ApiError(400, "The working design cannot be deleted; design.reset empties it.")
         if not designs.delete(name):
             raise ApiError(404, f"No design named {clean_name(name)}.")
         return jsonify({"ok": True, "deleted": clean_name(name)})

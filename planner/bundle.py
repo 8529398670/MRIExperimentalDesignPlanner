@@ -166,8 +166,8 @@ def _readme(title: str, meta: Dict[str, Any], stamp: str, manifest: Sequence[Dic
         "",
         "Reloading this design",
         "-" * 46,
-        "  design.json goes back into the planner through",
-        "  Report and export -> Saved designs -> Import JSON file.",
+        "  design.json goes back into the planner as a new design through",
+        "  Report and export -> Designs -> Import JSON file.",
         "",
     ]
     return "\n".join(lines)

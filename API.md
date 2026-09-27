@@ -41,11 +41,19 @@ Bearer token too, but a key can be named, listed and revoked on its own, so pref
 ```bash
 KEY=mrip_...                 # an API key: see Authentication
 
-# 1. Look at the working design, the one at / in the interface (ids, names, and a solved summary)
-curl -s localhost:8761/api/v1/designs/current
+# 1. Every design, each with the url that opens it in the interface
+curl -s localhost:8761/api/v1/designs
 
-# 2. Change it: a list of actions, run in order, then solved and saved
-curl -s -X POST localhost:8761/api/v1/designs/current/actions \
+# 2. A new one, from the default settings (the same as Add new in the interface)
+curl -s -X POST localhost:8761/api/v1/designs \
+  -H "Authorization: Bearer $KEY" \
+  -H 'Content-Type: application/json' -d '{"name": "pilot"}'
+
+# 3. Look at it: ids, names, and a solved summary
+curl -s localhost:8761/api/v1/designs/pilot
+
+# 4. Change it: a list of actions, run in order, then solved and saved
+curl -s -X POST localhost:8761/api/v1/designs/pilot/actions \
   -H "Authorization: Bearer $KEY" \
   -H 'Content-Type: application/json' \
   -d '{"actions": [
@@ -53,19 +61,18 @@ curl -s -X POST localhost:8761/api/v1/designs/current/actions \
         {"action": "run.update", "run": "Event-related run", "trialsPerBlock": 12}
       ]}'
 
-# 3. Take the results away
-curl -s -H "Authorization: Bearer $KEY" localhost:8761/api/v1/designs/current/export/methods
+# 5. Take the results away
+curl -s -H "Authorization: Bearer $KEY" localhost:8761/api/v1/designs/pilot/export/methods
 curl -s -H "Authorization: Bearer $KEY" -o study.zip \
-  localhost:8761/api/v1/designs/current/export/bundle
+  localhost:8761/api/v1/designs/pilot/export/bundle
 ```
 
 Any page open on the design shows the change within a few seconds. Every design has a page of
-its own: `/` for the working design `current`, and `/designs/<name>` for each saved design.
-That page works on its design - edits made there save to it - so the link is the way to hand
-a design to a person. Inside a design, each panel and item has an address too, so a link can
-point at exactly the thing to look at. Use the ids `design.get` returns: `/sessions/<id>`,
-`/trials/<id>`, `/runs/<id>`, `/experiments/<id>`, `/acquisition/<card slug>`, or
-`/designs/<name>/sessions/<id>` in a saved design.
+its own, `/designs/<name>`, and `/` lists them all. That page works on its design - edits made
+there save to it - so the link is the way to hand a design to a person. Inside a design, each
+panel and item has an address too, so a link can point at exactly the thing to look at. Use the
+ids `design.get` returns: `/designs/<name>/sessions/<id>`, `.../trials/<id>`, `.../runs/<id>`,
+`.../experiments/<id>`, `.../acquisition/<card slug>`.
 
 ## The shape of a call
 
@@ -95,7 +102,7 @@ point at exactly the thing to look at. Use the ids `design.get` returns: `/sessi
 ```json
 {
   "ok": true,
-  "name": "current",
+  "name": "pilot",
   "rev": "31dd8c89128d",
   "saved": true,
   "applied": 2,
@@ -124,7 +131,7 @@ On a refusal, `ok` is false and `error` says which action failed and why, for ex
 | **Every batch ends with a solve** | Repairs the solver makes against the caps (with auto-clamp on) are saved, just as in the interface, and reported in `warnings`. |
 | **Plan counts are a mix** | An experiment's plan counts are a ratio that the solver scales to the budget or the goal, unless `lockPlan` is true. With `lockPlan` they are literal session counts. |
 | **Refusals explain themselves** | An unknown action suggests close names. An unknown argument lists the valid ones and names the action that takes it. An unknown name lists what exists. |
-| **Server actions** | `card.*`, `design.saveAs` and `design.loadPreset` change files on the server. They are refused in a dry run. Acquisition cards are shared by every design. |
+| **Server actions** | `card.*` and `design.saveAs` change files on the server. They are refused in a dry run. Acquisition cards are shared by every design. |
 | **Speed** | Most batches take well under a second. `trial.optimiseTiming` is a grid search and can take up to about 30 s on a slow host; `trial.solveSeparation` is the fast, analytic alternative. |
 
 ## Endpoints
@@ -133,10 +140,10 @@ On a refusal, `ok` is false and `error` says which action failed and why, for ex
 |---|---|---|
 | GET | `/api/v1` | Index: endpoints, conventions and every action with its arguments |
 | GET | `/api/v1/docs` | This document, with the action reference regenerated from the code |
-| GET | `/api/v1/designs` | Saved designs, each with the `url` that opens it in the interface. `current` is the working design, at `/` |
+| GET | `/api/v1/designs` | Every design, each with the `url` that opens it in the interface. `/` lists them too |
 | POST | `/api/v1/designs` | Create a design: `{"name": "...", "from": "default" \| "blank" \| "<design>", "design": {...}?, "overwrite": false}` |
 | GET | `/api/v1/designs/<name>` | The stored design, its revision, its `url` and a solved summary |
-| DELETE | `/api/v1/designs/<name>` | Delete a saved design (not `current`) |
+| DELETE | `/api/v1/designs/<name>` | Delete a design. A page open on it is told, and cannot save it back |
 | POST | `/api/v1/designs/<name>/actions` | Run actions (above) |
 | GET | `/api/v1/designs/<name>/report?view=summary\|full\|warnings` | Solve and report without changing anything |
 | GET | `/api/v1/designs/<name>/export/<format>` | `markdown`, `methods` (text), `psychopy` (JSON, or `?run=<run>` for one YAML file), `json`, `figures` (SVG), `xlsx`, `bundle` (zip) |
@@ -147,13 +154,13 @@ rasterise them.
 
 ## A study from scratch
 
-Create a separate design, so the one open in the interface is untouched, then build it in
+Create a design of its own, blank rather than from the default settings, then build it in
 one batch:
 
 ```bash
 curl -s -X POST localhost:8761/api/v1/designs \
   -H "Authorization: Bearer $KEY" \
-  -H 'Content-Type: application/json' -d '{"name": "pilot", "from": "blank"}'
+  -H 'Content-Type: application/json' -d '{"name": "speech-pilot", "from": "blank"}'
 ```
 
 `from: "blank"` gives one of each level, wired together: `Trial design` → `Run design` →
@@ -188,10 +195,10 @@ curl -s -X POST localhost:8761/api/v1/designs \
 ]}
 ```
 
-Send that to `POST /api/v1/designs/pilot/actions`. To show it to a person, give them the `url`
-from the create answer (`http://<host>:<port>/designs/pilot`): it opens the planner on `pilot`,
-and a page left open there follows each batch you send. To bring it into the working design
-instead, run `design.loadPreset` with `name` set to `pilot` against `current`.
+Send that to `POST /api/v1/designs/speech-pilot/actions`. To show it to a person, give them the
+`url` from the create answer (`http://<host>:<port>/designs/speech-pilot`): it opens the planner
+on `speech-pilot`, and a page left open there follows each batch you send. To start another
+design from this one, create it with `"from": "speech-pilot"`.
 
 ## From inside the page
 
@@ -203,7 +210,7 @@ PlannerAPI.actions()                                                       // th
 ```
 
 `PlannerAPI.run` saves anything pending in the page, runs the batch through the server on the
-design the page has open (`current` at `/`, `<name>` at `/designs/<name>`), and shows the result.
+design the page has open (`<name>` at `/designs/<name>`), and shows the result.
 
 ## Controls with no action
 
@@ -224,15 +231,15 @@ same information, machine-readable, is the `actions` list in `GET /api/v1`.
 ### Design
 
 #### `design.get` _(read-only)_
-The whole design as stored: every trial, run, session, experiment and setting, with ids. Button: _Report and export > Download working design_
+The whole design as stored: every trial, run, session, experiment and setting, with ids. Button: _Report and export > Designs > Download this design_
 
 #### `design.reset`
-Start again. The shipped example study, or with blank=true one trial, run, session and experiment wired together. Button: _Report and export > Reset to defaults_
+Start again. The shipped example study, or with blank=true one trial, run, session and experiment wired together. Button: _Report and export > Designs > Reset to defaults_
 
 - `blank` (boolean, default `false`): One of each level instead of the three-experiment example
 
 #### `design.replace`
-Replace the design with a JSON design (a bare design or a downloaded {design, report} file); anything missing is filled from the defaults. Button: _Report and export > Import JSON file_
+Replace the design with a JSON design (a bare design or a downloaded {design, report} file); anything missing is filled from the defaults. Button: _Report and export > Designs > Import JSON file (into a new design)_
 
 - **`design`** (object): The design object, as design.get returns it
 
@@ -243,14 +250,9 @@ Escape hatch: write one value at a dot path such as "budget.totalScannerHours" o
 - **`value`** (any): The value to write
 
 #### `design.saveAs` _(server)_
-Save a copy of this design under another name (the design you are editing is saved automatically). Button: _Report and export > Saved designs > Save as_
+Save a copy of this design under another name (the design you are editing is saved automatically). Button: _Report and export > Designs > Save a copy as_
 
 - **`name`** (string): Name for the saved copy; letters, digits, dot, dash, underscore
-
-#### `design.loadPreset` _(server)_
-Replace this design with a saved one. Button: _Report and export > Saved designs > Load_
-
-- **`name`** (string): Name of the saved design (GET /api/v1/designs lists them)
 
 
 ### Study

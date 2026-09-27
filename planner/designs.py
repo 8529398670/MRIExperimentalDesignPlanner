@@ -1,12 +1,13 @@
-"""Saved designs: one JSON file per design under the presets directory.
+"""Designs: one JSON file per design under the presets directory.
 
-``current`` is the interface's working design, open at ``/``.  Every other
-name is a saved design with its own address, ``/designs/<name>``, where the
-interface works on that design instead.  Several writers can reach the same
-file - the autosave of every page open on it, and the HTTP API - so each read
-reports a revision (a hash of the file) and a write can name the revision it
-was based on; a write against a stale revision is refused rather than silently
-discarding the other writer's change.
+Every design is the same kind of thing: a name, and its own address,
+``/designs/<name>``, where the interface works on it.  ``/`` lists them.
+Several writers can reach the same file - the autosave of every page open on
+it, and the HTTP API - so each read reports a revision (a hash of the file)
+and a write can name the revision it was based on; a write against a stale
+revision is refused rather than silently discarding the other writer's
+change, and one against a design deleted since is refused rather than
+bringing it back.
 """
 
 from __future__ import annotations
@@ -31,16 +32,22 @@ class DesignConflict(Exception):
         self.rev = rev
 
 
+class DesignGone(Exception):
+    """The design was deleted since the revision the writer started from."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"The design {name} has been deleted.")
+        self.name = name
+
+
 def clean_name(name: Any) -> str:
     """The file-safe form of a design name, which is the name it is stored under."""
     return SAFE_NAME.sub("-", str(name or "").strip())[:80] or "untitled"
 
 
 def page_path(name: Any) -> str:
-    """Where a design opens in the interface: ``/`` for the working design,
-    ``/designs/<name>`` for any other.  A clean name needs no escaping."""
-    name = clean_name(name)
-    return "/" if name == "current" else f"/designs/{name}"
+    """Where a design opens in the interface.  A clean name needs no escaping."""
+    return f"/designs/{clean_name(name)}"
 
 
 def _rev_of(blob: bytes) -> str:
@@ -88,14 +95,19 @@ class DesignStore:
     def write(self, name: Any, design: Dict[str, Any], base_rev: Optional[str] = None) -> str:
         """Store a design and return its new revision.
 
-        With ``base_rev``, refuse when the file has moved on since.  Writing
-        what is already there is a no-op, so an autosave that changes nothing
-        does not look like a change to anyone watching the revision.
+        With ``base_rev``, refuse when the file has moved on since, or has
+        been deleted since: a page still open on a deleted design must not
+        bring it back with its next autosave.  Without one, the design is
+        created if it is not there.  Writing what is already there is a no-op,
+        so an autosave that changes nothing does not look like a change to
+        anyone watching the revision.
         """
         path = self.path(name)
         blob = _serialise(design)
         with self.lock(name):
             current = self.rev(name)
+            if base_rev and current is None:
+                raise DesignGone(clean_name(name))
             if base_rev is not None and current is not None and base_rev != current:
                 raise DesignConflict(clean_name(name), current)
             if current == _rev_of(blob):
@@ -117,6 +129,34 @@ class DesignStore:
                 return False
             os.unlink(path)
             return True
+
+    def retire_current(self) -> Optional[str]:
+        """Give the old working design, ``current.json``, a name of its own.
+
+        There used to be one design at ``/`` that was not like the others.
+        Now there is none, so the file it was kept in becomes an ordinary
+        design named after its study title, and nothing in it changes.  The
+        new name, or None when there was nothing to rename.
+        """
+        old = os.path.join(self.directory, "current.json")
+        if not os.path.exists(old):
+            return None
+        title = ""
+        try:
+            with open(old, "r", encoding="utf-8") as handle:
+                title = str((json.load(handle).get("meta") or {}).get("studyTitle") or "")
+        except (OSError, ValueError, AttributeError):
+            pass
+        stem = clean_name(title)
+        if stem == "current":
+            stem = "untitled"
+        name, n = stem, 1
+        while os.path.exists(self.path(name)):
+            n += 1
+            name = f"{stem}-{n}"
+        with self.lock(name):
+            os.replace(old, self.path(name))
+        return name
 
     def list(self) -> List[Dict[str, Any]]:
         entries = []

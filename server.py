@@ -1,7 +1,7 @@
 """MRI Experimental Design Planner - production HTTP server.
 
 Serves the planner UI and a small JSON API over the acquisition parameter
-cards, saved designs, the XLSX report generator and the full-export zip, plus
+cards, the designs, the XLSX report generator and the full-export zip, plus
 the agent-facing design API under /api/v1 (see API.md).
 Run with::
 
@@ -38,7 +38,7 @@ from planner.access import install as install_access
 from planner.api import create_blueprint, render_docs
 from planner.auth import AUTH_DIR, PUBLIC_URL, Accounts, Throttle
 from planner.bundle import build_bundle
-from planner.designs import DesignConflict, DesignStore, clean_name, page_path
+from planner.designs import DesignConflict, DesignGone, DesignStore, clean_name, page_path
 from planner.engine import Engine
 from planner.protocols import (
     ROLE_LABELS,
@@ -72,6 +72,11 @@ app.json.sort_keys = False  # card pages must keep console order
 
 store = ProtocolStore(PROTOCOL_DIR)
 designs = DesignStore(PRESET_DIR)
+# There is no working design any more: the file that held it becomes a design
+# like any other, under its study title, the first time this version starts.
+_retired = designs.retire_current()
+if _retired:
+    print(f"  designs: the old working design is now {page_path(_retired)}", flush=True)
 accounts = Accounts(AUTH_DIR)
 
 # Everybody may look; changes and exports need a login link (planner/access.py).
@@ -180,10 +185,22 @@ def _view_suffix(view: Optional[str], item: Optional[str]) -> str:
 
 
 @app.route("/")
+def index() -> Response:
+    """Every design, newest first, each a link to open it; and for someone
+    signed in, a way to start another from the defaults."""
+    listed = sorted(designs.list(), key=lambda entry: entry["modified"], reverse=True)
+    for entry in listed:
+        entry["path"] = page_path(entry["name"])
+        entry["changed"] = datetime.fromtimestamp(entry["modified"]).strftime("%Y-%m-%d %H:%M")
+    return _page("designs.html", designs=listed, me=g.user)
+
+
 @app.route(f"/{VIEW}")
 @app.route(f"/{VIEW}/<item>")
-def index(view: Optional[str] = None, item: Optional[str] = None) -> Response:
-    return _page("index.html", design="current")
+def old_view(view: Optional[str] = None, item: Optional[str] = None) -> Response:
+    """A panel of the old working design, from before every design had a
+    name.  There is no telling which design it meant: the list, then."""
+    return redirect("/")
 
 
 @app.route("/designs/<name>")
@@ -191,15 +208,15 @@ def index(view: Optional[str] = None, item: Optional[str] = None) -> Response:
 @app.route(f"/designs/<name>/{VIEW}")
 @app.route(f"/designs/<name>/{VIEW}/<item>")
 def design_page(name: str, view: Optional[str] = None, item: Optional[str] = None) -> Response:
-    """A saved design's own address: the interface, working on that design,
+    """A design's own address: the interface, working on that design,
     optionally opened on one panel and one item in it.
 
     Anything that is not the canonical spelling - a trailing slash, a name
-    with characters the store replaces, ``current`` - is redirected to it, so
-    the address bar always shows the link worth sharing.  An unknown name
-    still gets the page, which says so and lists the designs that exist.
+    with characters the store replaces - is redirected to it, so the address
+    bar always shows the link worth sharing.  An unknown name still gets the
+    page, which says so and lists the designs that exist.
     """
-    target = page_path(name).rstrip("/") + _view_suffix(view, item) or "/"
+    target = page_path(name) + _view_suffix(view, item)
     if request.path != target:
         return redirect(quote(target))
     status = 200 if designs.exists(name) else 404
@@ -230,23 +247,26 @@ def health() -> Response:
 def bootstrap() -> Response:
     """Everything the client needs on first paint, in one round trip.
 
-    ``?design=<name>`` is the design the page opens on, by default the working
-    design.  The working design starts from the defaults when its file is
-    missing or unreadable; any other design reports ``designError`` instead,
-    and the page stops there rather than autosaving over it.
+    ``?design=<name>`` is the design the page opens on.  One that is missing
+    or unreadable reports ``designError``, and the page stops there rather
+    than opening the defaults under a name its first autosave would create.
+    Without a name there is no design, only the cards - which is how an open
+    page takes them fresh.
 
     ``me`` is who is signed in, or null: the page runs view-only without one.
     """
-    name = clean_name(request.args.get("design") or "current")
+    wanted = request.args.get("design")
+    name = clean_name(wanted) if wanted else None
     design, rev, error = None, None, None
-    try:
-        design, rev = designs.read(name)
-    except FileNotFoundError:
-        if name != "current":
-            error = f"No saved design named {name}."
-    except (OSError, ValueError) as exc:
-        if name != "current":
-            error = f"The saved design {name} could not be read: {exc}"
+    if name is None:
+        error = "No design named."
+    else:
+        try:
+            design, rev = designs.read(name)
+        except FileNotFoundError:
+            error = f"No design named {name}."
+        except (OSError, ValueError) as exc:
+            error = f"The design {name} could not be read: {exc}"
     return jsonify(
         {
             **_boot(),
@@ -416,20 +436,28 @@ def apply_derived() -> Response:
 # ------------------------------------------------------------------ design
 
 
+NO_NAME = {"error": "Name the design: ?name=<design>."}
+
+
 @app.get("/api/design")
 def get_design() -> Response:
-    name = request.args.get("name", "current")
+    name = request.args.get("name")
+    if not name:
+        return jsonify(NO_NAME), 400
     try:
         design, rev = designs.read(name)
     except FileNotFoundError:
-        return jsonify({"error": f"No saved design named {name}."}), 404
-    return jsonify({"name": name, "design": design, "rev": rev})
+        return jsonify({"error": f"No design named {clean_name(name)}."}), 404
+    return jsonify({"name": clean_name(name), "design": design, "rev": rev})
 
 
 @app.get("/api/design/rev")
 def design_rev() -> Response:
-    """Cheap enough to poll: lets an open page notice the API changed its design."""
-    name = request.args.get("name", "current")
+    """Cheap enough to poll: lets an open page notice the API changed its
+    design, or deleted it (``rev`` is then null)."""
+    name = request.args.get("name")
+    if not name:
+        return jsonify(NO_NAME), 400
     return jsonify({"name": clean_name(name), "rev": designs.rev(name), "cardsRev": _cards_rev()})
 
 
@@ -437,14 +465,21 @@ def design_rev() -> Response:
 def post_design() -> Response:
     """Save a design.  With ``baseRev``, refuse (409) if the stored copy has
     moved on since - the page sends it, so an autosave cannot silently undo a
-    change the API made in the meantime."""
+    change the API made in the meantime - and refuse (410) if it has been
+    deleted since, so a page still open on it cannot bring it back.  Without
+    one, the design is created if it is not there."""
     payload = _body()
-    name = payload.get("name", "current")
+    name = payload.get("name")
+    if not name:
+        return jsonify({"error": "Name the design: {\"name\": ...}."}), 400
     design = payload.get("design")
     if not isinstance(design, dict):
         return jsonify({"error": "design must be an object."}), 400
     try:
         rev = designs.write(name, design, base_rev=payload.get("baseRev"))
+    except DesignGone:
+        return jsonify({"error": f"The design {clean_name(name)} has been deleted.",
+                        "deleted": True}), 410
     except DesignConflict:
         stored, rev = designs.read(name)
         return jsonify(
@@ -462,10 +497,9 @@ def post_design() -> Response:
 
 @app.delete("/api/design/<name>")
 def delete_design(name: str) -> Response:
-    if name == "current":
-        return jsonify({"error": "The working design cannot be deleted."}), 400
-    designs.delete(name)
-    return jsonify({"deleted": name, "presets": designs.list()})
+    if not designs.delete(name):
+        return jsonify({"error": f"No design named {clean_name(name)}."}), 404
+    return jsonify({"deleted": clean_name(name), "presets": designs.list()})
 
 
 # ------------------------------------------------------------------ export
@@ -653,7 +687,7 @@ def main() -> int:
         f"  Wright State University\n"
         f"  ---------------------------------------------\n"
         f"  acquisition cards : {PROTOCOL_DIR} ({len(store.slugs())} files)\n"
-        f"  presets           : {PRESET_DIR}\n"
+        f"  designs           : {PRESET_DIR} ({len(designs.list())})\n"
         f"  exports           : {EXPORT_DIR}\n"
         f"  accounts          : {AUTH_DIR}\n"
         f"  sign-in           : {signin}\n"

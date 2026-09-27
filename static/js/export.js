@@ -191,24 +191,23 @@
     psychopyBox.textContent = run ? M.psychopyYaml(App.report, run) : '';
   }
 
-  /* -------------------------------------------------------------- presets */
+  /* -------------------------------------------------------------- designs */
 
   /* How the design open in this page is named in a question. */
   function openHere() {
-    return App.designName === 'current' ? 'the working design' : '"' + App.designName + '"';
+    return '"' + App.designName + '"';
   }
 
-  /* False when the user declined to write over an existing design. */
+  /* Save the design open here, or a copy of it under another name.  False
+   * when the user declined to write over an existing design. */
   function saveDesign(name) {
     var target = App.cleanName(name || App.designName);
     var ownDesign = target === App.designName;
-    /* Saved designs are shared by link, so writing over one somebody may have
-     * open is worth a question. */
+    /* Designs are shared by link, so writing over one somebody may have open
+     * is worth a question. */
     var taken = (App.boot.presets || []).some(function (preset) { return preset.name === target; });
-    if (!ownDesign && taken && !global.confirm(target === 'current'
-      ? 'Replace the working design with a copy of ' + openHere() + '?'
-      : 'Replace the saved design "' + target + '" with a copy of ' + openHere()
-        + '? Every page open on its link will show the change.')) return false;
+    if (!ownDesign && taken && !global.confirm('Replace the design "' + target + '" with a copy of '
+      + openHere() + '? Every page open on its link will show the change.')) return false;
     /* The design open here goes through the page's own save, which knows the
      * revision it started from; any other name is a plain copy. */
     var request = ownDesign ? App.saveWorking()
@@ -227,30 +226,7 @@
         }
         App.boot.presets = result.presets || App.boot.presets;
         renderPresets();
-        App.toast('Design saved as "' + target + '"', 'ok');
-      }).catch(function (error) { App.toast(error.message, 'bad'); });
-  }
-
-  /* Accepts either a bare design object or a downloaded {design, report}
-   * envelope; design.replace fills anything the file is missing from the
-   * defaults, so an older or hand-edited file still loads.  False when it was
-   * refused, and the user has already been told why. */
-  function adopt(payload) {
-    return !!App.act('design.replace', { design: payload });
-  }
-
-  /* Copy a saved design's contents into the design open here.  Opening it
-   * instead is its link. */
-  function loadDesign(name) {
-    if (App.designName !== 'current' && !global.confirm('Replace ' + openHere()
-      + ' with a copy of "' + name + '"? Every page open on its link will show the change.')) {
-      return;
-    }
-    fetch('/api/design?name=' + encodeURIComponent(name))
-      .then(function (response) { return response.json(); })
-      .then(function (result) {
-        if (result.error) throw new Error(result.error);
-        if (adopt(result.design)) App.toast('Loaded design "' + name + '"', 'ok');
+        App.toast(ownDesign ? 'Design saved' : 'Saved a copy as "' + target + '"', 'ok');
       }).catch(function (error) { App.toast(error.message, 'bad'); });
   }
 
@@ -259,8 +235,8 @@
       .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   }
 
-  /* Pull a saved preset straight from the server and write it to disk, so a
-   * design can leave this machine without going through the working state. */
+  /* Pull a design straight from the server and write it to disk, so any
+   * design can leave this machine without being opened first. */
   function downloadPreset(name) {
     fetch('/api/design?name=' + encodeURIComponent(name))
       .then(function (response) { return response.json(); })
@@ -273,7 +249,12 @@
       }).catch(function (error) { App.toast(error.message, 'bad'); });
   }
 
-  function importDesign(file, saveAs) {
+  /* A design file becomes a new design of its own, named in the box or after
+   * the file, and opens.  It never replaces the design open here: that one is
+   * shared by its link.  The file may be a bare design or a downloaded
+   * {design, report} envelope; anything it is missing comes from the
+   * defaults, so an older or hand-edited file still loads. */
+  function importDesign(file, name) {
     var reader = new FileReader();
     reader.onload = function () {
       var parsed;
@@ -283,28 +264,27 @@
         App.toast('Import failed: ' + error.message, 'bad');
         return;
       }
-      if (!adopt(parsed)) return;
-      var target = (saveAs || '').trim();
-      if (target && saveDesign(target) !== false) {
-        App.toast('Imported ' + file.name + ' and saved as "' + App.cleanName(target) + '"', 'ok');
-      } else {
-        App.toast('Imported ' + file.name + ' into ' + openHere(), 'ok');
-      }
+      var target = (name || '').trim() || String(file.name || '').replace(/\.json$/i, '');
+      global.PlannerDesigns.create(target, parsed).then(function (path) {
+        global.location.href = path;
+      }).catch(function (error) { App.toast('Import failed: ' + error.message, 'bad'); });
     };
     reader.onerror = function () { App.toast('Could not read ' + file.name, 'bad'); };
     reader.readAsText(file);
   }
 
+  /* Any design can go, the one open here too, once the person says so.  This
+   * one gone, the page has nothing left to work on: back to the list. */
   function deleteDesign(name) {
-    if (!global.confirm('Delete the saved design "' + name + '"? Its link will stop working.')) return;
-    fetch('/api/design/' + encodeURIComponent(name), { method: 'DELETE' })
-      .then(function (response) { return response.json(); })
-      .then(function (result) {
-        if (result.error) throw new Error(result.error);
-        App.boot.presets = result.presets || [];
-        renderPresets();
-        App.toast('Deleted "' + name + '"');
-      }).catch(function (error) { App.toast(error.message, 'bad'); });
+    global.PlannerDesigns.remove(name).then(function (deleted) {
+      if (!deleted) return;
+      if (name === App.designName) {
+        App.designGone({ home: true });
+        return;
+      }
+      App.toast('Deleted "' + name + '"');
+      refreshPresets();
+    }).catch(function (error) { App.toast(error.message, 'bad'); });
   }
 
   function renderPresets() {
@@ -312,7 +292,7 @@
     App.clear(presetHost);
     var presets = App.boot.presets || [];
     if (!presets.length) {
-      presetHost.appendChild(App.h('div', { class: 'notice', text: 'No saved designs yet.' }));
+      presetHost.appendChild(App.h('div', { class: 'notice', text: 'No designs yet.' }));
       return;
     }
 
@@ -326,7 +306,7 @@
         return [
           {
             html: '<a href="' + App.designPath(preset.name) + '">'
-              + App.escapeHtml(preset.name === 'current' ? 'current (working design)' : preset.name)
+              + App.escapeHtml(preset.name)
               + '</a>' + (here ? ' <span class="muted">open here</span>' : ''),
             copy: preset.name
           },
@@ -335,7 +315,7 @@
           { text: '', copy: '' }
         ];
       }),
-      { caption: 'Saved designs' }
+      { caption: 'Designs' }
     );
     presetHost.appendChild(table);
 
@@ -352,21 +332,18 @@
           App.copy(App.designLink(preset.name), 'Link for "' + preset.name + '"');
         }))
       ]);
-      if (!here) {
-        actions.appendChild(App.iconButton('Load', 'Replace ' + openHere()
-          + ' with a copy of this one', function () { loadDesign(preset.name); }));
-      }
-      actions.appendChild(App.iconButton('Download', 'Write this saved design out as a JSON file',
+      actions.appendChild(App.iconButton('Download', 'Write this design out as a JSON file',
         function () { downloadPreset(preset.name); }));
-      if (preset.name !== 'current' && !here) {
-        actions.appendChild(App.iconButton('Delete', 'Remove this saved design; its link stops '
-          + 'working', function () { deleteDesign(preset.name); }, 'danger'));
-      }
+      actions.appendChild(App.iconButton('Delete', here
+        ? 'Delete this design, the one open here; its link stops working'
+        : 'Delete this design; its link stops working', function () {
+        deleteDesign(preset.name);
+      }, 'danger'));
       cell.appendChild(actions);
     });
   }
 
-  /* Another page or the API may have saved or deleted designs since this page
+  /* Another page or the API may have made or deleted designs since this page
    * loaded; take the list fresh whenever the card is built. */
   function refreshPresets() {
     fetch('/api/v1/designs').then(function (response) { return response.json(); })
@@ -549,8 +526,8 @@
       psychopyBox
     ]);
 
-    /* --- presets -------------------------------------------------------- */
-    presetName = App.h('input', { type: 'text', placeholder: 'preset name' });
+    /* --- designs -------------------------------------------------------- */
+    presetName = App.h('input', { type: 'text', placeholder: 'name for a copy or an import' });
     presetHost = App.h('div', { class: 'mt' });
 
     /* The file input stays out of the layout; the visible button drives it. */
@@ -563,44 +540,43 @@
       importPicker.value = '';
     });
 
-    var presetCard = App.card('Saved designs',
+    var presetCard = App.card('Designs',
       'Stored server-side in presets/. Each opens at its own link; changes made there save to it', [
       App.h('div', { class: 'split-inline' }, [
         presetName,
         App.h('button', {
-          class: 'btn sm', type: 'button', text: 'Save as preset',
+          class: 'btn sm', type: 'button', text: 'Save a copy as',
           onclick: function () {
             if (!presetName.value.trim()) {
-              App.toast('Give the preset a name first', 'bad');
+              App.toast('Give the copy a name first', 'bad');
               return;
             }
             saveDesign(presetName.value.trim());
           }
         }),
-        App.iconButton('Save working design', 'Save the design open here to presets/'
-          + App.designName + '.json now; it also saves as you work',
-          function () { saveDesign(App.designName); }),
-        App.iconButton('Reset to defaults', 'Start from the shipped design', function () {
-          if (!global.confirm('Replace ' + openHere() + ' with the built-in defaults?')) return;
-          if (App.act('design.reset')) App.toast('Design reset to the built-in defaults');
-        })
+        App.iconButton('Reset to defaults', 'Start this design again from the default settings',
+          function () {
+            if (!global.confirm('Replace ' + openHere() + ' with the default settings? Every '
+              + 'page open on its link will show the change.')) return;
+            if (App.act('design.reset')) App.toast('Design reset to the default settings');
+          })
       ]),
       App.h('div', { class: 'btn-row mt' }, [
         App.iconButton('Import JSON file',
-          'Load a design file into the design open here; name it above to save it as a preset too',
+          'Make a new design from a design file, named above or after the file, and open it',
           function () { importPicker.click(); }),
-        App.iconButton('Download working design', 'Write the design as it stands to a file',
+        App.iconButton('Download this design', 'Write the design as it stands to a file',
           function () {
             var blob = new Blob([JSON.stringify(App.state, null, 2)],
               { type: 'application/json' });
-            download(blob, fileStem(presetName.value || App.designName) + '.json');
-            App.toast('Working design downloaded', 'ok');
+            download(blob, fileStem(App.designName) + '.json');
+            App.toast('Design downloaded', 'ok');
           }),
         importPicker,
         App.h('span', {
           class: 'muted',
-          text: 'Import replaces the design open here; anything the file omits falls back to '
-            + 'the defaults. Designs from the earlier aim-based planner are converted on load.'
+          text: 'Import makes a new design; anything the file omits comes from the default '
+            + 'settings. Designs from the earlier aim-based planner are converted on load.'
         })
       ]),
       presetHost
@@ -630,7 +606,6 @@
     downloadJson: downloadJson,
     downloadBundle: downloadBundle,
     saveDesign: function () { saveDesign(App.designName); },
-    loadDesign: loadDesign,
     downloadPreset: downloadPreset,
     downloadPsychopy: downloadPsychopy,
     importDesign: importDesign

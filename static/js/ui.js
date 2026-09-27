@@ -19,7 +19,7 @@
 
   var App = {
     boot: null,
-    designName: 'current',
+    designName: '',
     state: null,
     report: null,
     protocols: {},
@@ -497,23 +497,23 @@
     var host = document.getElementById('mast-account');
     if (!host) return;
     clear(host);
-    if (App.readOnly) {
-      host.appendChild(h('span', {
-        class: 'view-pill',
-        text: 'View only',
-        title: 'Anyone can look; changing or exporting anything needs a sign-in. '
-          + 'Ask someone who is signed in for a login link.'
-      }));
-      return;
-    }
-    host.appendChild(h('button', {
-      class: 'account-btn', type: 'button',
-      title: 'Signed in as ' + App.me.name + '. People, login links and signing out',
-      onclick: function () { go('people'); }
-    }, [
-      h('span', { class: 'k', text: 'Signed in' }),
-      h('span', { class: 'v', text: App.me.name })
-    ]));
+    // if (App.readOnly) {
+    //   host.appendChild(h('span', {
+    //     class: 'view-pill',
+    //     text: 'View only',
+    //     title: 'Anyone can look; changing or exporting anything needs a sign-in. '
+    //       + 'Ask someone who is signed in for a login link.'
+    //   }));
+    //   return;
+    // }
+    // host.appendChild(h('button', {
+    //   class: 'account-btn', type: 'button',
+    //   title: 'Signed in as ' + App.me.name + '. People, login links and signing out',
+    //   onclick: function () { go('people'); }
+    // }, [
+    //   h('span', { class: 'k', text: 'Signed in' }),
+    //   h('span', { class: 'v', text: App.me.name })
+    // ]));
   }
 
   /* The session went while the page was open: the person was removed, or
@@ -2663,11 +2663,11 @@
 
   /* ------------------------------------------------------------ addresses */
 
-  /* Every saved design opens at its own address and the page works on that
+  /* Every design opens at its own address and the page works on that
    * design: its edits save there and it follows changes made there.  The
-   * working design, `current`, is the root. */
+   * root lists them all. */
   function designPath(name) {
-    return !name || name === 'current' ? '/' : '/designs/' + encodeURIComponent(name);
+    return name ? '/designs/' + encodeURIComponent(name) : '/';
   }
 
   function designLink(name) {
@@ -2678,10 +2678,9 @@
    * follows what is on screen - the panel, and the item selected in it - so
    * whatever is showing can be shared by copying the address:
    *
-   *   /                           the working design's overview
-   *   /sessions/<id>              one of its sessions
-   *   /acquisition/<card>         one acquisition card
-   *   /designs/V1/runs/<id>       a run in the saved design V1
+   *   /designs/V1                 the design V1's overview
+   *   /designs/V1/sessions/<id>   one of its sessions
+   *   /designs/V1/acquisition/<card>  one acquisition card
    *
    * Clicking the rail or a list pushes a history entry, so Back works; a
    * change that moves the selection by itself (a delete, a change through the
@@ -2763,45 +2762,72 @@
       .replace(/[^A-Za-z0-9._-]+/g, '-').slice(0, 80) || 'untitled';
   }
 
-  /* The masthead names the design this page works on and hands out its link:
-   * the address bar has it too, but this is where people look. */
+  /* The masthead names the design this page works on, and is the way back to
+   * the list of them all; next to it, the way to start another. */
   function buildDesignBadge() {
     var host = document.getElementById('mast-design');
     if (!host) return;
     clear(host);
-    var working = App.designName === 'current';
-    host.appendChild(h('div', {
-      class: 'name',
-      title: working
-        ? 'The working design, presets/current.json. Saved designs open at their own links: '
-          + 'Report and export > Saved designs.'
-        : 'The saved design presets/' + App.designName + '.json. Changes made here save to it, '
-          + 'and every page open on its link shows them.'
+    host.appendChild(h('a', {
+      class: 'name', href: '/',
+      title: 'presets/' + App.designName + '.json. Changes made here save to it, and every '
+        + 'page open on its link shows them. Click for all designs.'
     }, [
       h('span', { class: 'k', text: 'Design' }),
-      h('span', { class: 'v', text: working ? 'Working design' : App.designName })
+      h('span', { class: 'v', text: App.designName })
     ]));
-    host.appendChild(view(iconButton('Copy link',
-      'Copy a link to what is on screen: this design, this panel and what is selected in it',
-      function () { copy(global.location.href, 'Link'); })));
+    host.appendChild(iconButton('Add new', 'Start another design from the default settings',
+      addNewDesign));
+    // host.appendChild(view(iconButton('Copy link',
+    //   'Copy a link to what is on screen: this design, this panel and what is selected in it',
+    //   function () { copy(global.location.href, 'Link'); })));
+  }
+
+  function addNewDesign() {
+    var name = global.prompt('Name of the new design. It starts from the default settings.', '');
+    if (name === null || !name.trim()) return;
+    global.PlannerDesigns.create(name).then(function (path) {
+      global.location.href = path;
+    }).catch(function (error) { toast(error.message, 'bad'); });
   }
 
   /* An address for a design that is not there: deleted, or mistyped.  Say so
    * and offer the ones that exist, rather than opening the defaults under a
    * name the first autosave would then create. */
-  function showMissingDesign(veil, boot) {
-    var names = (boot.presets || []).map(function (preset) { return preset.name; })
-      .filter(function (name) { return name !== 'current'; });
+  function showMissingDesign(veil, title, note, presets) {
+    var names = (presets || []).map(function (preset) { return preset.name; });
     clear(veil);
     veil.appendChild(h('div', { class: 'veil-box' }, [
-      h('div', { class: 'title', text: boot.designError }),
-      h('div', { text: 'It may have been deleted, or the link mistyped. '
-        + (names.length ? 'Open one of these instead:' : 'Open the working design instead:') }),
-      h('div', { class: 'links' }, [h('a', { href: '/', text: 'Working design' })]
+      h('div', { class: 'title', text: title }),
+      h('div', { text: note + (names.length ? ' Open one of these instead:' : '') }),
+      h('div', { class: 'links' }, [h('a', { href: '/', text: 'All designs' })]
         .concat(names.map(function (name) {
           return h('a', { href: designPath(name), text: name });
         })))
     ]));
+  }
+
+  /* The design this page works on has been deleted: from here, from another
+   * window, or through the API.  Nothing more is saved - the next autosave
+   * would bring it back, and the server refuses that too.  Deleted from here,
+   * go to the list; otherwise say what happened, over the page. */
+  function designGone(options) {
+    var home = options && options.home;
+    if (App.gone && !home) return;
+    App.gone = true;
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+    if (home) {
+      global.location.href = '/';
+      return;
+    }
+    var veil = h('div', { class: 'loading-veil' });
+    document.body.appendChild(veil);
+    var title = 'The design ' + App.designName + ' has been deleted.';
+    var note = 'It was deleted in another window or through the API.';
+    showMissingDesign(veil, title, note, []);
+    fetch('/api/v1/designs').then(function (response) { return response.json(); })
+      .then(function (result) { showMissingDesign(veil, title, note, result.designs || []); })
+      .catch(function () { /* the link to all designs is there already */ });
   }
 
   /* -------------------------------------------------------------- runtime */
@@ -2815,7 +2841,7 @@
 
   function saveWorking(options) {
     if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
-    if (App.readOnly) return Promise.resolve({});
+    if (App.readOnly || App.gone) return Promise.resolve({});
     var request = fetch('/api/design', {
       method: 'POST',
       keepalive: !!(options && options.keepalive),
@@ -2827,6 +2853,8 @@
       return response.json().then(function (body) {
         if (response.status === 401) {
           signedOut();
+        } else if (response.status === 410) {
+          designGone();
         } else if (response.status === 409 && body.design) {
           App.designRev = body.rev;
           adopt(body.design, { quiet: true });
@@ -2845,7 +2873,7 @@
   }
 
   function scheduleAutosave() {
-    if (App.readOnly) return;
+    if (App.readOnly || App.gone) return;
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(function () {
       saveTimer = null;
@@ -2899,15 +2927,24 @@
    * and the page should show it.  The browser slows timers in background
    * tabs, so a tab also checks the moment it is brought back. */
   function checkServer() {
-    if (busySaving()) return;
+    if (busySaving() || App.gone) return;
     fetch('/api/design/rev?name=' + encodeURIComponent(App.designName)).then(function (response) {
       return response.json();
     }).then(function (body) {
       if (busySaving()) return null;
+      if (body.rev === null) return confirmGone();
       if (body.cardsRev && body.cardsRev !== App.cardsRev) pullCards();
       if (body.rev && body.rev !== App.designRev) return pullDesign(true);
       return null;
     }).catch(function () { /* the server may be restarting */ });
+  }
+
+  /* No revision: the file is gone.  Asked once more before believing it,
+   * since believing it ends this page's work on the design. */
+  function confirmGone() {
+    return fetch('/api/design?name=' + encodeURIComponent(App.designName)).then(function (response) {
+      if (response.status === 404) designGone();
+    });
   }
 
   function watchServer() {
@@ -3048,12 +3085,13 @@
 
   function start() {
     var veil = document.getElementById('veil');
-    var wanted = document.body.getAttribute('data-design') || 'current';
+    var wanted = document.body.getAttribute('data-design') || '';
     fetch('/api/bootstrap?design=' + encodeURIComponent(wanted)).then(function (response) {
       return response.json();
     }).then(function (boot) {
       if (boot.designError) {
-        showMissingDesign(veil, boot);
+        showMissingDesign(veil, boot.designError, 'It may have been deleted, or the link mistyped.',
+          boot.presets);
         return;
       }
       App.me = boot.me || null;
@@ -3081,7 +3119,7 @@
   function begin(boot, veil) {
     if (App.readOnly) watchLocks();
     App.boot = boot;
-    App.designName = boot.designName || 'current';
+    App.designName = boot.designName;
     App.protocols = boot.protocols || {};
     App.designRev = boot.designRev || null;
     App.cardsRev = boot.cardsRev || null;
@@ -3165,6 +3203,7 @@
   App.write = write;
   App.saveWorking = saveWorking;
   App.designPath = designPath;
+  App.designGone = designGone;
   App.viewPath = viewPath;
   App.address = address;
   App.go = go;

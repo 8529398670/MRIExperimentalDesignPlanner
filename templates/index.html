@@ -3,8 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-{% set design = design or 'current' %}
-<title>{% if design != 'current' %}{{ design }} | {% endif %}MRI Experimental Design Planner | Wright State University</title>
+<title>{{ design }} | MRI Experimental Design Planner | Wright State University</title>
 <link rel="icon" href="{{ asset('wsu-mark.svg') }}" type="image/svg+xml">
 <link rel="stylesheet" href="{{ asset('css/app.css') }}">
 </head>
@@ -26,8 +25,8 @@
   <div class="mast-actions">
     <div class="mast-design" id="mast-design"></div>
     <div class="mast-account" id="mast-account" data-view></div>
-    <button class="btn quiet sm" id="btn-save-design" type="button">Save design</button>
-    <button class="btn gold" id="btn-export-bundle" type="button">Download everything</button>
+    <button class="btn quiet sm" id="btn-save-design" type="button">Save</button>
+    <button class="btn gold" id="btn-export-bundle" type="button">Download</button>
   </div>
 </header>
 
@@ -46,6 +45,7 @@
 <script src="{{ asset('js/protocols.js') }}"></script>
 <script src="{{ asset('js/export.js') }}"></script>
 <script src="{{ asset('js/people.js') }}"></script>
+<script src="{{ asset('js/designs.js') }}"></script>
 <script>window.addEventListener('DOMContentLoaded', function () { window.PlannerApp.start(); });</script>
 </body>
 </html>
