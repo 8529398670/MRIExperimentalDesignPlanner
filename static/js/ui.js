@@ -2776,8 +2776,8 @@
       h('span', { class: 'k', text: 'Design' }),
       h('span', { class: 'v', text: App.designName })
     ]));
-    host.appendChild(iconButton('Add new', 'Start another design from the default settings',
-      addNewDesign));
+    // host.appendChild(iconButton('Add new', 'Start another design from the default settings',
+    //   addNewDesign));
     // host.appendChild(view(iconButton('Copy link',
     //   'Copy a link to what is on screen: this design, this panel and what is selected in it',
     //   function () { copy(global.location.href, 'Link'); })));

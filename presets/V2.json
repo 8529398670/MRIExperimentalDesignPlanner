@@ -438,7 +438,7 @@
     {
       "id": "session-mtubfgy7-3ho",
       "name": "Aim 3 — Time-series session",
-      "note": "Delay is a within-session factor: separated-delay calibration run first, then structurals, then compressed-delay question runs, then optional rest. Feeds the spatiotemporal model ladder (arms 0-14) trained on identical data budgets; accuracy-vs-deadline and accuracy-vs-delay curves; three-way temporal ablation (context length x hemodynamic lag x temporal smoothing) is Aim-3-only.",
+      "note": "Delay is a within-session factor: separated-delay calibration run first, then structurals, then compressed-delay question runs, then optional rest. Feeds the spatiotemporal model ladder (arms 0-14) trained on identical data budgets; accuracy-vs-deadline and accuracy-vs-delay curves. Approved Aim 3 analyses: (1) linguistic-stage split — yes/no decoded separately from production voxels (IFG/SMA) vs auditory-monitoring voxels (STG), with stage labels from Aim 1; (2) three-way temporal ablation (context length x hemodynamic lag x temporal smoothing), Aim-3-only; (3) supplementary retrieval-style decoding (embedding prediction + candidate ranking, arm-14 contrastive-to-text objective), supplementary not primary.",
       "autoBreak": true,
       "breakMinutes": 3,
       "blocks": [
