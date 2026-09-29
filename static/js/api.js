@@ -2268,7 +2268,10 @@
       return report.runs.filter(function (run) {
         return !run.missing && (!has(args, 'run') || run.id === args.run);
       }).map(function (run) {
-        return { run: run.name, file: M.psychopyFileName(run), yaml: M.psychopyYaml(report, run) };
+        return {
+          run: run.name, id: run.id,
+          file: M.psychopyFileName(run), yaml: M.psychopyYaml(report, run)
+        };
       });
     }
   });

@@ -101,7 +101,7 @@ def png_available() -> bool:
     return cairosvg is not None
 
 
-class _Lru(OrderedDict):
+class Lru(OrderedDict):
     """Smallest possible bounded cache; not a general-purpose container."""
 
     def __init__(self, limit: int) -> None:
@@ -137,8 +137,8 @@ class Figures:
         self._boot = boot
         self._published_dir = published_dir
         self._lock = threading.Lock()
-        self._sets = _Lru(DESIGN_CACHE)
-        self._pngs = _Lru(PNG_CACHE)
+        self._sets = Lru(DESIGN_CACHE)
+        self._pngs = Lru(PNG_CACHE)
 
     # ------------------------------------------------------------ drawing
 

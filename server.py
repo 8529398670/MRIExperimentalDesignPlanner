@@ -42,6 +42,7 @@ from planner.bundle import build_bundle
 from planner.designs import DesignConflict, DesignGone, DesignStore, clean_name, page_path
 from planner.engine import Engine
 from planner.figures import Figures
+from planner.psychopy import Configs as PsychopyConfigs, stem as psychopy_stem
 from planner.protocols import (
     ROLE_LABELS,
     ROLES,
@@ -101,6 +102,7 @@ API_DOCS = os.path.join(BASE_DIR, "API.md")
 engine = Engine(STATIC_DIR)
 figures = Figures(engine, lambda name: designs.read(name), lambda: _boot(),
                   published_dir=FIGURE_DIR or None)
+psychopy = PsychopyConfigs(engine, lambda name: designs.read(name), lambda: _boot())
 COMPRESSIBLE_TYPES = {
     "application/javascript",
     "application/json",
@@ -360,6 +362,76 @@ def figure_publish(name: str, slug: str) -> Response:
     except (OSError, RuntimeError) as exc:
         return jsonify({"ok": False, "error": f"Could not store the figure: {exc}"}), 500
     return jsonify({"ok": True, "figure": figure["name"], "rev": rev, "bytes": len(blob)})
+
+
+# ---------------------------------------------------------------- psychopy
+
+#: A PsychoPy address. These answer as data and as files, never as pages: a
+#: broken one is a 404 in plain text rather than the application shell, and a
+#: good one may be revalidated from cache.
+PSYCHOPY_PATH = re.compile(r"^/designs/[^/]+/psychopy(/|$)")
+
+
+# One PsychoPy config per run design, each at its own address under the design
+# that compiles it, so a presentation computer or an agent can fetch the YAML
+# it needs without going through the interface or unpacking an export bundle.
+#
+# The index is JSON, not a page: it is a list of links for something to walk,
+# which is the whole point of the addresses being stable.  A config is an
+# export - a file to take away - so all of this needs a sign-in or an API key
+# (planner/access.py, EXPORT_READS).
+
+
+def _config_or_404(name: str, slug: str):
+    """``(config, rev)`` for one slug, or an abort."""
+    if not designs.exists(name) or not psychopy.valid_slug(slug):
+        abort(404)
+    try:
+        sheet, rev = psychopy.sheet(clean_name(name))
+    except FileNotFoundError:
+        abort(404)
+    found = psychopy.find(sheet, slug)
+    if found is None:
+        abort(404)
+    return found, rev
+
+
+@app.route("/designs/<name>/psychopy")
+@app.route("/designs/<name>/psychopy/")
+def psychopy_index(name: str) -> Response:
+    """Every PsychoPy config this design compiles, in the design's own order,
+    each with the address that downloads it."""
+    design = clean_name(name)
+    if not designs.exists(name):
+        return jsonify({"ok": False, "error": f"No design named {design}.",
+                        "name": design, "configs": []}), 404
+    sheet, rev = psychopy.sheet(design)
+    base = request.host_url.rstrip("/") + page_path(name) + "/psychopy/"
+    listing = jsonify({
+        "name": design,
+        "rev": rev,
+        "configs": [
+            {"index": item["index"], "id": item.get("id", ""), "run": item.get("run", ""),
+             "file": item.get("file", ""), "stem": psychopy_stem(item),
+             "url": base + quote(psychopy_stem(item)) + ".yaml"}
+            for item in sheet
+        ],
+    })
+    return _cached(listing, rev, "index", "json")
+
+
+@app.route("/designs/<name>/psychopy/<slug>.yaml")
+@app.route("/designs/<name>/psychopy/<slug>.yml")
+def psychopy_yaml(name: str, slug: str) -> Response:
+    """One config, addressed by file stem, by run design id, or by position.
+
+    Whichever form the link used, the download is named for the run design, so
+    a file fetched as ``0.yaml`` still lands as ``run-aim-1-....yaml``.
+    """
+    config, rev = _config_or_404(name, slug)
+    response = Response(config.get("yaml", ""), mimetype="text/yaml")
+    response.headers["Content-Disposition"] = f'attachment; filename="{config["file"]}"'
+    return _cached(response, rev, psychopy_stem(config), "yaml")
 
 
 @app.route("/favicon.ico")
@@ -747,6 +819,9 @@ def handle_404(_exc) -> Response:
     # tell a link checker the address is fine.
     if FIGURE_PATH.match(request.path):
         return Response(f"No figure at {request.path}\n", status=404, mimetype="text/plain")
+    if PSYCHOPY_PATH.match(request.path):
+        return Response(f"No PsychoPy config at {request.path}\n", status=404,
+                        mimetype="text/plain")
     return _page("index.html")
 
 
@@ -758,7 +833,8 @@ def freshness(response: Response) -> Response:
     ETag and must be revalidated on every request, so a refresh always picks
     up a rebuilt file while an unchanged one still costs only a 304.
     """
-    if request.path.startswith("/static/") or FIGURE_PATH.match(request.path):
+    if (request.path.startswith("/static/") or FIGURE_PATH.match(request.path)
+            or PSYCHOPY_PATH.match(request.path)):
         response.headers["Cache-Control"] = "no-cache, must-revalidate"
     else:
         response.headers["Cache-Control"] = "no-store"

@@ -31,8 +31,18 @@ SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 OPEN_POSTS = frozenset({"/api/auth/redeem", "/api/auth/resume"})
 
 # Reads that are exports all the same: files to take away, and archived in
-# exports/ on the way out.
-EXPORT_READ = re.compile(r"^/api/v1/designs/[^/]+/export(/|$)")
+# exports/ on the way out.  The PsychoPy addresses are exports too, even
+# though they sit under the design rather than under /api/v1: the index is a
+# list of files to fetch and each one is a file to take away, so both want the
+# same sign-in.
+EXPORT_READS = (
+    re.compile(r"^/api/v1/designs/[^/]+/export(/|$)"),
+    re.compile(r"^/designs/[^/]+/psychopy(/|$)"),
+)
+
+
+def an_export(path: str) -> bool:
+    return any(pattern.match(path) for pattern in EXPORT_READS)
 
 # The page shell.  Opening the planner sets the cookie again: a browser drops
 # a cookie 400 days after it was last set, so this is what makes a sign-in
@@ -134,7 +144,7 @@ def install(app: Flask, accounts: Accounts, throttle: Throttle, public_url: str 
                 return None
             if g.user is None:
                 return _fail(401, unknown or VIEW_ONLY, viewOnly=True, signIn="/login")
-        elif g.user is None and EXPORT_READ.match(request.path):
+        elif g.user is None and an_export(request.path):
             return _fail(401, unknown or "Exports need a sign-in with a login link.",
                          viewOnly=True, signIn="/login")
         return None

@@ -147,10 +147,60 @@ On a refusal, `ok` is false and `error` says which action failed and why, for ex
 | POST | `/api/v1/designs/<name>/actions` | Run actions (above) |
 | GET | `/api/v1/designs/<name>/report?view=summary\|full\|warnings` | Solve and report without changing anything |
 | GET | `/api/v1/designs/<name>/export/<format>` | `markdown`, `methods` (text), `psychopy` (JSON, or `?run=<run>` for one YAML file), `json`, `figures` (SVG), `xlsx`, `bundle` (zip) |
+| GET | `/designs/<name>/psychopy` | JSON: every PsychoPy config this design compiles, in order, each with the `url` that downloads it |
+| GET | `/designs/<name>/psychopy/<config>.yaml` | One config as a file, addressed by file stem, run design id or 0-based position |
 
 Workbooks and bundles built through the API are archived in `exports/`, as they are from the
 interface. The bundle has SVG figures but no PNGs, because the server has no browser to
 rasterise them.
+
+### PsychoPy configs at their own addresses
+
+One config per **run design** - the run is what the presentation computer executes. Ask the
+index what is there, then fetch each `url` it hands back. Both compile from the design as it
+stands: no re-export, no stale copy.
+
+```bash
+curl -s -H "Authorization: Bearer $KEY" localhost:8761/designs/V2/psychopy
+```
+
+```json
+{
+  "name": "V2",
+  "rev": "193437d76b4a",
+  "configs": [
+    {"index": 0, "id": "run-mtmfi9kd-4", "run": "Aim 1 - Block localizer run",
+     "file": "run-aim-1-block-localizer-run.yaml", "stem": "run-aim-1-block-localizer-run",
+     "url": "http://localhost:8761/designs/V2/psychopy/run-aim-1-block-localizer-run.yaml"},
+    {"index": 1, "id": "run-mtubax2r-1di", "run": "Aim 2 - Question run", "...": "..."}
+  ]
+}
+```
+
+`configs` is in the design's own order, so the list and `index` agree. Then fetch one, saved
+under the name the planner gives it:
+
+```bash
+curl -s -OJ -H "Authorization: Bearer $KEY" \
+  localhost:8761/designs/V2/psychopy/run-aim-2-question-run.yaml
+```
+
+A config's slug resolves in this order, and the three cannot collide:
+
+| Form | Example | Stability |
+|---|---|---|
+| File stem | `run-aim-2-question-run` | Readable, but follows the run design's name: renaming the run moves the link |
+| Run design id | `run-mtubax2r-1di` | Permanent. The one to keep in a protocol |
+| Position, 0-based | `0` | Shortest, least stable: adding or deleting a run design shifts it |
+
+However it is addressed, `Content-Disposition` names the canonical file, so one fetched as
+`0.yaml` still lands as `run-aim-1-block-localizer-run.yaml`. Both the index and each config
+carry an ETag off the design revision, so nothing unchanged is sent twice.
+
+Both addresses are exports, so both need a session cookie or an API key like every other
+export; without one the answer is 401. A token never goes in the address - it would end up in
+server logs and in referers - so a script sends `Authorization: Bearer`, and a browser is let
+in by the cookie it already has.
 
 ## A study from scratch
 

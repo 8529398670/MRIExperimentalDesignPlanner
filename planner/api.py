@@ -44,6 +44,10 @@ ENDPOINTS = [
     ("GET", "/api/v1/designs/<name>/report", "Solve and report: ?view=summary|full|warnings"),
     ("GET", "/api/v1/designs/<name>/export/<format>",
      "markdown | methods | psychopy | json | figures | xlsx | bundle"),
+    ("GET", "/designs/<name>/psychopy", "JSON: every PsychoPy config this design compiles, "
+     "in order, each with the url that downloads it"),
+    ("GET", "/designs/<name>/psychopy/<config>.yaml",
+     "One PsychoPy config as a file, by file stem, run design id or 0-based position"),
 ]
 
 
@@ -484,8 +488,9 @@ def create_blueprint(
         if fmt in ("markdown", "methods", "psychopy", "figures"):
             ctx = engine.open(state, boot(), figures=fmt == "figures")
             call: Dict[str, Any] = {"action": f"export.{fmt}"}
-            if fmt == "psychopy" and request.args.get("run"):
-                call["run"] = request.args["run"]
+            wanted_run = (request.args.get("run") or "").strip()
+            if fmt == "psychopy" and wanted_run:
+                call["run"] = wanted_run
             if fmt == "figures" and request.args.get("name"):
                 call["name"] = request.args["name"]
             value = ctx.execute(call)
@@ -493,7 +498,7 @@ def create_blueprint(
                 return Response(value["markdown"], mimetype="text/markdown")
             if fmt == "methods":
                 return Response(value["methods"], mimetype="text/plain")
-            if fmt == "psychopy" and request.args.get("run"):
+            if fmt == "psychopy" and wanted_run:
                 if not value:
                     raise ApiError(404, "That run design has no PsychoPy config (is its card missing?).")
                 return Response(

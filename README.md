@@ -499,6 +499,36 @@ A figure can be named two ways. Its **file name** is readable but follows the it
 renaming a session moves that link; its **id** never changes. Both resolve, so pick the one
 whose property matters — readable to paste into a document, permanent to keep in a protocol.
 
+### PsychoPy configs on the web
+
+The PsychoPy task configs have addresses of their own too — one per run design — so the
+presentation computer or an agent can fetch the one it needs without going through the
+interface or unpacking an export bundle:
+
+```
+/designs/V2/psychopy                                    JSON: every config, in order, each with its url
+/designs/V2/psychopy/run-aim-2-question-run.yaml        one config, by file name
+/designs/V2/psychopy/run-mtubax2r-1di.yaml              the same config, by run design id
+/designs/V2/psychopy/1.yaml                             the same config, by position (0-based)
+```
+
+The index is a list of links for something to walk, not a page: ask it what is there, then
+fetch each `url` it hands back. However a config is addressed, the download is named for the
+run design, so one fetched as `0.yaml` still lands as
+`run-aim-1-block-localizer-run.yaml`.
+
+Unlike a figure, a config is an **export**, so all of this needs a sign-in or an API key. A
+token never goes in the address — it would end up in server logs and in referers — so a script
+sends `Authorization: Bearer <key>` and a browser is let in by its cookie:
+
+```bash
+curl -s -H "Authorization: Bearer $KEY" \
+  https://planner.example.org/designs/V2/psychopy
+
+curl -OJ -H "Authorization: Bearer $KEY" \
+  https://planner.example.org/designs/V2/psychopy/run-aim-2-question-run.yaml
+```
+
 Figures are a view of the design, not an export, so anyone who can open the design can open
 them; the exports under `/api/v1` still need a sign-in. Every answer carries an ETag off the
 design revision, so a reader that already has the current picture gets a 304, and an edit
@@ -555,6 +585,8 @@ is 401.
 | GET | `/designs/<name>/figures/<figure>.svg` | One figure as SVG, drawn from the design as it stands |
 | GET | `/designs/<name>/figures/<figure>.png` | The same as PNG — the one the interface published if it has, otherwise rendered here (`?scale=1`–`4` always renders); redirects to the SVG where the server cannot rasterise |
 | PUT | `/designs/<name>/figures/<figure>.png` | The interface handing over the PNG it drew, `?rev=` the revision it drew from. Needs a sign-in; 409 if the design has moved on |
+| GET | `/designs/<name>/psychopy` | JSON: every PsychoPy config this design compiles, in order, each with the `url` that downloads it. Needs a sign-in or an API key |
+| GET | `/designs/<name>/psychopy/<config>.yaml` | One config, by file stem, run design id or 0-based position. Needs a sign-in or an API key |
 | GET | `/login` | The page a login link (`/login#<token>`) opens |
 | POST | `/api/auth/redeem` | Spend a login link's token: `{"token"}` → a session (cookie, and `token` in the body) |
 | POST | `/api/auth/resume` | Hand back a session a browser kept, when its cookie went |
