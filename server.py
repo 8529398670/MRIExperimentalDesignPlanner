@@ -26,6 +26,7 @@ from urllib.parse import quote
 from flask import (
     Flask,
     Response,
+    abort,
     g,
     jsonify,
     redirect,
@@ -40,6 +41,7 @@ from planner.auth import AUTH_DIR, PUBLIC_URL, Accounts, Throttle
 from planner.bundle import build_bundle
 from planner.designs import DesignConflict, DesignGone, DesignStore, clean_name, page_path
 from planner.engine import Engine
+from planner.figures import Figures
 from planner.protocols import (
     ROLE_LABELS,
     ROLES,
@@ -61,10 +63,20 @@ PROTOCOL_DIR = os.environ.get(
 )
 PRESET_DIR = os.environ.get("PLANNER_PRESET_DIR", os.path.join(BASE_DIR, "presets"))
 EXPORT_DIR = os.environ.get("PLANNER_EXPORT_DIR", os.path.join(BASE_DIR, "exports"))
+FIGURE_DIR = os.environ.get("PLANNER_FIGURE_DIR",
+                            os.path.join(BASE_DIR, "figure-cache"))
 MAX_PAYLOAD_BYTES = 96 * 1024 * 1024  # the export bundle carries rendered figures
 
 os.makedirs(PRESET_DIR, exist_ok=True)
 os.makedirs(EXPORT_DIR, exist_ok=True)
+
+# The figure cache holds what the interface publishes.  It is only ever a
+# convenience - without it the server renders figures itself - so somewhere
+# unwritable is a reason to do without, not a reason not to start.
+try:
+    os.makedirs(FIGURE_DIR, exist_ok=True)
+except OSError:
+    FIGURE_DIR = ""
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 app.config["MAX_CONTENT_LENGTH"] = MAX_PAYLOAD_BYTES
@@ -87,6 +99,8 @@ SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 API_DOCS = os.path.join(BASE_DIR, "API.md")
 engine = Engine(STATIC_DIR)
+figures = Figures(engine, lambda name: designs.read(name), lambda: _boot(),
+                  published_dir=FIGURE_DIR or None)
 COMPRESSIBLE_TYPES = {
     "application/javascript",
     "application/json",
@@ -221,6 +235,131 @@ def design_page(name: str, view: Optional[str] = None, item: Optional[str] = Non
         return redirect(quote(target))
     status = 200 if designs.exists(name) else 404
     return _page("index.html", status=status, design=clean_name(name))
+
+
+# ----------------------------------------------------------------- figures
+
+#: A figure address. These answer as images rather than as pages: a broken one
+#: is a 404, and a good one may be revalidated from cache.
+FIGURE_PATH = re.compile(r"^/designs/[^/]+/figures/.")
+
+
+# Every figure has its own address under the design that draws it, so one can
+# be linked, embedded or opened in a tab without going through the interface.
+# They sit here rather than under /api/v1/.../export/ deliberately: a figure is
+# a view of the design, which anyone who can open the design may see, not an
+# export, which needs a sign-in.
+
+
+def _figure_or_404(name: str, slug: str):
+    """``(figure, rev, sheet)`` for one slug, or an abort."""
+    if not designs.exists(name):
+        abort(404)
+    if not figures.valid_slug(slug):
+        abort(404)
+    try:
+        sheet, rev = figures.sheet(name)
+    except FileNotFoundError:
+        abort(404)
+    found = figures.find(sheet, slug)
+    if found is None:
+        abort(404)
+    return found, rev, sheet
+
+
+def _cached(response: Response, rev: str, slug: str, ext: str) -> Response:
+    """Revalidate every time, but send nothing when nothing has changed.
+
+    The link is meant to stay pointed at the current design, so it must not be
+    held in a cache past an edit; an ETag off the design revision makes the
+    repeat visit a 304 rather than a re-send.  ``freshness`` sets the
+    Cache-Control that lets a browser store it long enough to ask.
+    """
+    response.set_etag(f"{rev}-{slug}.{ext}")
+    return response.make_conditional(request)
+
+
+@app.route("/designs/<name>/figures/")
+@app.route("/designs/<name>/figures")
+def figure_index(name: str) -> Response:
+    """Every figure this design draws, with the links to each."""
+    target = page_path(name) + "/figures/"
+    if request.path != target:
+        return redirect(quote(target))
+    if not designs.exists(name):
+        return _page("figures.html", status=404, design=clean_name(name),
+                     figures=[], png=figures.png_available(), me=g.user)
+    sheet, _rev = figures.sheet(name)
+    listed = [
+        {"name": item["name"], "id": item["id"], "level": item["level"],
+         "title": item["title"], "svg": item["svg"]}
+        for item in sheet
+    ]
+    return _page("figures.html", design=clean_name(name), figures=listed,
+                 png=figures.png_available(), me=g.user)
+
+
+@app.route("/designs/<name>/figures/<slug>.svg")
+def figure_svg(name: str, slug: str) -> Response:
+    figure, rev, _sheet = _figure_or_404(name, slug)
+    response = Response(figure["svg"], mimetype="image/svg+xml; charset=utf-8")
+    response.headers["Content-Disposition"] = f'inline; filename="{figure["name"]}.svg"'
+    return _cached(response, rev, figure["name"], "svg")
+
+
+@app.route("/designs/<name>/figures/<slug>.png")
+def figure_png(name: str, slug: str) -> Response:
+    """The figure as a picture, from the best source there is.
+
+    First choice is what the interface itself drew and published: it uses the
+    fonts the figures ask for, so it is the picture you get from *Download
+    PNG*, to the byte.  Failing that the server renders one, which is close but
+    not the same - CairoSVG honours only the first family of a stack and has
+    only the fonts the image ships.  Failing that the reader goes to the SVG,
+    because a link that shows the picture beats a link that 404s.
+
+    An explicit ``?scale=`` always renders here: it is asking for a size the
+    interface does not publish.
+    """
+    figure, rev, _sheet = _figure_or_404(name, slug)
+    design = clean_name(name)
+    asked = request.args.get("scale", "")
+    source = "published"
+
+    blob = None if asked else figures.published(design, rev, figure["name"])
+    if blob is None:
+        source = "rendered"
+        blob = figures.png(design, rev, figure, figures.clamp_scale(asked))
+    if blob is None:
+        return redirect(f"{page_path(name)}/figures/{quote(slug)}.svg")
+
+    response = Response(blob, mimetype="image/png")
+    response.headers["Content-Disposition"] = f'inline; filename="{figure["name"]}.png"'
+    response.headers["X-Planner-Figure"] = source
+    tag = figure["name"] if source == "published" else f"{figure['name']}@{asked or 2}"
+    return _cached(response, rev, f"{source}:{tag}", "png")
+
+
+@app.route("/designs/<name>/figures/<slug>.png", methods=["PUT"])
+def figure_publish(name: str, slug: str) -> Response:
+    """The interface handing over the PNG it just drew.
+
+    Guarded like every other write: same origin, and signed in.  The revision
+    has to be the one the page drew from, or the picture is already out of date
+    and storing it would make the link lie.
+    """
+    figure, rev, _sheet = _figure_or_404(name, slug)
+    if request.args.get("rev", rev) != rev:
+        return jsonify({"ok": False, "error": "The design moved on; redraw and publish again.",
+                        "rev": rev}), 409
+    blob = request.get_data(cache=False)
+    try:
+        figures.publish(clean_name(name), rev, figure["name"], blob)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except (OSError, RuntimeError) as exc:
+        return jsonify({"ok": False, "error": f"Could not store the figure: {exc}"}), 500
+    return jsonify({"ok": True, "figure": figure["name"], "rev": rev, "bytes": len(blob)})
 
 
 @app.route("/favicon.ico")
@@ -603,6 +742,11 @@ def handle_500(exc) -> Response:
 def handle_404(_exc) -> Response:
     if request.path.startswith("/api/"):
         return jsonify({"error": "Not found", "path": request.path}), 404
+    # A figure address names an image, not a page.  Handing back the
+    # application shell would leave a broken <img> looking like a success and
+    # tell a link checker the address is fine.
+    if FIGURE_PATH.match(request.path):
+        return Response(f"No figure at {request.path}\n", status=404, mimetype="text/plain")
     return _page("index.html")
 
 
@@ -614,7 +758,7 @@ def freshness(response: Response) -> Response:
     ETag and must be revalidated on every request, so a refresh always picks
     up a rebuilt file while an unchanged one still costs only a 304.
     """
-    if request.path.startswith("/static/"):
+    if request.path.startswith("/static/") or FIGURE_PATH.match(request.path):
         response.headers["Cache-Control"] = "no-cache, must-revalidate"
     else:
         response.headers["Cache-Control"] = "no-store"
@@ -689,6 +833,7 @@ def main() -> int:
         f"  acquisition cards : {PROTOCOL_DIR} ({len(store.slugs())} files)\n"
         f"  designs           : {PRESET_DIR} ({len(designs.list())})\n"
         f"  exports           : {EXPORT_DIR}\n"
+        f"  figure cache      : {FIGURE_DIR or 'unavailable (server-rendered figures only)'}\n"
         f"  accounts          : {AUTH_DIR}\n"
         f"  sign-in           : {signin}\n"
         f"                      (everyone else can view, not change or export)\n"

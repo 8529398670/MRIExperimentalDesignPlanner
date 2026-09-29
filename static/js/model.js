@@ -1445,10 +1445,7 @@
       var runs = runCount();
 
       var builder = timelineBuilder();
-      entries.forEach(function (entry) {
-        builder.push(entry.item, entry.protocol, entry.protocolLabel,
-          entry.minutes.mean, entry.category);
-      });
+      entries.forEach(function (entry) { builder.push(entry); });
 
       out[session.id] = {
         session: session,
@@ -1482,20 +1479,30 @@
 
   /* -------------------------------------------------------- timelines */
 
+  /* One row per thing the console does.  The row carries the block kind and the
+   * run it came from as well as its label, so a figure can colour the session
+   * without walking the blocks again and re-deriving the automatic breaks. */
   function timelineBuilder() {
     var rows = [];
     var cumulative = 0;
-    function push(item, protocol, protocolLabel, minutes, category) {
-      var value = Math.max(0, num(minutes));
+    function push(entry) {
+      var span = entry.minutes || { min: 0, mean: 0, max: 0 };
+      var value = Math.max(0, num(span.mean));
       cumulative += value;
       rows.push({
         order: rows.length + 1,
-        item: item,
-        protocol: protocol || '',
-        protocolLabel: protocolLabel || '',
+        item: entry.item,
+        protocol: entry.protocol || '',
+        protocolLabel: entry.protocolLabel || '',
         minutes: round(value, 2),
+        minMinutes: round(Math.max(0, num(span.min)), 2),
+        maxMinutes: round(Math.max(0, num(span.max)), 2),
         cumulative: round(cumulative, 2),
-        category: category
+        category: entry.category,
+        kind: entry.kind || '',
+        runId: entry.runId || '',
+        blockId: entry.blockId || '',
+        auto: !!entry.auto
       });
     }
     return { rows: rows, push: push, total: function () { return cumulative; } };

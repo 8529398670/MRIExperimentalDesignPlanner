@@ -458,14 +458,71 @@ rather than a table; its solved timeline underneath copies as a table.
 
 ## Figures
 
-Three figures, each downloadable as SVG or PNG and all of them included in the zip:
+One figure per level of the design, each pitched at that level and drawn for every item at
+it, so nothing is ever collapsed into a representative example. All are downloadable as SVG
+or PNG and all are included in the zip:
 
 - **Trial timeline** (per trial design) — the phases as a strip of stimulus screens with their
   durations and cumulative onsets, then the same trial drawn to scale.
-- **Assembly figure** (per experiment) — trial, block, run, session and experiment, each row
-  to scale on its own axis, with the element the row above expands picked out and joined to it.
-- **Scanner time** (the study) — every experiment as a band of sessions drawn against the
-  usable budget, one division per session, with what the plan leaves unspent.
+- **Run structure** (per run design) — the trial, the block it repeats into and the whole run,
+  each row to scale on its own axis, with the element the row above expands picked out and
+  joined to it.
+- **Session overview** (per session) — the session as the console runs it, to scale in
+  minutes: setup, the structural and reference scans, every run with its blocks ruled inside
+  it, and the breaks between. Numbered to match the session timeline table, with a key, a
+  jitter rule from shortest to longest, and a bar showing where the time goes.
+- **Experiment overview** (per experiment) — every session design in the plan on one shared
+  minutes axis, with how many of each the budget buys, what that costs, and the experiment's
+  scanner time split between them.
+- **Study overview** (the study) — every experiment as a band against the usable budget, each
+  band split into the session designs its plan buys rather than into anonymous ticks, with
+  what the plan leaves unspent. Switched-off experiments are hatched rather than dropped.
+
+### Figures on the web
+
+Every figure also has an address of its own under the design that draws it, so one can be
+linked, embedded in a page, or opened in a tab rather than only downloaded:
+
+```
+/designs/V2/figures/                                    every figure, with its links
+/designs/V2/figures/aim-2-mvpa-session-session.png      one figure, by file name
+/designs/V2/figures/session-mtubalg3-14a.png            the same figure, by id
+/designs/V2/figures/study.png                           the study figure, whatever the study is called
+```
+
+These are drawn from the design each time they are asked for, so a link pasted into a
+protocol or a message keeps up with the design instead of going stale the way a pasted
+picture does. Each figure card in the interface has a **Copy link** button, and *Report and
+export* links the index.
+
+A figure can be named two ways. Its **file name** is readable but follows the item's name, so
+renaming a session moves that link; its **id** never changes. Both resolve, so pick the one
+whose property matters — readable to paste into a document, permanent to keep in a protocol.
+
+Figures are a view of the design, not an export, so anyone who can open the design can open
+them; the exports under `/api/v1` still need a sign-in. Every answer carries an ETag off the
+design revision, so a reader that already has the current picture gets a 304, and an edit
+invalidates it with nothing to clear.
+
+**Where the PNG comes from.** There are two ways to turn one of these figures into a PNG and
+they do not look alike. The interface rasterises through a browser canvas with the fonts the
+figures ask for — that is what **Download PNG** gives you. The server rasterises through
+CairoSVG with whatever fonts its image ships, and CairoSVG honours only the *first* family of
+a stack rather than walking it, so it is an approximation.
+
+So the interface publishes what it drew, and that is what a link serves. **Copy link** on a
+figure card publishes that figure as it does so, and *Report and export → Publish every
+figure* does the whole set in one go; both need a sign-in. A figure nobody has published is
+rendered by the server, and if the server cannot rasterise at all the `.png` address redirects
+to the `.svg`. A link always answers with a picture, and answers with *the same* picture once
+the figure has been published.
+
+Published PNGs live in `PLANNER_FIGURE_DIR` (`/data/figure-cache` in the image), under the
+design and the revision they were drawn for. Editing the design makes them stale immediately —
+they are keyed by revision, so a stale one is never served — and publishing for a new revision
+deletes the old one. Nothing needs clearing by hand, and somewhere unwritable just means the
+server renders instead. Server-side rendering needs CairoSVG (in `requirements.txt`, with
+`cairo` and `font-liberation` in the image).
 
 ## API
 
@@ -494,6 +551,10 @@ is 401.
 | POST | `/api/export/xlsx` | Build and download the workbook |
 | POST | `/api/export/bundle` | Build and download the full-export zip |
 | POST | `/api/export/json` | Download the design payload |
+| GET | `/designs/<name>/figures/` | Every figure this design draws, with the address of each |
+| GET | `/designs/<name>/figures/<figure>.svg` | One figure as SVG, drawn from the design as it stands |
+| GET | `/designs/<name>/figures/<figure>.png` | The same as PNG — the one the interface published if it has, otherwise rendered here (`?scale=1`–`4` always renders); redirects to the SVG where the server cannot rasterise |
+| PUT | `/designs/<name>/figures/<figure>.png` | The interface handing over the PNG it drew, `?rev=` the revision it drew from. Needs a sign-in; 409 if the design has moved on |
 | GET | `/login` | The page a login link (`/login#<token>`) opens |
 | POST | `/api/auth/redeem` | Spend a login link's token: `{"token"}` → a session (cookie, and `token` in the body) |
 | POST | `/api/auth/resume` | Hand back a session a browser kept, when its cookie went |

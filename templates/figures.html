@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Figures — {{ design }} | MRI Experimental Design Planner | Wright State University</title>
+<link rel="icon" href="{{ asset('wsu-mark.svg') }}" type="image/svg+xml">
+<link rel="stylesheet" href="{{ asset('css/app.css') }}">
+</head>
+<body class="home-page">
+
+<header class="masthead">
+  <a class="brand" href="/">
+    <div class="brand-mark">W</div>
+    <div class="brand-text">
+      <span class="org">Wright State University</span>
+      <span class="app">MRI Experimental Design Planner</span>
+    </div>
+  </a>
+</header>
+
+<main class="home figure-index" id="figure-index" data-design="{{ design }}">
+  <div class="panel-head">
+    <h2>Figures — {{ design }}</h2>
+    <p>Every figure this design draws, each at its own address. The links stay pointed at the
+      design, so a figure opened from one of them is always drawn from the design as it stands
+      now — no re-export, no stale copy. <a href="/designs/{{ design }}">Open the design</a>.</p>
+  </div>
+
+  {% if figures %}
+  <div class="notice">
+    Two ways to name the same figure. The <strong>file name</strong> is readable but follows the
+    item's name, so renaming the item moves the link. The <strong>id</strong> is permanent — use
+    it for anything you are keeping.{% if not png %}
+    <br>PNG is not available on this server, so the <code>.png</code> links redirect to the SVG.
+    SVG opens in any browser and stays sharp at any size.{% endif %}
+  </div>
+
+  {% for figure in figures %}
+  <div class="card figure-entry">
+    <div class="card-head">
+      <h3>{{ figure.title }}</h3>
+      <span class="head-note">{{ figure.level }}</span>
+    </div>
+    <div class="card-body">
+      <a class="figure-thumb" href="/designs/{{ design }}/figures/{{ figure.name }}.svg"
+         title="Open {{ figure.title }} on its own">{{ figure.svg | safe }}</a>
+
+      <table class="data figure-links">
+        <thead><tr><th>Link</th><th>Address</th><th class="num"></th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="level">PNG</td>
+            <td class="seq"><a href="/designs/{{ design }}/figures/{{ figure.name }}.png"
+              >/designs/{{ design }}/figures/{{ figure.name }}.png</a></td>
+            <td class="num"><button class="btn sm quiet" type="button"
+              data-copy="/designs/{{ design }}/figures/{{ figure.name }}.png">Copy</button></td>
+          </tr>
+          <tr>
+            <td class="level">SVG</td>
+            <td class="seq"><a href="/designs/{{ design }}/figures/{{ figure.name }}.svg"
+              >/designs/{{ design }}/figures/{{ figure.name }}.svg</a></td>
+            <td class="num"><button class="btn sm quiet" type="button"
+              data-copy="/designs/{{ design }}/figures/{{ figure.name }}.svg">Copy</button></td>
+          </tr>
+          <tr>
+            <td class="level">By id</td>
+            <td class="seq"><a href="/designs/{{ design }}/figures/{{ figure.id }}.png"
+              >/designs/{{ design }}/figures/{{ figure.id }}.png</a></td>
+            <td class="num"><button class="btn sm quiet" type="button"
+              data-copy="/designs/{{ design }}/figures/{{ figure.id }}.png">Copy</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endfor %}
+
+  <p class="muted home-note">A PNG link takes <code>?scale=1</code> to <code>?scale=4</code>;
+    the default is 2. Every link answers with an ETag, so a reader that already has the current
+    version is told so rather than sent the picture again.</p>
+  {% else %}
+  <div class="notice home-empty">
+    No figures: there is no design called <strong>{{ design }}</strong>.
+    <a href="/">See the designs that exist.</a>
+  </div>
+  {% endif %}
+</main>
+
+<script src="{{ asset('js/figures.js') }}"></script>
+</body>
+</html>

@@ -757,6 +757,22 @@
     }, owner);
 
     host.appendChild(App.card('Solved run', 'What this run design costs', [readout, assembly]));
+
+    host.appendChild(App.figureCard('Run structure', '', function () {
+      var record = App.report && App.report.runs.filter(function (item) {
+        return item.id === run.id;
+      })[0];
+      if (!record || record.missing) {
+        return { markup: '', empty: 'Give this run a trial design to draw the figure.' };
+      }
+      return {
+        markup: App.runFigureMarkup(record),
+        caption: 'The trial, the block it repeats into and the whole run, each drawn to scale '
+          + 'on its own axis. Durations are means; jitter moves every level.',
+        empty: 'Give this run a trial design with at least one phase to draw the figure.'
+      };
+    }, function () { return App.fileStem(run.name, 'run-structure'); }, [], owner));
+
     host.appendChild(buildEfficiencyCard(run, owner));
   }
 
@@ -1271,6 +1287,21 @@
 
     host.appendChild(App.card('Solved session', 'Console order, start to finish',
       [readout, timeline]));
+
+    host.appendChild(App.figureCard('Session overview', '', function () {
+      var record = App.report && App.report.sessions.filter(function (item) {
+        return item.id === session.id;
+      })[0];
+      if (!record || record.missing) {
+        return { markup: '', empty: 'This session has not solved yet.' };
+      }
+      return {
+        markup: App.sessionFigureMarkup(record),
+        caption: 'The session as the console runs it, to scale in minutes. Numbers match the '
+          + 'timeline table above; the hairlines inside a run are its blocks.',
+        empty: 'Switch on at least one block to draw the session figure.'
+      };
+    }, function () { return App.fileStem(session.name, 'session'); }, [], owner));
   }
 
   /* -------------------------------------------------------- experiments */
@@ -1590,7 +1621,7 @@
     host.appendChild(App.card('Solved experiment', 'What the budget actually buys',
       [readout, assembly]));
 
-    host.appendChild(App.figureCard('Assembly figure', '', function () {
+    host.appendChild(App.figureCard('Experiment overview', '', function () {
       var record = App.report && App.report.experiments.filter(function (item) {
         return item.id === experiment.id;
       })[0];
@@ -1598,12 +1629,12 @@
         return { markup: '', empty: 'This experiment is switched off.' };
       }
       return {
-        markup: App.assemblyFigureMarkup(record),
-        caption: 'Trial, block, run, session and experiment, each drawn to scale on its own '
-          + 'axis. Durations are means; jitter moves every level.',
-        empty: 'Add a session with at least one run to draw the assembly figure.'
+        markup: App.experimentFigureMarkup(record),
+        caption: 'Every session design in the plan on one minutes axis, with how many of each '
+          + 'the budget buys and what that costs. Run internals are on the Runs panel.',
+        empty: 'Add a session to the plan to draw the experiment figure.'
       };
-    }, function () { return App.fileStem(experiment.name, 'assembly'); }, [], owner));
+    }, function () { return App.fileStem(experiment.name, 'experiment'); }, [], owner));
   }
 
   /* ------------------------------------------------------------ HRF model */

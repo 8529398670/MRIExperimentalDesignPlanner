@@ -2276,8 +2276,9 @@
   action({
     name: 'export.figures', group: 'Results and export', query: true,
     ui: 'Every figure card > Download SVG',
-    summary: 'The figures as SVG markup: study scanner time, one timeline per trial design, '
-      + 'one assembly figure per experiment',
+    summary: 'The figures as SVG markup: the study overview, then one per item at every '
+      + 'level - a timeline per trial design, a structure figure per run design, an overview '
+      + 'per session and an overview per experiment',
     args: { name: str('One figure by file stem (default: all)') },
     run: function (ctx, args) {
       var App = global.PlannerApp;

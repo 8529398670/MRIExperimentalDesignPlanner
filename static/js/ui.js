@@ -35,14 +35,36 @@
     readOnly: true     // view only until the server says otherwise
   };
 
+  /* Functional runs keep their own ramp - all of it dark green, so a run band
+   * never collides with the setup gold, the structural blue-grey or the break
+   * yellow that sit beside it in the session figures. */
+  var RUN_COLOURS = [
+    '#00482B', '#046A38', '#2F5D50', '#0E7C5A', '#274E3C', '#1F5F3F', '#0A5C46', '#3A6B4A'
+  ];
+
   function colourFor(index) {
     return SERIES_COLOURS[Math.abs(index) % SERIES_COLOURS.length];
   }
 
+  /* An item's place in its own list is its colour, so it reads the same in
+   * every figure and every legend for as long as the list order holds. */
+  function listColour(list, id, ramp) {
+    for (var i = 0; i < list.length; i += 1) {
+      if (list[i].id === id) return ramp[Math.abs(i) % ramp.length];
+    }
+    return ramp[0];
+  }
+
   function experimentColour(id) {
-    var list = (App.state && App.state.experiments) || [];
-    for (var i = 0; i < list.length; i += 1) if (list[i].id === id) return colourFor(i);
-    return SERIES_COLOURS[0];
+    return listColour((App.state && App.state.experiments) || [], id, SERIES_COLOURS);
+  }
+
+  function sessionColour(id) {
+    return listColour((App.state && App.state.sessions) || [], id, SERIES_COLOURS);
+  }
+
+  function runColour(id) {
+    return listColour((App.state && App.state.runs) || [], id, RUN_COLOURS);
   }
 
   /* ------------------------------------------------------------ dom util */
@@ -1232,6 +1254,20 @@
   };
   var ROLE_DARK = { stimulus: true };
 
+  /* Will this label sit inside a segment?  Sans and mono at 10.5 both run a
+   * shade over 6 px a character, and a segment needs a margin inside its edges,
+   * so the budget is against the WHOLE string - any counted suffix included -
+   * rather than against the part that happens to get clipped. */
+  var LABEL_CHAR = 6.3;
+  var LABEL_PAD = 12;
+
+  function fitLabel(text, tail, span, minChars) {
+    var suffix = tail || '';
+    var budget = Math.floor((span - LABEL_PAD) / LABEL_CHAR) - suffix.length;
+    if (budget < (minChars || 4)) return '';
+    return figureClip(String(text), budget) + suffix;
+  }
+
   function figureClip(text, budget) {
     var value = String(text || '');
     if (budget < 4 || value.length <= budget) return value;
@@ -1459,26 +1495,26 @@
     return svg.join('');
   }
 
-  /* -------------------------------------------------------- assembly figure */
+  /* ------------------------------------------------- shared figure strips */
 
-  /* The assembly table drawn as the figure it describes: trial, block, run,
-   * session and experiment, each row to scale on its own axis, with the
-   * element that the row above expands picked out and joined to it.  Same
-   * palette as the trial timeline, so the two figures read as one pair. */
+  /* Every level of the design draws as a strip of segments on one axis, so the
+   * five figures - trial, run, session, experiment, study - read as one family
+   * and the palette means the same thing in all of them: a break is the same
+   * yellow whether you are looking at one session or the whole study. */
 
   var ASSEMBLY_FILL = {
     trial: '#00482B', gap: '#D8DCD5', block: '#00482B', rest: '#E7E3C6',
     dummy: '#B9C0B4', lead: '#DCD59A', run: '#00482B', setup: '#CBA052',
-    brk: '#F8E08E', session: '#00482B'
+    struct: '#8FA9C4', brk: '#F8E08E', session: '#00482B'
   };
   var ASSEMBLY_DARK = { trial: true, block: true, run: true, session: true };
+  /* The non-phase elements a zoom row can hold.  Setup, structurals and breaks
+   * are session-level and get their swatches from sessionLegendEntries. */
   var ASSEMBLY_LEGEND = [
     { kind: 'gap', label: 'inter-trial gap' },
     { kind: 'rest', label: 'inter-block rest' },
     { kind: 'dummy', label: 'dummy volumes' },
-    { kind: 'lead', label: 'lead-in / lead-out' },
-    { kind: 'setup', label: 'setup and structurals' },
-    { kind: 'brk', label: 'in-scanner break' }
+    { kind: 'lead', label: 'lead-in / lead-out' }
   ];
 
   function countLabel(value, noun) {
@@ -1509,125 +1545,147 @@
     return parts;
   }
 
-  /* Build the five assembly rows for one experiment, using its busiest run
-   * design as the representative trial and run. */
-  function assemblyRows(experimentReport) {
-    if (!experimentReport || !App.report) return null;
-    var runReport = null;
-    if (experimentReport.leadRunId) {
-      runReport = App.report.runs.filter(function (run) {
-        return run.id === experimentReport.leadRunId;
-      })[0] || null;
+  /* Where the row above lands inside this row: the first repeating element. */
+  function offsetOf(parts, kind) {
+    var at = 0;
+    for (var index = 0; index < parts.length; index += 1) {
+      if (parts[index].kind === kind) return { from: at, to: at + parts[index].span };
+      at += parts[index].span;
     }
-    if (!runReport || runReport.missing) return null;
-    var trialReport = App.report.trials.filter(function (trial) {
-      return trial.id === runReport.trialId;
-    })[0];
-    if (!trialReport || !trialReport.phases.length) return null;
-
-    var structure = runReport.structure;
-    var derived = runReport.derived;
-    var d = experimentReport.derived;
-    var weeks = H.num(App.state.budget.weeksAvailable);
-
-    var runTrSeconds = H.num(runReport.trMs, 2000) / 1000;
-    var runJitter = M.jitterSettings(App.state);
-    var trialParts = trialReport.phases.map(function (phase) {
-      return {
-        span: M.phaseSpan(phase, runTrSeconds, runJitter).mean,
-        kind: M.normaliseRole(phase.role),
-        role: true, label: phase.name
-      };
-    });
-
-    var blockParts = repeatParts([], structure.trialsPerBlock, derived.trialMean,
-      'trial', structure.interTrialGap, 'gap');
-
-    var runParts = [];
-    if (derived.dummySeconds > 0) runParts.push({ span: derived.dummySeconds, kind: 'dummy' });
-    if (structure.leadIn > 0) runParts.push({ span: structure.leadIn, kind: 'lead' });
-    repeatParts(runParts, structure.blocksPerRun, derived.blockMean,
-      'block', structure.interBlockRest, 'rest');
-    if (structure.leadOut > 0) runParts.push({ span: structure.leadOut, kind: 'lead' });
-
-    /* The session row uses the plan's leading session, so the picture is of a
-     * real session rather than an average of several. */
-    var sessionReport = null;
-    if (experimentReport.plan.length) {
-      var leadPlan = experimentReport.plan.slice().sort(function (a, b) {
-        return b.sessions - a.sessions;
-      })[0];
-      sessionReport = App.report.sessions.filter(function (session) {
-        return session.id === leadPlan.sessionId;
-      })[0] || null;
-    }
-
-    var sessionParts = [];
-    if (sessionReport) {
-      if (sessionReport.setupMinutes > 0) {
-        sessionParts.push({ span: sessionReport.setupMinutes, kind: 'setup' });
-      }
-      sessionReport.items.forEach(function (item) {
-        repeatParts(sessionParts, item.count, item.minutesEach, 'run',
-          sessionReport.breakMinutes, 'brk');
-      });
-    }
-
-    var experimentParts = repeatParts([], Math.min(d.sessions, 200),
-      d.sessionMeanMinutes, 'session', 0, null);
-
-    /* Where the row above lands inside this row: the first repeating element. */
-    function offsetOf(parts, kind) {
-      var at = 0;
-      for (var index = 0; index < parts.length; index += 1) {
-        if (parts[index].kind === kind) return { from: at, to: at + parts[index].span };
-        at += parts[index].span;
-      }
-      return null;
-    }
-
-    return [
-      {
-        level: 'Trial', parts: trialParts, unit: 's',
-        note: trialReport.name + ' · '
-          + H.fmtRange(trialReport.timing.min, trialReport.timing.max)
-      },
-      {
-        level: 'Block', parts: blockParts, unit: 's',
-        note: countLabel(structure.trialsPerBlock, 'trial') + ' · '
-          + minutesLabel(derived.blockMean / 60),
-        zoom: offsetOf(blockParts, 'trial')
-      },
-      {
-        level: 'Run', parts: runParts, unit: 's',
-        note: runReport.name + ' · ' + countLabel(structure.blocksPerRun, 'block')
-          + ' · ' + countLabel(derived.trialsPerRun, 'trial') + ' · '
-          + minutesLabel(derived.runMean / 60) + ' · '
-          + H.fmtNumber(derived.volumesPerRun) + ' volumes',
-        zoom: offsetOf(runParts, 'block')
-      },
-      {
-        level: 'Session', parts: sessionParts, unit: 'min',
-        note: (sessionReport ? sessionReport.name + ' · ' : '')
-          + countLabel(sessionReport ? sessionReport.runs : 0, 'run') + ' · '
-          + countLabel(sessionReport ? sessionReport.trials : 0, 'trial') + ' · '
-          + minutesLabel(sessionReport ? sessionReport.meanMinutes : 0),
-        zoom: offsetOf(sessionParts, 'run')
-      },
-      {
-        level: 'Experiment', parts: experimentParts, unit: 'min',
-        note: countLabel(d.sessions, 'session') + ' over ' + countLabel(weeks, 'week')
-          + ' · ' + countLabel(d.trials, 'trial') + ' · '
-          + H.round(d.totalHours, 1) + ' h',
-        zoom: offsetOf(experimentParts, 'session')
-      }
-    ];
+    return null;
   }
 
-  function assemblyFigureMarkup(experimentReport) {
-    var rows = assemblyRows(experimentReport);
-    if (!rows) return '';
-    var uid = String(experimentReport.id).replace(/[^A-Za-z0-9_-]/g, '');
+  function segmentFill(part) {
+    if (part.fill) return part.fill;
+    if (part.role) return ROLE_FILL[part.kind] || ROLE_FILL.other;
+    return ASSEMBLY_FILL[part.kind] || ASSEMBLY_FILL.trial;
+  }
+
+  /* Is this fill dark enough to want light text on it?  A run or a session
+   * carries its own colour off a ramp, so the answer cannot come from the
+   * kind - it has to be read off the colour itself. */
+  function fillIsDark(colour) {
+    var hex = String(colour || '').replace('#', '');
+    if (hex.length !== 6) return false;
+    var red = parseInt(hex.slice(0, 2), 16);
+    var green = parseInt(hex.slice(2, 4), 16);
+    var blue = parseInt(hex.slice(4, 6), 16);
+    return (0.299 * red + 0.587 * green + 0.114 * blue) < 140;
+  }
+
+  function segmentLight(part) {
+    if (part.fill) return fillIsDark(part.fill);
+    if (part.role) return !!ROLE_DARK[part.kind];
+    return !!ASSEMBLY_DARK[part.kind];
+  }
+
+  /* One strip of segments drawn to scale into `geom`.  `geom.label` decides
+   * what goes inside a segment wide enough to carry it - a string, or two
+   * lines as an array - and `geom.after` is handed every drawn segment so a
+   * caller can rule its insides. */
+  function drawSegments(svg, segments, geom) {
+    var total = geom.total || H.sum(segments, function (part) { return part.span; }) || 1;
+    var hairlines = segments.length > 1 && geom.width / segments.length >= 3.5;
+    var minLabel = geom.minLabel || 46;
+    var label = geom.label || function (part) {
+      if (geom.unit === 'min') return minutesLabel(part.span);
+      return part.span >= 120 ? minutesLabel(part.span / 60) : figureSeconds(part.span) + ' s';
+    };
+    var cursor = 0;
+
+    segments.forEach(function (part, index) {
+      var x = geom.x + geom.width * (cursor / total);
+      var span = geom.width * (part.span / total);
+      svg.push('<rect x="' + H.round(x, 2) + '" y="' + geom.y + '" width="'
+        + H.round(Math.max(span, 0.6), 2) + '" height="' + geom.height + '" fill="'
+        + segmentFill(part) + '"'
+        + (geom.opacity ? ' fill-opacity="' + geom.opacity + '"' : '')
+        + (hairlines ? ' stroke="#ffffff" stroke-width="1"' : '') + '/>');
+      if (part.cut && geom.cutPattern) {
+        svg.push('<rect x="' + H.round(x, 2) + '" y="' + geom.y + '" width="'
+          + H.round(Math.max(span, 0.6), 2) + '" height="' + geom.height
+          + '" fill="url(#' + geom.cutPattern + ')"/>');
+      }
+      if (geom.after) geom.after(svg, part, x, span);
+
+      if (span > minLabel) {
+        var lines = label(part, span, index);
+        if (typeof lines === 'string') lines = [lines];
+        var live = (lines || []).filter(function (line) { return line; });
+        var mid = geom.y + geom.height / 2;
+        live.forEach(function (line, row) {
+          var y = live.length > 1 ? mid - 1 + row * 12 : mid + 4;
+          svg.push('<text x="' + H.round(x + span / 2, 2) + '" y="' + H.round(y, 1)
+            + '" text-anchor="middle" font-family="'
+            + (live.length > 1 && row === 0 ? TIMELINE_SANS : TIMELINE_MONO)
+            + '" font-size="10.5" fill="'
+            + (segmentLight(part) ? '#F2F1F0' : '#101820') + '">'
+            + escapeHtml(line) + '</text>');
+        });
+      }
+      cursor += part.span;
+    });
+  }
+
+  /* Swatch-and-label pairs, wrapped to the figure width.  Returns the baseline
+   * of the last line drawn, so a caller can carry on underneath it. */
+  function drawLegend(svg, entries, geom) {
+    var x = geom.x;
+    var y = geom.y;
+    entries.forEach(function (entry) {
+      var span = 26 + String(entry.label).length * 6.1;
+      if (x > geom.x && x + span > geom.right) { x = geom.x; y += 18; }
+      svg.push('<rect x="' + H.round(x, 2) + '" y="' + (y - 9) + '" width="11" height="11" fill="'
+        + entry.fill + '" stroke="#b9c0b4" stroke-width="1"/>');
+      svg.push('<text x="' + H.round(x + 16, 2) + '" y="' + y + '" font-family="' + TIMELINE_SANS
+        + '" font-size="10.5" fill="#3d4a4f">' + escapeHtml(entry.label) + '</text>');
+      x += span;
+    });
+    return y;
+  }
+
+  /* A tick ruler along the top of a figure. */
+  function drawRuler(svg, geom) {
+    var total = geom.total || 1;
+    var step = geom.step || figureTickStep(total);
+    for (var value = 0; value <= total + 0.001; value += step) {
+      var x = geom.x + geom.width * (value / total);
+      svg.push('<line x1="' + H.round(x, 2) + '" y1="' + geom.y + '" x2="' + H.round(x, 2)
+        + '" y2="' + geom.bottom + '" stroke="#EFEEE9" stroke-width="1"/>');
+      svg.push('<text x="' + H.round(x, 2) + '" y="' + (geom.y - 4) + '" text-anchor="middle" '
+        + 'font-family="' + TIMELINE_MONO + '" font-size="10.5" fill="#6b767b">'
+        + H.round(value, geom.decimals || 0) + (geom.unit ? ' ' + geom.unit : '') + '</text>');
+    }
+  }
+
+  function figureHeading(svg, x, text) {
+    svg.push('<text x="' + x + '" y="22" font-family="' + TIMELINE_SANS
+      + '" font-size="10.5" letter-spacing="1.6" font-weight="600" fill="#00482B">'
+      + escapeHtml(text.toUpperCase()) + '</text>');
+  }
+
+  function figureNote(svg, x, y, text, anchor) {
+    svg.push('<text x="' + x + '" y="' + y + '"'
+      + (anchor ? ' text-anchor="' + anchor + '"' : '') + ' font-family="' + TIMELINE_MONO
+      + '" font-size="11" fill="#3d4a4f">' + escapeHtml(text) + '</text>');
+  }
+
+  function svgWrap(width, height, title, body) {
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + width + ' ' + height
+      + '" width="' + width + '" height="' + height + '" role="img">'
+      + '<title>' + escapeHtml(title) + '</title>'
+      + '<rect width="' + width + '" height="' + height + '" fill="#ffffff"/>'
+      + body + '</svg>';
+  }
+
+  /* -------------------------------------------------------- zoom figures */
+
+  /* A stack of rows, each to scale on its own axis, joined by the trapezoid
+   * that picks out which element of the row above the row below expands. */
+  function zoomFigureMarkup(rows, opts) {
+    if (!rows || !rows.length) return '';
+    var uid = String((opts && opts.uid) || 'fig').replace(/[^A-Za-z0-9_-]/g, '');
+    var cut = 'mx-cut-' + uid;
 
     var width = 1120;
     var padLeft = 26, padRight = 26;
@@ -1639,7 +1697,7 @@
 
     var svg = [];
     var lastBottom = top + (rows.length - 1) * rowPitch + 18 + barHeight;
-    svg.push('<defs><pattern id="mx-cut-' + uid + '" width="6" height="6" '
+    svg.push('<defs><pattern id="' + cut + '" width="6" height="6" '
       + 'patternTransform="rotate(45)" patternUnits="userSpaceOnUse">'
       + '<line x1="0" y1="0" x2="0" y2="6" stroke="#ffffff" stroke-opacity="0.75" stroke-width="2"/>'
       + '</pattern></defs>');
@@ -1657,34 +1715,9 @@
         + 'font-family="' + TIMELINE_SANS + '" font-size="11" fill="#3d4a4f">'
         + escapeHtml(row.note) + '</text>');
 
-      var cursor = 0;
-      var thin = row.parts.length > 1 && inner / row.parts.length < 3.5;
-      row.parts.forEach(function (part) {
-        var x = row.scale(cursor);
-        var segment = inner * (part.span / total);
-        var fill = part.role
-          ? (ROLE_FILL[part.kind] || ROLE_FILL.other)
-          : (ASSEMBLY_FILL[part.kind] || ASSEMBLY_FILL.trial);
-        svg.push('<rect x="' + H.round(x, 2) + '" y="' + barTop + '" width="'
-          + H.round(Math.max(segment, 0.6), 2) + '" height="' + barHeight + '" fill="' + fill
-          + (thin ? '"' : '" stroke="#ffffff" stroke-width="1"') + '/>');
-        if (part.cut) {
-          svg.push('<rect x="' + H.round(x, 2) + '" y="' + barTop + '" width="'
-            + H.round(Math.max(segment, 0.6), 2) + '" height="' + barHeight
-            + '" fill="url(#mx-cut-' + uid + ')"/>');
-        }
-        if (segment > 46) {
-          var text = row.unit === 'min'
-            ? minutesLabel(part.span)
-            : (part.span >= 120 ? minutesLabel(part.span / 60) : figureSeconds(part.span) + ' s');
-          svg.push('<text x="' + H.round(x + segment / 2, 2) + '" y="' + (barTop + 20)
-            + '" text-anchor="middle" font-family="' + TIMELINE_MONO + '" font-size="10.5" fill="'
-            + (part.role
-              ? (ROLE_DARK[part.kind] ? '#F2F1F0' : '#101820')
-              : (ASSEMBLY_DARK[part.kind] ? '#F2F1F0' : '#101820'))
-            + '">' + text + '</text>');
-        }
-        cursor += part.span;
+      drawSegments(svg, row.parts, {
+        x: padLeft, y: barTop, width: inner, height: barHeight, total: total,
+        unit: row.unit, cutPattern: cut
       });
       svg.push('<rect x="' + padLeft + '" y="' + barTop + '" width="' + inner + '" height="'
         + barHeight + '" fill="none" stroke="#b9c0b4" stroke-width="1"/>');
@@ -1712,111 +1745,510 @@
     });
 
     /* Legend: trial phase roles first, then the structural elements. */
-    var legendY = lastBottom + 26;
-    var legendX = padLeft;
     var seen = {};
     var entries = [];
-    rows[0].parts.forEach(function (part) {
-      if (seen[part.kind]) return;
-      seen[part.kind] = true;
-      entries.push({ fill: ROLE_FILL[part.kind] || ROLE_FILL.other, label: part.kind });
+    rows.forEach(function (row) {
+      row.parts.forEach(function (part) {
+        if (!part.role || seen[part.kind]) return;
+        seen[part.kind] = true;
+        entries.push({ fill: ROLE_FILL[part.kind] || ROLE_FILL.other, label: part.kind });
+      });
     });
     ASSEMBLY_LEGEND.forEach(function (entry) {
-      var used = rows.some(function (row, index) {
-        return index > 0 && row.parts.some(function (part) { return part.kind === entry.kind; });
+      var used = rows.some(function (row) {
+        return row.parts.some(function (part) {
+          return !part.role && part.kind === entry.kind;
+        });
       });
       if (used) entries.push({ fill: ASSEMBLY_FILL[entry.kind], label: entry.label });
     });
 
-    entries.forEach(function (entry) {
-      var span = 26 + entry.label.length * 6.4;
-      if (legendX + span > width - padRight) { legendX = padLeft; legendY += 18; }
-      svg.push('<rect x="' + legendX + '" y="' + (legendY - 9) + '" width="11" height="11" fill="'
-        + entry.fill + '" stroke="#b9c0b4" stroke-width="1"/>');
-      svg.push('<text x="' + (legendX + 16) + '" y="' + legendY + '" font-family="' + TIMELINE_SANS
-        + '" font-size="10.5" fill="#3d4a4f">' + escapeHtml(entry.label) + '</text>');
-      legendX += span;
+    var legendY = drawLegend(svg, entries, {
+      x: padLeft, y: lastBottom + 26, right: width - padRight
     });
-
-    var height = legendY + 14;
-    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + width + ' ' + height
-      + '" width="' + width + '" height="' + height + '" role="img">'
-      + '<title>' + escapeHtml(experimentReport.name) + ' assembly</title>'
-      + '<rect width="' + width + '" height="' + height + '" fill="#ffffff"/>'
-      + svg.join('') + '</svg>';
+    return svgWrap(width, legendY + 14, (opts && opts.title) || 'Figure', svg.join(''));
   }
 
-  /* ----------------------------------------------------------- study figure */
+  /* ------------------------------------------------------- run structure */
 
-  /* The whole study on one axis: every experiment as a band of sessions, drawn
-   * to scale against the usable budget, with what the plan leaves unspent. */
+  /* What happens inside one run, in order: dummy volumes, lead-in, the blocks
+   * with their rests, lead-out.  The session figure rules its run bands with
+   * the same layout, so the two figures agree on where a block starts. */
+  function runLayout(runReport) {
+    var structure = runReport.structure;
+    var derived = runReport.derived;
+    var parts = [];
+    if (derived.dummySeconds > 0) parts.push({ span: derived.dummySeconds, kind: 'dummy' });
+    if (structure.leadIn > 0) parts.push({ span: structure.leadIn, kind: 'lead' });
+    repeatParts(parts, structure.blocksPerRun, derived.blockMean,
+      'block', structure.interBlockRest, 'rest');
+    if (structure.leadOut > 0) parts.push({ span: structure.leadOut, kind: 'lead' });
+    return parts;
+  }
+
+  /* The three levels that live inside one run design: the trial, the block it
+   * repeats into, and the run that block repeats into.  One run design per
+   * figure, so nothing has to be picked as representative. */
+  function runRows(runReport) {
+    if (!App.report || !runReport || runReport.missing) return null;
+    var trialReport = App.report.trials.filter(function (trial) {
+      return trial.id === runReport.trialId;
+    })[0];
+    if (!trialReport || !trialReport.phases.length) return null;
+
+    var structure = runReport.structure;
+    var derived = runReport.derived;
+    var trSeconds = H.num(runReport.trMs, 2000) / 1000;
+    var jitter = M.jitterSettings(App.state);
+
+    var trialParts = trialReport.phases.map(function (phase) {
+      return {
+        span: M.phaseSpan(phase, trSeconds, jitter).mean,
+        kind: M.normaliseRole(phase.role),
+        role: true, label: phase.name
+      };
+    });
+    var blockParts = repeatParts([], structure.trialsPerBlock, derived.trialMean,
+      'trial', structure.interTrialGap, 'gap');
+    var parts = runLayout(runReport);
+
+    return [
+      {
+        level: 'Trial', parts: trialParts, unit: 's',
+        note: trialReport.name + ' · '
+          + H.fmtRange(trialReport.timing.min, trialReport.timing.max)
+      },
+      {
+        level: 'Block', parts: blockParts, unit: 's',
+        note: countLabel(structure.trialsPerBlock, 'trial') + ' · '
+          + minutesLabel(derived.blockMean / 60),
+        zoom: offsetOf(blockParts, 'trial')
+      },
+      {
+        level: 'Run', parts: parts, unit: 's',
+        note: runReport.protocolLabel + ' · ' + countLabel(structure.blocksPerRun, 'block')
+          + ' · ' + countLabel(derived.trialsPerRun, 'trial') + ' · '
+          + minutesLabel(derived.runMean / 60) + ' · '
+          + H.fmtNumber(derived.volumesPerRun) + ' volumes',
+        zoom: offsetOf(parts, 'block')
+      }
+    ];
+  }
+
+  function runFigureMarkup(runReport) {
+    var rows = runRows(runReport);
+    if (!rows) return '';
+    return zoomFigureMarkup(rows, {
+      uid: runReport.id, title: runReport.name + ' structure'
+    });
+  }
+
+  /* ------------------------------------------------------ session figure */
+
+  var SESSION_KIND = { prep: 'setup', structural: 'struct', run: 'run', 'break': 'brk' };
+
+  /* A session's console order as one strip of minutes.  Every run keeps its
+   * own colour, so two run designs in the same session read apart. */
+  function sessionSegments(sessionReport) {
+    if (!sessionReport || sessionReport.missing) return [];
+    return (sessionReport.timeline || []).map(function (row) {
+      var raw = row.kind || (row.category === 'Break' ? 'break'
+        : (row.category === 'Structural / reference' ? 'structural'
+          : (row.category === 'Functional' ? 'run' : 'prep')));
+      var kind = SESSION_KIND[raw] || 'setup';
+      return {
+        span: H.num(row.minutes), kind: kind, order: row.order, label: row.item,
+        protocolLabel: row.protocolLabel || '', runId: row.runId || '',
+        fill: kind === 'run' ? runColour(row.runId) : null
+      };
+    }).filter(function (part) { return part.span > 0; });
+  }
+
+  function runReportsById() {
+    var map = {};
+    ((App.report && App.report.runs) || []).forEach(function (run) { map[run.id] = run; });
+    return map;
+  }
+
+  /* The category swatches a strip of session segments needs, with every run
+   * design named rather than lumped into one "functional" entry. */
+  function sessionLegendEntries(segments, runs) {
+    var entries = [];
+    [['setup', 'setup and practice'], ['struct', 'structural / reference'],
+      ['brk', 'break']].forEach(function (pair) {
+      var used = segments.some(function (part) { return part.kind === pair[0]; });
+      if (used) entries.push({ fill: ASSEMBLY_FILL[pair[0]], label: pair[1] });
+    });
+    var seen = {};
+    segments.forEach(function (part) {
+      if (part.kind !== 'run' || seen[part.runId]) return;
+      seen[part.runId] = true;
+      var report = runs[part.runId];
+      entries.push({
+        fill: segmentFill(part),
+        label: figureClip((report && report.name) || part.label, 30)
+      });
+    });
+    return entries;
+  }
+
+  /* One session, start to finish, on a minutes axis: setup, the structural and
+   * reference scans, every run with its blocks ruled inside it, and the breaks
+   * that fall between.  Numbered to match the session timeline table. */
+  function sessionFigureMarkup(sessionReport) {
+    if (!sessionReport || sessionReport.missing) return '';
+    var segments = sessionSegments(sessionReport);
+    if (!segments.length) return '';
+    var runs = runReportsById();
+
+    var width = 1120;
+    var padLeft = 26, padRight = 26;
+    var inner = width - padLeft - padRight;
+    var barHeight = 44;
+    var barTop = 62;
+    var total = H.sum(segments, function (part) { return part.span; }) || 1;
+    var axisMax = Math.max(total, H.num(sessionReport.maxMinutes), 0.01);
+    var barWidth = inner * (total / axisMax);
+    function scale(value) { return padLeft + inner * (value / axisMax); }
+
+    var svg = [];
+    figureHeading(svg, padLeft, 'session — ' + figureClip(sessionReport.name, 54));
+    figureNote(svg, width - padRight, 22, minutesLabel(sessionReport.meanMinutes)
+      + ' expected · ' + H.round(sessionReport.minMinutes, 1) + '–'
+      + H.round(sessionReport.maxMinutes, 1) + ' min', 'end');
+
+    drawRuler(svg, {
+      x: padLeft, y: 44, width: inner, total: axisMax, bottom: barTop + barHeight + 6,
+      unit: 'min'
+    });
+
+    drawSegments(svg, segments, {
+      x: padLeft, y: barTop, width: barWidth, height: barHeight, total: total, minLabel: 11,
+      label: function (part, span) {
+        /* Name and duration where there is room, then the number and the
+         * duration, then just the number - the key below names them all. */
+        var minutes = minutesLabel(part.span);
+        var named = fitLabel(part.order + '. ' + part.label, '', span, 9);
+        if (named) return [named, minutes];
+        if (span - LABEL_PAD > minutes.length * LABEL_CHAR) {
+          return [String(part.order), minutes];
+        }
+        return String(part.order);
+      },
+      /* Rule every run band where its own blocks and rests fall, so the block
+       * count is legible without a second figure. */
+      after: function (out, part, x, span) {
+        if (part.kind !== 'run' || !part.runId || span < 24) return;
+        var report = runs[part.runId];
+        if (!report || report.missing || report.structure.blocksPerRun > 60) return;
+        var layout = runLayout(report);
+        var seconds = H.sum(layout, function (item) { return item.span; }) || 1;
+        var at = 0;
+        layout.forEach(function (item, index) {
+          at += item.span;
+          if (index === layout.length - 1) return;
+          var lx = x + span * (at / seconds);
+          out.push('<line x1="' + H.round(lx, 2) + '" y1="' + (barTop + 4) + '" x2="'
+            + H.round(lx, 2) + '" y2="' + (barTop + barHeight - 4)
+            + '" stroke="#ffffff" stroke-opacity="0.35" stroke-width="1"/>');
+        });
+      }
+    });
+    svg.push('<rect x="' + padLeft + '" y="' + barTop + '" width="' + H.round(barWidth, 2)
+      + '" height="' + barHeight + '" fill="none" stroke="#b9c0b4" stroke-width="1"/>');
+
+    /* How far jitter can move the end of the session, on the same axis.  The
+     * axis runs to the longest session, so the whisker always reaches the
+     * right-hand edge and its caption has to sit underneath it. */
+    var whiskerY = barTop + barHeight + 16;
+    var whiskerBottom = whiskerY + 8;
+    if (H.num(sessionReport.maxMinutes) > H.num(sessionReport.minMinutes) + 0.05) {
+      var from = scale(sessionReport.minMinutes);
+      var to = scale(sessionReport.maxMinutes);
+      svg.push('<line x1="' + H.round(from, 2) + '" y1="' + whiskerY + '" x2="' + H.round(to, 2)
+        + '" y2="' + whiskerY + '" stroke="#AE8643" stroke-width="1.4"/>');
+      [from, to].forEach(function (x) {
+        svg.push('<line x1="' + H.round(x, 2) + '" y1="' + (whiskerY - 4) + '" x2="'
+          + H.round(x, 2) + '" y2="' + (whiskerY + 4) + '" stroke="#AE8643" stroke-width="1.4"/>');
+      });
+      svg.push('<circle cx="' + H.round(scale(total), 2) + '" cy="' + whiskerY
+        + '" r="2.8" fill="#00482B"/>');
+      /* The axis runs to the longest session, so the rule always ends at the
+       * right-hand edge; its caption goes beside it when the gap to the left
+       * is wide enough, and underneath it when it is not. */
+      if (from - padLeft > 260) {
+        svg.push('<text x="' + H.round(from - 10, 2) + '" y="' + (whiskerY + 4)
+          + '" text-anchor="end" font-family="' + TIMELINE_SANS
+          + '" font-size="10.5" fill="#6b767b">dot is the expected session, '
+          + 'rule is shortest to longest with jitter</text>');
+      } else {
+        svg.push('<text x="' + padLeft + '" y="' + (whiskerY + 17) + '" font-family="'
+          + TIMELINE_SANS + '" font-size="10.5" fill="#6b767b">Dot is the expected session; '
+          + 'the rule is shortest to longest once jitter is drawn.</text>');
+        whiskerBottom = whiskerY + 21;
+      }
+    }
+
+    /* Where the time goes, as one bar on the same width. */
+    var compTop = whiskerBottom + 14;
+    var composition = [
+      { kind: 'setup', span: H.num(sessionReport.overheadMinutes), name: 'setup' },
+      { kind: 'struct', span: H.num(sessionReport.structuralMinutes), name: 'structural' },
+      { kind: 'run', span: H.num(sessionReport.functionalMinutes), name: 'functional',
+        fill: ASSEMBLY_FILL.run },
+      { kind: 'brk', span: H.num(sessionReport.breakTotalMinutes), name: 'break' }
+    ].filter(function (part) { return part.span > 0.01; });
+    if (composition.length) {
+      drawSegments(svg, composition, {
+        x: padLeft, y: compTop, width: barWidth, height: 18, minLabel: 62,
+        label: function (part) { return part.name + ' ' + minutesLabel(part.span); }
+      });
+      svg.push('<rect x="' + padLeft + '" y="' + compTop + '" width="' + H.round(barWidth, 2)
+        + '" height="18" fill="none" stroke="#b9c0b4" stroke-width="1"/>');
+    }
+
+    var legendY = drawLegend(svg, sessionLegendEntries(segments, runs), {
+      x: padLeft, y: compTop + 44, right: width - padRight
+    });
+
+    /* The numbered key: every segment, however thin it had to be drawn. */
+    var keyY = drawLegend(svg, segments.map(function (part) {
+      var extra = part.kind === 'run' && part.protocolLabel
+        ? ' [' + figureClip(part.protocolLabel, 18) + ']' : '';
+      return {
+        fill: segmentFill(part),
+        label: part.order + '. ' + figureClip(part.label, 32) + extra + ' — '
+          + minutesLabel(part.span)
+      };
+    }), { x: padLeft, y: legendY + 22, right: width - padRight });
+
+    var caption = countLabel(sessionReport.runs, 'run') + ' · '
+      + H.fmtNumber(sessionReport.trials) + ' trials'
+      /* Only worth saying when some of those trials are controls. */
+      + (sessionReport.units !== sessionReport.trials
+        ? ' · ' + H.fmtNumber(sessionReport.units) + ' primary events' : '')
+      + ' · ' + H.round(sessionReport.gb, 2) + ' GB per session'
+      + (sessionReport.scheduled
+        ? ' · ' + countLabel(sessionReport.scheduled, 'time') + ' in the plan' : '')
+      + ((sessionReport.usedBy || []).length
+        ? ' · used by ' + sessionReport.usedBy.join(', ') : '');
+    svg.push('<text x="' + padLeft + '" y="' + (keyY + 24) + '" font-family="' + TIMELINE_SANS
+      + '" font-size="10.5" fill="#6b767b">' + escapeHtml(figureClip(caption, 168))
+      + '</text>');
+
+    return svgWrap(width, keyY + 38, sessionReport.name, svg.join(''));
+  }
+
+  /* --------------------------------------------------- experiment figure */
+
+  /* Every session design in one experiment's plan, each drawn to scale on a
+   * shared minutes axis, with how many of it the budget buys and what that
+   * costs.  No trial or block internals: those are the run and trial figures. */
+  function experimentFigureMarkup(experimentReport) {
+    if (!experimentReport || !App.report) return '';
+    var byId = {};
+    App.report.sessions.forEach(function (session) { byId[session.id] = session; });
+
+    var rows = (experimentReport.plan || []).map(function (row) {
+      return {
+        id: row.sessionId,
+        name: row.name,
+        count: H.num(row.sessions),
+        minutesEach: H.num(row.minutesEach),
+        minutes: H.num(row.minutes),
+        segments: sessionSegments(byId[row.sessionId])
+      };
+    }).filter(function (row) { return row.segments.length; });
+    if (!rows.length) return '';
+
+    var runs = runReportsById();
+    var d = experimentReport.derived;
+    var width = 1120;
+    var padLeft = 200, padRight = 104;
+    var inner = width - padLeft - padRight;
+    var rowHeight = 32, rowGap = 16;
+    var top = 62;
+    var axisMax = Math.max(0.01, Math.max.apply(null, rows.map(function (row) {
+      return row.minutesEach;
+    })));
+    var plannedMinutes = H.sum(rows, function (row) { return row.minutes; });
+
+    var svg = [];
+    figureHeading(svg, padLeft, 'experiment — ' + figureClip(experimentReport.name, 48));
+    figureNote(svg, width - padRight, 22, countLabel(d.sessions, 'session') + ' · '
+      + H.round(d.totalHours, 1) + ' h · ' + d.sharePct + '% of the budget', 'end');
+
+    drawRuler(svg, {
+      x: padLeft, y: 44, width: inner, total: axisMax,
+      bottom: top + rows.length * (rowHeight + rowGap) - rowGap + 6, unit: 'min'
+    });
+
+    rows.forEach(function (row, index) {
+      var y = top + index * (rowHeight + rowGap);
+      var ghost = row.count <= 0;
+      var barWidth = inner * (row.minutesEach / axisMax);
+      var colour = sessionColour(row.id);
+
+      svg.push('<rect x="' + (padLeft - 186) + '" y="' + (y + 4) + '" width="11" height="11" '
+        + 'fill="' + colour + '" stroke="#b9c0b4" stroke-width="1"'
+        + (ghost ? ' fill-opacity="0.35"' : '') + '/>');
+      svg.push('<text x="' + (padLeft - 169) + '" y="' + (y + 14) + '" font-family="'
+        + TIMELINE_SANS + '" font-size="12" font-weight="600" fill="#101820"'
+        + (ghost ? ' fill-opacity="0.45"' : '') + '>'
+        + escapeHtml(figureClip(row.name, 22)) + '</text>');
+      svg.push('<text x="' + (padLeft - 169) + '" y="' + (y + 27) + '" font-family="'
+        + TIMELINE_MONO + '" font-size="10" fill="#6b767b">'
+        + (ghost ? 'not scheduled' : '× ' + H.fmtNumber(row.count) + ' · '
+          + minutesLabel(row.minutesEach)) + '</text>');
+
+      drawSegments(svg, row.segments, {
+        x: padLeft, y: y, width: barWidth, height: rowHeight, minLabel: 1,
+        opacity: ghost ? 0.35 : null,
+        label: function (part, span) {
+          if (part.kind !== 'run') return '';
+          return fitLabel(part.label, '', span, 10);
+        }
+      });
+      svg.push('<rect x="' + padLeft + '" y="' + y + '" width="' + H.round(barWidth, 2)
+        + '" height="' + rowHeight + '" fill="none" stroke="#b9c0b4" stroke-width="1"/>');
+
+      svg.push('<text x="' + (padLeft + inner + 10) + '" y="' + (y + 14) + '" font-family="'
+        + TIMELINE_MONO + '" font-size="10.5" fill="#101820">'
+        + (ghost ? '—' : H.round(row.minutes / 60, 1) + ' h') + '</text>');
+      svg.push('<text x="' + (padLeft + inner + 10) + '" y="' + (y + 27) + '" font-family="'
+        + TIMELINE_MONO + '" font-size="10" fill="#6b767b">'
+        + (ghost || plannedMinutes <= 0 ? '' : H.round(row.minutes / plannedMinutes * 100, 1)
+          + ' %') + '</text>');
+    });
+
+    /* The experiment's own scanner time, split by session design. */
+    var barsBottom = top + rows.length * (rowHeight + rowGap);
+    var shareTop = barsBottom + 10;
+    var shares = rows.filter(function (row) { return row.minutes > 0; }).map(function (row) {
+      return { span: row.minutes, kind: 'session', fill: sessionColour(row.id), name: row.name,
+        count: row.count };
+    });
+    if (shares.length) {
+      svg.push('<text x="' + (padLeft - 169) + '" y="' + (shareTop + 13) + '" font-family="'
+        + TIMELINE_SANS + '" font-size="11" fill="#3d4a4f">Scanner time</text>');
+      drawSegments(svg, shares, {
+        x: padLeft, y: shareTop, width: inner, height: 18, minLabel: 78,
+        label: function (part, span) {
+          return fitLabel(part.name, ' ×' + H.fmtNumber(part.count), span, 8);
+        }
+      });
+      svg.push('<rect x="' + padLeft + '" y="' + shareTop + '" width="' + inner
+        + '" height="18" fill="none" stroke="#b9c0b4" stroke-width="1"/>');
+      svg.push('<text x="' + (padLeft + inner + 10) + '" y="' + (shareTop + 13) + '" '
+        + 'font-family="' + TIMELINE_MONO + '" font-size="10.5" fill="#101820">'
+        + H.round(d.totalHours, 1) + ' h</text>');
+    }
+
+    var allSegments = [];
+    rows.forEach(function (row) { allSegments = allSegments.concat(row.segments); });
+    var legendY = drawLegend(svg, sessionLegendEntries(allSegments, runs), {
+      x: padLeft - 151, y: shareTop + 44, right: width - padRight
+    });
+
+    var caption = countLabel(d.runs, 'run') + ' · ' + H.fmtNumber(d.trials) + ' trials'
+      /* Only worth saying when some of those trials are controls. */
+      + (d.units !== d.trials
+        ? ' · ' + H.fmtNumber(d.units) + ' ' + experimentReport.unit.plural : '')
+      + ' · ' + H.round(d.gbTotal, 1) + ' GB · ' + minutesLabel(d.sessionMeanMinutes)
+      + ' per session on average.';
+    svg.push('<text x="' + (padLeft - 169) + '" y="' + (legendY + 24) + '" font-family="'
+      + TIMELINE_SANS + '" font-size="10.5" fill="#6b767b">'
+      + escapeHtml(figureClip(caption, 168)) + '</text>');
+
+    return svgWrap(width, legendY + 38, experimentReport.name + ' overview', svg.join(''));
+  }
+
+  /* -------------------------------------------------------- study figure */
+
+  /* The whole study on one axis: every experiment as a band against the usable
+   * budget, each band split into the session designs its plan buys, so which
+   * sessions the money goes on is visible without opening anything. */
   function studyFigureMarkup() {
-    if (!App.report) return '';
-    var experiments = App.report.experiments;
+    if (!App.report || !App.state) return '';
+    var reportById = {};
+    App.report.experiments.forEach(function (item) { reportById[item.id] = item; });
+    var experiments = (App.state.experiments || []).map(function (item) {
+      return { state: item, report: reportById[item.id] || null };
+    });
     if (!experiments.length) return '';
     var totals = App.report.totals;
 
     var width = 1120;
-    var padLeft = 150, padRight = 90;
+    var padLeft = 176, padRight = 104;
     var inner = width - padLeft - padRight;
     var rowHeight = 34, rowGap = 12;
     var top = 54;
     var budgetHours = Math.max(totals.usableHours, totals.committedHours, 0.01);
+    var cut = 'mx-study-cut';
 
     var svg = [];
-    svg.push('<text x="' + padLeft + '" y="22" font-family="' + TIMELINE_SANS
-      + '" font-size="10.5" letter-spacing="1.6" font-weight="600" fill="#00482B">'
-      + 'SCANNER TIME — ' + H.round(totals.committedHours, 1) + ' H COMMITTED OF '
-      + H.round(totals.usableHours, 1) + ' H USABLE</text>');
+    svg.push('<defs><pattern id="' + cut + '" width="6" height="6" '
+      + 'patternTransform="rotate(45)" patternUnits="userSpaceOnUse">'
+      + '<line x1="0" y1="0" x2="0" y2="6" stroke="#b9c0b4" stroke-opacity="0.8" '
+      + 'stroke-width="1.4"/></pattern></defs>');
+    figureHeading(svg, padLeft, 'scanner time — ' + H.round(totals.committedHours, 1)
+      + ' h committed of ' + H.round(totals.usableHours, 1) + ' h usable');
 
-    /* The budget ruler across the top. */
-    var hourStep = niceStep(budgetHours, 8);
-    for (var hour = 0; hour <= budgetHours + 0.001; hour += hourStep) {
-      var x = padLeft + inner * (hour / budgetHours);
-      svg.push('<line x1="' + H.round(x, 2) + '" y1="34" x2="' + H.round(x, 2) + '" y2="'
-        + (top + experiments.length * (rowHeight + rowGap) + 4)
-        + '" stroke="#EFEEE9" stroke-width="1"/>');
-      svg.push('<text x="' + H.round(x, 2) + '" y="30" text-anchor="middle" font-family="'
-        + TIMELINE_MONO + '" font-size="10.5" fill="#6b767b">' + H.round(hour, 1) + ' h</text>');
-    }
+    var barsBottom = top + experiments.length * (rowHeight + rowGap);
+    drawRuler(svg, {
+      x: padLeft, y: 44, width: inner, total: budgetHours, bottom: barsBottom + 4,
+      unit: 'h', decimals: 1
+    });
 
-    experiments.forEach(function (experiment, index) {
+    experiments.forEach(function (entry, index) {
       var y = top + index * (rowHeight + rowGap);
-      var d = experiment.derived;
-      var colour = experimentColour(experiment.id);
-      var barWidth = inner * (d.totalHours / budgetHours);
+      var report = entry.report;
+      var d = report ? report.derived : null;
+      var hours = d ? H.num(d.totalHours) : 0;
+      var barWidth = inner * (hours / budgetHours);
+      var off = !entry.state.enabled;
 
       svg.push('<text x="' + (padLeft - 10) + '" y="' + (y + 15) + '" text-anchor="end" '
-        + 'font-family="' + TIMELINE_SANS + '" font-size="12" font-weight="600" fill="#101820">'
-        + escapeHtml(figureClip(experiment.name, 24)) + '</text>');
+        + 'font-family="' + TIMELINE_SANS + '" font-size="12" font-weight="600" fill="#101820"'
+        + (off ? ' fill-opacity="0.45"' : '') + '>'
+        + escapeHtml(figureClip(entry.state.name, 22)) + '</text>');
       svg.push('<text x="' + (padLeft - 10) + '" y="' + (y + 28) + '" text-anchor="end" '
         + 'font-family="' + TIMELINE_MONO + '" font-size="10" fill="#6b767b">'
-        + H.fmtNumber(d.units) + ' ' + escapeHtml(experiment.unit.plural) + '</text>');
+        + escapeHtml(off ? 'switched off'
+          : (d ? H.fmtNumber(d.units) + ' ' + report.unit.plural : 'not scheduled'))
+        + '</text>');
 
-      /* One tick per session, so the granularity of the plan is visible. */
-      var sessions = Math.max(0, d.sessions);
-      var perSession = sessions > 0 ? barWidth / sessions : 0;
-      svg.push('<rect x="' + padLeft + '" y="' + y + '" width="' + H.round(Math.max(barWidth, 0), 2)
-        + '" height="' + rowHeight + '" fill="' + colour + '" fill-opacity="0.9"/>');
-      if (perSession > 2.5 && sessions <= 260) {
-        for (var s = 1; s < sessions; s += 1) {
-          var sx = padLeft + perSession * s;
-          svg.push('<line x1="' + H.round(sx, 2) + '" y1="' + y + '" x2="' + H.round(sx, 2)
-            + '" y2="' + (y + rowHeight) + '" stroke="#ffffff" stroke-opacity="0.55" '
-            + 'stroke-width="1"/>');
-        }
+      /* One segment per session design in the plan, not an anonymous tick per
+       * session: the point of the figure is which sessions the time goes on. */
+      var segments = ((report && report.plan) || []).filter(function (row) {
+        return H.num(row.minutes) > 0;
+      }).map(function (row) {
+        return {
+          span: H.num(row.minutes), kind: 'session', fill: sessionColour(row.sessionId),
+          name: row.name, count: H.num(row.sessions)
+        };
+      });
+      if (segments.length) {
+        drawSegments(svg, segments, {
+          x: padLeft, y: y, width: barWidth, height: rowHeight, minLabel: 26,
+          label: function (part, span) {
+            var count = '×' + H.fmtNumber(part.count);
+            return fitLabel(part.name, ' ' + count, span, 8) || count;
+          }
+        });
+      } else {
+        svg.push('<rect x="' + padLeft + '" y="' + y + '" width="' + inner + '" height="'
+          + rowHeight + '" fill="url(#' + cut + ')"/>');
       }
       svg.push('<rect x="' + padLeft + '" y="' + y + '" width="' + inner + '" height="' + rowHeight
         + '" fill="none" stroke="#d8dcd5" stroke-width="1"/>');
-      svg.push('<text x="' + (padLeft + inner + 8) + '" y="' + (y + 14) + '" font-family="'
-        + TIMELINE_MONO + '" font-size="10.5" fill="#101820">' + H.round(d.totalHours, 1)
-        + ' h</text>');
-      svg.push('<text x="' + (padLeft + inner + 8) + '" y="' + (y + 27) + '" font-family="'
-        + TIMELINE_MONO + '" font-size="10" fill="#6b767b">' + countLabel(d.sessions, 'sess')
-        + '</text>');
+      svg.push('<text x="' + (padLeft + inner + 10) + '" y="' + (y + 14) + '" font-family="'
+        + TIMELINE_MONO + '" font-size="10.5" fill="#101820">'
+        + (d ? H.round(hours, 1) + ' h' : '—') + '</text>');
+      svg.push('<text x="' + (padLeft + inner + 10) + '" y="' + (y + 27) + '" font-family="'
+        + TIMELINE_MONO + '" font-size="10" fill="#6b767b">'
+        + (d ? countLabel(d.sessions, 'session') : '') + '</text>');
     });
-
-    var barsBottom = top + experiments.length * (rowHeight + rowGap);
 
     /* The unspent remainder. */
     var spent = inner * (Math.min(totals.committedHours, budgetHours) / budgetHours);
@@ -1826,24 +2258,53 @@
       + H.round(spent, 2) + '" height="14" fill="#00482B" fill-opacity="0.82"/>');
     svg.push('<text x="' + (padLeft - 10) + '" y="' + (barsBottom + 17) + '" text-anchor="end" '
       + 'font-family="' + TIMELINE_SANS + '" font-size="11" fill="#3d4a4f">Budget</text>');
-    svg.push('<text x="' + (padLeft + inner + 8) + '" y="' + (barsBottom + 17) + '" font-family="'
-      + TIMELINE_MONO + '" font-size="10.5" fill="#101820">' + totals.utilisationPct + ' %</text>');
+    svg.push('<text x="' + (padLeft + inner + 10) + '" y="' + (barsBottom + 17) + '" font-family="'
+      + TIMELINE_MONO + '" font-size="10.5" fill="#101820">' + totals.utilisationPct
+      + ' %</text>');
 
-    var legendY = barsBottom + 44;
-    svg.push('<text x="' + padLeft + '" y="' + legendY + '" font-family="' + TIMELINE_SANS
-      + '" font-size="10.5" fill="#6b767b">Each division is one session. '
-      + H.fmtNumber(totals.sessions) + ' sessions, ' + H.fmtNumber(totals.runs) + ' runs, '
-      + H.fmtNumber(totals.trials) + ' trials, ' + totals.dataVolumeGb + ' GB.</text>');
+    /* Every session design in the study, with what it adds up to. */
+    var tally = {};
+    var order = [];
+    experiments.forEach(function (entry) {
+      ((entry.report && entry.report.plan) || []).forEach(function (row) {
+        if (!tally[row.sessionId]) {
+          tally[row.sessionId] = { name: row.name, sessions: 0, minutes: 0 };
+          order.push(row.sessionId);
+        }
+        tally[row.sessionId].sessions += H.num(row.sessions);
+        tally[row.sessionId].minutes += H.num(row.minutes);
+      });
+    });
+    var legendY = drawLegend(svg, order.map(function (id) {
+      var item = tally[id];
+      return {
+        fill: sessionColour(id),
+        label: figureClip(item.name, 28) + ' ×' + H.fmtNumber(item.sessions) + ' · '
+          + H.round(item.minutes / 60, 1) + ' h'
+      };
+    }), { x: padLeft - 150, y: barsBottom + 46, right: width - padRight });
 
-    var height = legendY + 18;
-    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + width + ' ' + height
-      + '" width="' + width + '" height="' + height + '" role="img">'
-      + '<title>' + escapeHtml(App.state.meta.studyTitle) + ' scanner time</title>'
-      + '<rect width="' + width + '" height="' + height + '" fill="#ffffff"/>'
-      + svg.join('') + '</svg>';
+    var switchedOff = experiments.filter(function (entry) {
+      return !entry.state.enabled;
+    }).length;
+    var caption = countLabel(experiments.length - switchedOff, 'experiment') + ' · '
+      + H.fmtNumber(totals.sessions) + ' sessions · ' + H.fmtNumber(totals.runs) + ' runs · '
+      + H.fmtNumber(totals.trials) + ' trials · ' + totals.dataVolumeGb + ' GB'
+      + (switchedOff ? ' · ' + switchedOff + ' switched off' : '') + '.';
+    svg.push('<text x="' + (padLeft - 150) + '" y="' + (legendY + 24) + '" font-family="'
+      + TIMELINE_SANS + '" font-size="10.5" fill="#6b767b">'
+      + escapeHtml(figureClip(caption, 168)) + '</text>');
+
+    return svgWrap(width, legendY + 38, App.state.meta.studyTitle + ' overview', svg.join(''));
   }
 
   /* ------------------------------------------------------- figure export */
+
+  /* The study figure is the one figure not named after an item, so its stem
+   * has to be defined in one place for the card and the export to share. */
+  function studyFigureStem() {
+    return fileStem(App.state && App.state.meta && App.state.meta.studyTitle, 'overview');
+  }
 
   function fileStem(text, suffix) {
     return String(text || 'figure').toLowerCase().replace(/[^a-z0-9]+/g, '-')
@@ -1919,6 +2380,42 @@
     }).catch(function () { toast('PNG export failed; use the SVG instead.', 'bad'); });
   }
 
+  /* Every figure also lives at its own address under the design, drawn fresh
+   * from the design each time it is asked for.  Worth having as a link rather
+   * than only as a download: it can be pasted into a protocol or a message and
+   * still be right a month later. */
+  function figureLink(stem, ext) {
+    if (!App.designName) return '';
+    return global.location.origin + designPath(App.designName)
+      + '/figures/' + encodeURIComponent(stem) + '.' + (ext || 'png');
+  }
+
+  /* Hand the server the PNG the browser just drew.
+   *
+   * The server can rasterise an SVG itself, but only with the fonts its image
+   * ships and only honouring the first family of a stack, so what it produces
+   * is an approximation.  This is the real thing - the same bytes Download PNG
+   * writes - so that a figure's link serves the picture you are looking at.
+   *
+   * Nothing here is worth interrupting anyone over: a failure leaves the link
+   * falling back to the server's own rendering, which still shows the figure.
+   */
+  function publishFigure(stem, markup) {
+    if (!App.designName || !markup || App.readOnly) return Promise.resolve(false);
+    return figurePng(markup, 3).then(function (result) {
+      return global.fetch(designPath(App.designName) + '/figures/'
+        + encodeURIComponent(stem) + '.png?rev='
+        + encodeURIComponent(App.designRev || ''), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'image/png' },
+        body: result.blob,
+        credentials: 'same-origin'
+      });
+    }).then(function (response) {
+      return !!(response && response.ok);
+    }).catch(function () { return false; });
+  }
+
   /* A figure card with its own SVG/PNG buttons and a live re-render. */
   function figureCard(title, note, render, stem, extraButtons, owner) {
     var host = h('div', { class: 'timeline-figure' });
@@ -1931,7 +2428,17 @@
         iconButton('Download SVG', 'Vector figure for a manuscript or a grant page',
           function () { downloadFigureSvg(markup, stem()); }),
         iconButton('Download PNG', 'Raster figure at three times nominal size',
-          function () { downloadFigurePng(markup, stem()); })
+          function () { downloadFigurePng(markup, stem()); }),
+        iconButton('Copy link', 'A link straight to this figure. Signed in, it also '
+          + 'publishes the picture you are looking at, so the link serves exactly that',
+        function () {
+          var url = figureLink(stem(), 'png');
+          if (!url) { toast('Open a saved design to link its figures.', 'bad'); return; }
+          /* Copy inside the click: the clipboard wants a user gesture, and
+           * publishing is slow enough to lose it. */
+          copy(url, 'Figure link');
+          publishFigure(stem(), markup);
+        })
       ].concat(extraButtons || []))
     ]);
 
@@ -1952,22 +2459,46 @@
     return node;
   }
 
-  /* Everything the export bundle should carry as a picture. */
+  /* Everything the export bundle should carry as a picture: one figure per
+   * level of the design, and one per item at every level, so nothing has to be
+   * picked as representative.
+   *
+   * Each entry carries the id of the thing it draws as well as its file stem.
+   * The stem is readable but follows the item's name, so it moves when the
+   * item is renamed; the id never does.  Anything addressing a figure by URL
+   * can take either. */
   function collectFigures() {
     var figures = [];
     if (!App.report) return figures;
-    figures.push({ name: 'study-scanner-time', svg: studyFigureMarkup() });
+    figures.push({
+      /* Same stem the Overview panel's figure card downloads under: the two
+       * must agree or its Copy link points at a figure that does not exist. */
+      name: studyFigureStem(), id: 'study', level: 'study',
+      title: App.state.meta.studyTitle || 'The study', svg: studyFigureMarkup()
+    });
     App.report.trials.forEach(function (trial) {
       var stateTrial = M.byId(App.state.trials, trial.id);
       figures.push({
-        name: fileStem(trial.name, 'trial-timeline'),
-        svg: trialFigureMarkup(stateTrial, 0)
+        name: fileStem(trial.name, 'trial-timeline'), id: trial.id, level: 'trial',
+        title: trial.name, svg: trialFigureMarkup(stateTrial, 0)
+      });
+    });
+    App.report.runs.forEach(function (run) {
+      figures.push({
+        name: fileStem(run.name, 'run-structure'), id: run.id, level: 'run',
+        title: run.name, svg: runFigureMarkup(run)
+      });
+    });
+    App.report.sessions.forEach(function (session) {
+      figures.push({
+        name: fileStem(session.name, 'session'), id: session.id, level: 'session',
+        title: session.name, svg: sessionFigureMarkup(session)
       });
     });
     App.report.experiments.forEach(function (experiment) {
       figures.push({
-        name: fileStem(experiment.name, 'assembly'),
-        svg: assemblyFigureMarkup(experiment)
+        name: fileStem(experiment.name, 'experiment'), id: experiment.id, level: 'experiment',
+        title: experiment.name, svg: experimentFigureMarkup(experiment)
       });
     });
     return figures.filter(function (figure) { return figure.svg; });
@@ -2359,10 +2890,11 @@
     var studyFigure = figureCard('Scanner time across the study', '', function () {
       return {
         markup: studyFigureMarkup(),
-        caption: 'Each division is one session, drawn to scale against the usable budget.',
+        caption: 'Every experiment against the usable budget, each band split into the session '
+          + 'designs its plan buys. Switched-off experiments are hatched.',
         empty: 'Add an experiment to draw the study figure.'
       };
-    }, function () { return fileStem(App.state.meta.studyTitle, 'scanner-time'); });
+    }, studyFigureStem);
 
     var summaryHost = h('div', {});
     registerView(function (report) {
@@ -3181,16 +3713,22 @@
   App.trialHrfPlot = trialHrfPlot;
   App.hrfTraceColours = hrfTraceColours;
   App.trialFigureMarkup = trialFigureMarkup;
-  App.assemblyFigureMarkup = assemblyFigureMarkup;
+  App.runFigureMarkup = runFigureMarkup;
+  App.sessionFigureMarkup = sessionFigureMarkup;
+  App.experimentFigureMarkup = experimentFigureMarkup;
   App.studyFigureMarkup = studyFigureMarkup;
   App.figureCard = figureCard;
   App.collectFigures = collectFigures;
+  App.figureLink = figureLink;
+  App.publishFigure = publishFigure;
   App.figurePng = figurePng;
   App.downloadFigureSvg = downloadFigureSvg;
   App.downloadFigurePng = downloadFigurePng;
   App.saveBlob = saveBlob;
   App.fileStem = fileStem;
   App.experimentColour = experimentColour;
+  App.sessionColour = sessionColour;
+  App.runColour = runColour;
   App.colourFor = colourFor;
   App.usableHours = usableHours;
   App.allocationRows = allocationRows;

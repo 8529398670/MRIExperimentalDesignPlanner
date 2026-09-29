@@ -405,6 +405,10 @@
 
   /* ---------------------------------------------------------------- build */
 
+  function figuresPath() {
+    return '/designs/' + encodeURIComponent(App.designName) + '/figures/';
+  }
+
   function build() {
     App = global.PlannerApp;
     M = global.PlannerModel;
@@ -450,6 +454,74 @@
     ]);
     setBundleStatus('Figures are rendered in the browser and packed on the server. '
       + 'A copy of every archive is kept in exports/.');
+
+    /* --- figures at their own addresses ---------------------------------- */
+
+    /* The zip is a snapshot; these are links.  Worth keeping apart, because
+     * the useful thing about a link is exactly that it is not a snapshot. */
+    var figureIndex = App.h('a', {
+      class: 'btn gold', href: figuresPath(), text: 'Open the figure index',
+      target: '_blank', rel: 'noopener'
+    });
+    /* Walk every figure, draw it the way Download PNG draws it, and hand each
+     * one to the server, so every link serves the real picture rather than the
+     * server's approximation of it. */
+    var publishStatus = App.h('div', { class: 'notice' });
+    function publishAllFigures(button) {
+      var figures = App.collectFigures();
+      if (!figures.length) {
+        publishStatus.textContent = 'Nothing to publish yet.';
+        return;
+      }
+      button.disabled = true;
+      var done = 0;
+      var failed = 0;
+      publishStatus.textContent = 'Publishing 0 of ' + figures.length + '…';
+      figures.reduce(function (chain, figure) {
+        return chain.then(function () {
+          return App.publishFigure(figure.name, figure.svg).then(function (stored) {
+            done += 1;
+            if (!stored) failed += 1;
+            publishStatus.textContent = 'Publishing ' + done + ' of ' + figures.length + '…';
+          });
+        });
+      }, Promise.resolve()).then(function () {
+        button.disabled = false;
+        if (failed === figures.length) {
+          publishStatus.textContent = 'Nothing was published. Sign in with a login link '
+            + 'first; until then the links serve the server\'s own rendering.';
+          return;
+        }
+        publishStatus.textContent = (figures.length - failed) + ' of ' + figures.length
+          + ' figures published. Their links now serve exactly what you see here'
+          + (failed ? ', and ' + failed + ' could not be stored.' : '.');
+      });
+    }
+
+    var figuresCard = App.card('Figures on the web', 'One address each, always current', [
+      App.h('p', { class: 'hint-block', text: 'Every figure the planner draws also lives at '
+        + 'its own address under this design, drawn from the design each time it is opened. '
+        + 'Paste one into a protocol, a slide or a message and it keeps up with the design '
+        + 'instead of going stale the way a pasted picture does. Each figure card has a '
+        + 'Copy link button; the index below lists them all.' }),
+      App.h('div', { class: 'btn-row' }, [
+        figureIndex,
+        App.h('button', {
+          class: 'btn', type: 'button', text: 'Publish every figure',
+          title: 'Draw each figure the way Download PNG draws it and hand it to the server',
+          onclick: function () { publishAllFigures(this); }
+        }),
+        App.iconButton('Copy the index link', 'The address of this page of figures',
+          function () { App.copy(global.location.origin + figuresPath(), 'Figure index link'); })
+      ]),
+      publishStatus,
+      App.h('p', { class: 'muted', text: 'A figure can be named by its file name, which is '
+        + 'readable but moves if you rename the item, or by the item\'s id, which never '
+        + 'changes. Both work; the index shows each. A figure nobody has published is '
+        + 'rendered by the server instead, which is close but uses the fonts the server '
+        + 'has rather than the ones these figures ask for.' })
+    ]);
+    App.registerView(function () { figureIndex.href = figuresPath(); }, 'export');
 
     /* --- methods -------------------------------------------------------- */
     methodsBox = App.h('textarea', { class: 'prose-box', spellcheck: 'false' });
@@ -583,6 +655,7 @@
     ]);
 
     panel.appendChild(bundleCard);
+    panel.appendChild(figuresCard);
     panel.appendChild(App.h('div', { class: 'grid split' }, [
       App.h('div', {}, [methodsCard, psychopyCard]),
       App.h('div', {}, [markdownCard, presetCard])

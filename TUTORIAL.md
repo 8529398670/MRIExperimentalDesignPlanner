@@ -111,7 +111,16 @@ So a minimal event-related trial is: Fixation (baseline) → Stimulus → Delay 
 Fixation.
 
 Underneath, the **Trial timeline** figure draws the trial to scale, and **Copy sequence**
-gives you a one-line text version.
+gives you a one-line text version. Every other panel has a figure at its own level too: **Run
+structure** on a run design, **Session overview** on a session, **Experiment overview** on an
+experiment, and **Scanner time across the study** on the Overview panel.
+
+Every one of them has a **Copy link** button as well as the two download buttons. The link
+opens that figure on its own, drawn from the design each time — worth using instead of pasting
+a picture into a document you will have to update later. Signed in, Copy link also hands the
+server the picture you are looking at, so the link serves exactly that rather than the
+server's own rendering of it; *Report and export* has **Publish every figure** to do the whole
+set at once, and lists them all.
 
 ### Step 3 — HRF model panel: decide what "separated" means
 

@@ -20,8 +20,9 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_ROOT_USER_ACTION=ignore
 
 # build-base only exists in this stage; it is needed if a dependency has no
-# musl wheel and has to be compiled from source.
-RUN apk add --no-cache build-base
+# musl wheel and has to be compiled from source. libffi-dev is for cffi, which
+# is how cairosvg reaches libcairo.
+RUN apk add --no-cache build-base libffi-dev
 
 COPY requirements.txt /tmp/requirements.txt
 
@@ -43,8 +44,12 @@ LABEL org.opencontainers.image.title="MRI Experimental Design Planner" \
 
 # Pick up any security patches published since the base image was cut, and add
 # a real init so waitress receives SIGTERM and no zombies accumulate.
+# cairo and a font are what turn a figure into a PNG; without them the planner
+# still serves every figure as SVG, so they are a convenience rather than a
+# requirement. Liberation is the closest match to the Arial and monospace
+# fallbacks the figures ask for.
 RUN apk upgrade --no-cache \
- && apk add --no-cache tini \
+ && apk add --no-cache tini cairo font-liberation \
  && addgroup -g "${APP_GID}" -S planner \
  && adduser -u "${APP_UID}" -G planner -S -H -s /sbin/nologin planner
 
@@ -58,6 +63,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PLANNER_PROTOCOL_DIR=/data/scanner-parameters \
     PLANNER_PRESET_DIR=/data/presets \
     PLANNER_EXPORT_DIR=/data/exports \
+    PLANNER_FIGURE_DIR=/data/figure-cache \
     PLANNER_AUTH_DIR=/data/accounts \
     PLANNER_SEED_DIR=/app/seed
 
@@ -86,7 +92,8 @@ RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh \
  && python -m compileall -q /app/server.py /app/planner \
  && install -d -o "${APP_UID}" -g "${APP_GID}" -m 0755 /data \
  && install -d -o "${APP_UID}" -g "${APP_GID}" -m 0770 \
-      /data/scanner-parameters /data/presets /data/exports /data/accounts
+      /data/scanner-parameters /data/presets /data/exports /data/accounts \
+      /data/figure-cache
 
 VOLUME ["/data"]
 EXPOSE 8761

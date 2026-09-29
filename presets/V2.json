@@ -202,6 +202,37 @@
       ],
       "controlPct": 0,
       "separationTolerancePct": 45
+    },
+    {
+      "id": "trial-mulkww7o-2j",
+      "name": "Perceived-speech control trial",
+      "note": "Passive-listening positive control for the TRIBE foundation-model work. The participant hears synthesized spoken 'yes'/'no' tokens (balanced, randomized) and does nothing else. If TRIBE predicts these perceived-speech responses but not the covert-speech responses in the question runs, the perceived-to-produced boundary is isolated; if it fails here too, preprocessing/scanner/model bridging is debugged before any covert-speech interpretation. Placeholder counts.",
+      "objective": "detection",
+      "phases": [
+        {
+          "name": "Fixation",
+          "min": 2,
+          "max": 2,
+          "jitter": false,
+          "role": "baseline"
+        },
+        {
+          "name": "Audio token",
+          "min": 1,
+          "max": 1,
+          "jitter": false,
+          "role": "stimulus"
+        },
+        {
+          "name": "ITI",
+          "min": 4,
+          "max": 8,
+          "jitter": true,
+          "role": "baseline"
+        }
+      ],
+      "controlPct": 0,
+      "separationTolerancePct": 45
     }
   ],
   "runs": [
@@ -268,6 +299,20 @@
       "trial": "trial-muhaofiu-2o",
       "protocol": "EPI-Base-Template",
       "trialsPerBlock": 1,
+      "blocksPerRun": 1,
+      "interTrialGap": 0,
+      "interBlockRest": 0,
+      "dummyVolumes": 8,
+      "leadIn": 12,
+      "leadOut": 12
+    },
+    {
+      "id": "run-mulkww7p-2l",
+      "name": "Perceived-speech control run",
+      "note": "Approx 5-minute perceived-speech positive control for TRIBE fine-tuning (see fine-tuning plan tab). 28 passive-listening trials (balanced yes/no audio tokens) on the TR800 card shared with the compressed question runs. Placed right after the structurals as a low-effort lead-in to the functional block. Placeholder counts.",
+      "trial": "trial-mulkww7o-2j",
+      "protocol": "EPI-TR800-Task",
+      "trialsPerBlock": 28,
       "blocksPerRun": 1,
       "interTrialGap": 0,
       "interBlockRest": 0,
@@ -506,18 +551,18 @@
           "count": 1
         },
         {
+          "id": "blk-mulkww7q-2n",
+          "kind": "run",
+          "enabled": true,
+          "run": "run-mulkww7p-2l",
+          "count": 1
+        },
+        {
           "id": "blk-muhb0ea7-44",
           "kind": "run",
           "enabled": true,
           "run": "run-mtubcfoz-1qv",
           "count": 2
-        },
-        {
-          "id": "blk-muhb0ea7-46",
-          "kind": "run",
-          "enabled": true,
-          "run": "run-muhaoj8n-2q",
-          "count": 1
         }
       ]
     }

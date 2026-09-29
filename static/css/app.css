@@ -971,6 +971,22 @@ a.brand { color: inherit; text-decoration: none; }
 .home-empty { margin: 14px; }
 .home-note { font-size: 12px; }
 
+/* ---------------------------------------------------------- figure index */
+
+.figure-index .figure-entry { margin-top: 14px; }
+.figure-index .head-note { text-transform: uppercase; letter-spacing: 1.2px; font-size: 10px; }
+.figure-thumb {
+  display: block;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  padding: 8px 10px;
+  overflow-x: auto;
+}
+.figure-thumb svg { display: block; width: 100%; height: auto; min-width: 720px; }
+.figure-links { margin-top: 10px; }
+.figure-links td.seq a { font-family: var(--mono); font-size: 11px; word-break: break-all; }
+.figure-links td.level { width: 4.5em; }
+
 /* The design this page works on is a link back to the list. */
 .mast-design a.name { color: inherit; text-decoration: none; }
 .mast-design a.name:hover .v { text-decoration: underline; }

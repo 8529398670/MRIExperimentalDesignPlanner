@@ -45,12 +45,13 @@
     <div class="card-body">
       {% if designs %}
       <table class="data">
-        <thead><tr><th>Name</th><th>Study title</th><th class="num">Last changed</th>{% if me %}<th></th>{% endif %}</tr></thead>
+        <thead><tr><th>Name</th><th>Study title</th><th class="num"></th><th class="num">Last changed</th>{% if me %}<th></th>{% endif %}</tr></thead>
         <tbody>
           {% for design in designs %}
           <tr>
             <td class="level"><a href="{{ design.path }}">{{ design.name }}</a></td>
             <td class="seq">{{ design.title }}</td>
+            <td class="num"><a href="{{ design.path }}/figures/">Figures</a></td>
             <td class="num">{{ design.changed }}</td>
             {% if me %}
             <td class="num"><button class="btn sm danger" type="button" data-delete="{{ design.name }}">Delete</button></td>

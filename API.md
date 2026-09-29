@@ -805,7 +805,7 @@ The PsychoPy YAML for every run design, or for one. Button: _Report and export >
 - `run` (run id or name): One run design (default: all)
 
 #### `export.figures` _(read-only)_
-The figures as SVG markup: study scanner time, one timeline per trial design, one assembly figure per experiment. Button: _Every figure card > Download SVG_
+The figures as SVG markup: the study overview, then one per item at every level - a timeline per trial design, a structure figure per run design, an overview per session and an overview per experiment. Button: _Every figure card > Download SVG_
 
 - `name` (string): One figure by file stem (default: all)
 
