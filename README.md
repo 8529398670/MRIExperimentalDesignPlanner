@@ -138,7 +138,7 @@ version starts, that file is renamed after its study title (for example
 | `static/js/api.js` | One named action per button, shared by the interface and the HTTP API |
 | `static/js/efficiency.js` | HRF convolution, contrast efficiency, design diagnostics |
 | `static/js/ui.js` | Control factories, figures, overview and budget panels |
-| `static/js/library.js` | The trial, run, session, experiment, jitter and HRF panels |
+| `static/js/library.js` | The trial, run, session, experiment, roles, jitter and HRF panels |
 | `static/js/protocols.js` | Acquisition card editor |
 | `static/js/export.js` | Clipboard, Markdown, PsychoPy, workbook and zip export |
 | `static/js/people.js` | The People panel: login links, API keys, removing people, signing out |
@@ -164,10 +164,29 @@ reads:
 | Response / probe window | The event split by condition | condition A, condition B |
 | Other | Anything else | none |
 
-The two conditions are named on the trial design, so "yes / no", "old / new" or
-"congruent / incongruent" all read correctly through the plots, the tables and the PsychoPy
-config. An **embedded control share** withholds a fraction of trials as control or null
-trials; trials minus that share is the count every goal is denominated in.
+An **embedded control share** withholds a fraction of trials as control or null trials;
+trials minus that share is the count every goal is denominated in.
+
+### Trial roles
+
+A phase role is one thing; a **trial role** is another. A trial role is one of the things a
+trial can *be* — the primary task, a passive-reading control, a catch trial — and each one
+wears its own shape on screen so the participant can tell them apart. The **Roles** panel
+owns that list, study-wide:
+
+| Column | What it is | In the config |
+|---|---|---|
+| Role | The name, slugged and unique | the `conditions:` key |
+| Shape | The text drawn as the cue: `●`, `✖`, anything | `cue` |
+| Shows question | Whether the question is shown on this trial | `show_question` |
+| Response | `answer`, `none`, `ready` or `opposite` | `response` |
+| Cue from response | The cue displays the response token itself | `cue_from_response` |
+
+The first role is the **primary** one: it takes the trials the trial design does not withhold
+as its control share, and the rest split that share as evenly as the count allows — so the up
+and down arrows decide which role the primary trials belong to. The counts stay with the trial
+design, and which trial comes when stays with the presentation software. The panel previews
+the exact `conditions:` block the export writes, for any run design.
 
 ### Objective and the separation solver
 
@@ -447,11 +466,11 @@ rather than a table; its solved timeline underneath copies as a table.
 - **PsychoPy task config** — one YAML per run design for the lab's PsychoPy builder, on its
   template, with the scanner block (TR, dummy volumes), `run:` (lead-in and lead-out, blocks
   per run, trials per block, inter-block rest, inter-trial gap), `trial:` (jitter
-  distribution, phase list and durations) and the `per_run` counts of `conditions:` (primary
-  trials, and the control share spread over the four control conditions) taken from that
-  run's solved design. The conditions themselves - names, cues, responses - are the lab
-  template's. The builder loads these files unchanged. It does not yet run `inter_block_rest`
-  or `inter_trial_gap`, so a multi-block run it presents is shorter than the planner books.
+  distribution, phase list and durations) and `conditions:` taken from that run's solved
+  design — the roles, their cues and what each presents from the Roles panel, and the
+  `per_run` counts from the run's size and the trial design's control share. The builder
+  loads these files unchanged. It does not yet run `inter_block_rest` or `inter_trial_gap`,
+  so a multi-block run it presents is shorter than the planner books.
 - **Copy methods text** — a paste-ready narrative generated from the solved design.
 - **Design JSON** — the full state plus the solved report; it comes back as a new design through
   *Designs → Import JSON file*.

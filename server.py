@@ -188,8 +188,8 @@ def _cards_rev() -> str:
 # reads the rest from the address (ui.js, readAddress); keep this list and
 # PANELS there together.
 VIEWS = (
-    "overview", "experiments", "sessions", "runs", "trials", "jitter", "hrf",
-    "budget", "acquisition", "study", "export", "people",
+    "overview", "experiments", "sessions", "runs", "trials", "roles", "jitter",
+    "hrf", "budget", "acquisition", "study", "export", "people",
 )
 VIEW = "<any(" + ", ".join(VIEWS) + "):view>"
 

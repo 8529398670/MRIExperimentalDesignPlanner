@@ -156,6 +156,83 @@
     return PHASE_ROLES.some(function (entry) { return entry.id === key; }) ? key : 'other';
   }
 
+  /* --- trial roles ------------------------------------------------------
+   *
+   * A different thing from the phase roles above, and from the acquisition
+   * card roles in `boot.roles`: a *trial* role is one of the things a trial
+   * can be - the primary task, a passive-reading control, a catch trial - and
+   * each one wears its own shape on screen so the participant can tell them
+   * apart.  The pair is what the PsychoPy builder calls a condition:
+   *
+   *     primary:      {per_run: 80, cue: "\u25CF", show_question: true, response: answer}
+   *     passive_read: {per_run: 5,  cue: "\u25CB", show_question: true, response: none}
+   *
+   * The planner owns the list, the shapes and what each one presents.  It
+   * does not own how many of each a run holds beyond the split the trial
+   * design's control share already decides, and it never owns which trial
+   * comes when - that is the presentation software's, as ever.
+   *
+   * The name is the builder's mapping key, so it is a slug and it is unique.
+   *
+   * `response` is the builder's own vocabulary for what the participant
+   * repeats during the answer window:
+   *   answer   - the true answer        none  - stay silent
+   *   opposite - the inverted answer    ready - the constant word "ready"
+   */
+  var RESPONSE_TOKENS = ['answer', 'none', 'ready', 'opposite'];
+
+  /* The lab template's five, which is what every design starts from and what
+   * a design saved before the Roles panel existed comes back carrying - so
+   * its exports are unchanged. */
+  var DEFAULT_TRIAL_ROLES = [
+    { name: 'primary', shape: '\u25CF', showQuestion: true, response: 'answer',
+      cueFromResponse: false },
+    { name: 'passive_read', shape: '\u25CB', showQuestion: true, response: 'none',
+      cueFromResponse: false },
+    { name: 'cue_only', shape: '\u25C6', showQuestion: false, response: 'answer',
+      cueFromResponse: true },
+    { name: 'constant_word', shape: '\u25B2', showQuestion: true, response: 'ready',
+      cueFromResponse: false },
+    { name: 'opposite', shape: '\u2716', showQuestion: true, response: 'opposite',
+      cueFromResponse: false }
+  ];
+
+  function defaultTrialRoles() { return deepCopy(DEFAULT_TRIAL_ROLES); }
+
+  function normaliseResponse(value) {
+    var key = String(value || '').toLowerCase().trim();
+    return RESPONSE_TOKENS.indexOf(key) >= 0 ? key : 'answer';
+  }
+
+  /* One trial role, cleaned.  `taken` carries the names already used so a
+   * duplicate is numbered rather than silently swallowing the earlier role:
+   * the builder keys its conditions by name, and a repeated YAML key keeps
+   * only the last one. */
+  function cleanTrialRole(raw, taken) {
+    var role = raw && typeof raw === 'object' ? raw : {};
+    var base = yamlSlug(role.name, 'role');
+    var name = base;
+    for (var i = 2; taken && taken[name]; i += 1) name = base + '_' + i;
+    if (taken) taken[name] = true;
+    return {
+      name: name,
+      shape: String(role.shape === undefined || role.shape === null ? '' : role.shape).trim(),
+      showQuestion: role.showQuestion === undefined ? true : !!role.showQuestion,
+      response: normaliseResponse(role.response),
+      cueFromResponse: !!role.cueFromResponse
+    };
+  }
+
+  /* The trial roles in force, whatever a saved design happens to carry.  An
+   * empty list falls back to the template: a config with no `conditions:`
+   * block is one the builder refuses outright. */
+  function trialRoles(state) {
+    var stored = state && Array.isArray(state.roles) ? state.roles : null;
+    if (!stored || !stored.length) return defaultTrialRoles();
+    var taken = {};
+    return stored.map(function (role) { return cleanTrialRole(role, taken); });
+  }
+
   var OBJECTIVES = [
     {
       id: 'detection',
@@ -774,6 +851,7 @@
       },
       hrf: defaultHrf(),
       jitter: defaultJitter(),
+      roles: defaultTrialRoles(),
       trials: [detection, estimation, separation],
       runs: [runDetection, runEstimation, runSeparation],
       sessions: [sessionDetection, sessionEstimation, sessionSeparation, sessionMixed],
@@ -1125,6 +1203,9 @@
     state.jitter = jitterSettings(Object.assign({}, state, {
       jitter: Object.assign(defaultJitter(), state.jitter || {})
     }));
+    /* Designs saved before the Roles panel existed come back carrying the
+     * lab template, which is exactly what their exports already said. */
+    state.roles = trialRoles(state);
 
     ['trials', 'runs', 'sessions', 'experiments'].forEach(function (key) {
       if (!Array.isArray(state[key])) state[key] = deepCopy(fresh[key]);
@@ -2520,19 +2601,6 @@
     '  advance: ["space"]'
   ];
 
-  /* The builder's trial conditions, which its loader requires and checks sum
-   * to the run.  Which conditions exist and what they present is the lab's;
-   * the planner fills in only how many of each a run holds.  `primary` takes
-   * the primary trials and the rest share the control trials. */
-  var PSYCHOPY_CONDITIONS = [
-    { name: 'primary', spec: 'cue: "\u25CF", show_question: true,  response: answer' },
-    { name: 'passive_read', spec: 'cue: "\u25CB", show_question: true,  response: none' },
-    { name: 'cue_only',
-      spec: 'cue: "\u25C6", show_question: false, response: answer, cue_from_response: true' },
-    { name: 'constant_word', spec: 'cue: "\u25B2", show_question: true,  response: ready' },
-    { name: 'opposite', spec: 'cue: "\u2716", show_question: true,  response: opposite' }
-  ];
-
   /* What the screen shows during a phase, by the phase's planner role. */
   var PSYCHOPY_SHOW = {
     baseline: 'fixation',
@@ -2550,14 +2618,24 @@
     return out;
   }
 
-  function yamlSlug(text) {
+  function yamlSlug(text, fallback) {
     var slug = String(text === undefined || text === null ? '' : text)
       .toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-    return slug || 'phase';
+    return slug || fallback || 'phase';
   }
 
   function yamlComment(text) {
     return String(text === undefined || text === null ? '' : text).replace(/\s+/g, ' ').trim();
+  }
+
+  /* A double-quoted YAML scalar.  Trial-role shapes are free text a person
+   * typed, so the quotes and the backslashes in them have to survive, and a
+   * newline cannot be allowed to end the line early. */
+  function yamlQuoted(text) {
+    return '"' + String(text === undefined || text === null ? '' : text)
+      .replace(/[\u0000-\u001F\u007F]/g, '')
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"') + '"';
   }
 
   /* Four places, as the builder rounds its own draws: two would move a
@@ -2592,6 +2670,115 @@
     });
   }
 
+  /* Small counts read better as words in the prose the config carries. */
+  var NUMBER_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight',
+    'nine', 'ten'];
+
+  function numberWord(count) {
+    var n = Math.round(num(count));
+    return n >= 0 && n < NUMBER_WORDS.length ? NUMBER_WORDS[n] : String(n);
+  }
+
+  /* The builder's `conditions:` block, which its loader requires and checks
+   * sums to the run.  Which trial roles exist, the shape each one wears and
+   * what it presents come from the design's Roles panel; the counts are the
+   * only part the run's solved size decides.
+   *
+   * The first role is the primary one: it takes the trials the trial design
+   * does not withhold as its control share, and the rest split that share as
+   * evenly as the count allows, earlier roles taking the remainder.  A design
+   * with a single role gives it every trial - anything else would leave the
+   * per_run values short of the run and the builder would refuse the file.
+   *
+   * Returns the block's lines, so the Roles panel can show exactly what the
+   * export writes rather than its own rendering of it. */
+  function psychopyConditions(state, trialsPerRun, controlPct) {
+    var roles = trialRoles(state);
+    var total = Math.max(0, Math.round(num(trialsPerRun)));
+    var pct = clamp(num(controlPct), 0, 100);
+    var controlTrials = Math.min(total, Math.round(total * pct / 100));
+    var controlRoles = roles.length - 1;
+
+    var counts = roles.map(function (role, index) {
+      if (index === 0) return controlRoles ? total - controlTrials : total;
+      var position = index - 1;
+      return Math.floor(controlTrials / controlRoles)
+        + (position < controlTrials % controlRoles ? 1 : 0);
+    });
+
+    /* Every column is measured, so a long role name or a shape that is more
+     * than one glyph still lays the block out straight. */
+    var specs = roles.map(function (role) {
+      return { cue: yamlQuoted(role.shape) + ',', flag: (role.showQuestion ? 'true' : 'false') + ',' };
+    });
+    var nameWidth = 0;
+    var cueWidth = 0;
+    var flagWidth = 0;
+    roles.forEach(function (role, index) {
+      nameWidth = Math.max(nameWidth, role.name.length + 2);
+      cueWidth = Math.max(cueWidth, specs[index].cue.length + 1);
+      flagWidth = Math.max(flagWidth, specs[index].flag.length + 1);
+    });
+    var countWidth = String(total).length + 2;
+
+    var lines = [];
+    lines.push('# Trial conditions. `per_run` must sum to n_blocks * trials_per_block ('
+      + total + ').');
+    lines.push('# The roles, their cues and what each presents are the design\'s, from its '
+      + 'Roles panel.');
+    if (controlRoles === 0) {
+      lines.push('# The design has one trial role, so it takes every trial.');
+    } else if (controlTrials > 0) {
+      lines.push('# The control share is the trial design\'s embedded control-trial share ('
+        + round(pct, 1) + '%),');
+      lines.push(controlRoles === 1
+        ? '# and all of it goes to the one control condition, ' + roles[1].name + '.'
+        : '# split as evenly as the count allows across the ' + numberWord(controlRoles)
+          + ' control conditions.');
+    } else {
+      lines.push('# The trial design embeds no control trials, so every trial is primary.');
+    }
+    lines.push('# response = the token the participant actually repeats during the answer window.');
+    lines.push('#   answer   -> the true answer          none  -> stay silent');
+    lines.push('#   opposite -> the inverted answer      ready -> the constant word "ready"');
+    lines.push('# cue_from_response: the cue displays the token itself (used for cue-only trials).');
+    lines.push('conditions:');
+    roles.forEach(function (role, index) {
+      lines.push('  ' + padRight(role.name + ':', nameWidth)
+        + '{per_run: ' + padRight(counts[index] + ',', countWidth)
+        + 'cue: ' + padRight(specs[index].cue, cueWidth)
+        + 'show_question: ' + padRight(specs[index].flag, flagWidth)
+        + 'response: ' + role.response
+        + (role.cueFromResponse ? ', cue_from_response: true' : '')
+        + '}');
+    });
+    return lines;
+  }
+
+  /* How big one run of a run design is, in the terms the conditions block
+   * counts in.  Both the export and the Roles panel's preview read it, so
+   * the two cannot disagree about what a run holds. */
+  function psychopyRunSize(report, runReport) {
+    var structure = (runReport && runReport.structure) || {};
+    var trial = (report.trials || []).filter(function (item) {
+      return item.id === runReport.trialId;
+    })[0] || { controlPct: 0 };
+    var blocksPerRun = Math.max(1, Math.round(num(structure.blocksPerRun, 1)));
+    var trialsPerBlock = Math.max(1, Math.round(num(structure.trialsPerBlock, 1)));
+    return {
+      blocksPerRun: blocksPerRun,
+      trialsPerBlock: trialsPerBlock,
+      trialsPerRun: blocksPerRun * trialsPerBlock,
+      controlPct: round(clamp(num(trial.controlPct), 0, 100), 1)
+    };
+  }
+
+  /* The conditions block for one solved run design. */
+  function psychopyRunConditions(report, runReport) {
+    var size = psychopyRunSize(report, runReport);
+    return psychopyConditions(report.state, size.trialsPerRun, size.controlPct);
+  }
+
   function psychopyFileName(runReport) {
     return 'run-' + yamlSlug(runReport.name).replace(/_/g, '-') + '.yaml';
   }
@@ -2608,13 +2795,11 @@
       return experiment.runs.some(function (row) { return row.runId === runReport.id; });
     });
 
-    var blocksPerRun = Math.max(1, Math.round(num(structure.blocksPerRun, 1)));
-    var trialsPerBlock = Math.max(1, Math.round(num(structure.trialsPerBlock, 1)));
-    var trialsPerRun = blocksPerRun * trialsPerBlock;
+    var size = psychopyRunSize(report, runReport);
+    var blocksPerRun = size.blocksPerRun;
+    var trialsPerBlock = size.trialsPerBlock;
+    var trialsPerRun = size.trialsPerRun;
     var dummyVolumes = Math.max(0, Math.round(num(structure.dummyVolumes)));
-    var controlPct = round(clamp(num(trial.controlPct), 0, 100), 1);
-    var controlTrials = Math.min(trialsPerRun, Math.round(trialsPerRun * controlPct / 100));
-    var primaryTrials = trialsPerRun - controlTrials;
 
     var phases = trial.phases || [];
     var names = psychopyPhaseNames(phases);
@@ -2740,40 +2925,8 @@
       lines.push(row.comment ? padRight(row.text, textWidth) + '# ' + row.comment : row.text);
     });
 
-    /* Counts only: the primary trials, then the control trials spread as
-     * evenly as the count allows, earlier conditions taking the remainder. */
-    var controlNames = PSYCHOPY_CONDITIONS.length - 1;
-    var counts = PSYCHOPY_CONDITIONS.map(function (condition, index) {
-      if (index === 0) return primaryTrials;
-      var position = index - 1;
-      return Math.floor(controlTrials / controlNames)
-        + (position < controlTrials % controlNames ? 1 : 0);
-    });
-    var conditionWidth = 0;
-    PSYCHOPY_CONDITIONS.forEach(function (condition) {
-      conditionWidth = Math.max(conditionWidth, condition.name.length + 2);
-    });
-    var countWidth = String(trialsPerRun).length + 2;
-
     lines.push('');
-    lines.push('# Trial conditions. `per_run` must sum to n_blocks * trials_per_block ('
-      + trialsPerRun + ').');
-    if (controlTrials > 0) {
-      lines.push('# The control share is the trial design\'s embedded control-trial share ('
-        + controlPct + '%),');
-      lines.push('# split as evenly as the count allows across the four control conditions.');
-    } else {
-      lines.push('# The trial design embeds no control trials, so every trial is primary.');
-    }
-    lines.push('# response = the token the participant actually repeats during the answer window.');
-    lines.push('#   answer   -> the true answer          none  -> stay silent');
-    lines.push('#   opposite -> the inverted answer      ready -> the constant word "ready"');
-    lines.push('# cue_from_response: the cue displays the token itself (used for cue-only trials).');
-    lines.push('conditions:');
-    PSYCHOPY_CONDITIONS.forEach(function (condition, index) {
-      lines.push('  ' + padRight(condition.name + ':', conditionWidth)
-        + '{per_run: ' + padRight(counts[index] + ',', countWidth) + condition.spec + '}');
-    });
+    lines = lines.concat(psychopyRunConditions(report, runReport));
 
     lines.push('');
     lines = lines.concat(PSYCHOPY_KEYS);
@@ -3489,6 +3642,7 @@
 
   global.PlannerModel = {
     PHASE_ROLES: PHASE_ROLES,
+    RESPONSE_TOKENS: RESPONSE_TOKENS,
     OBJECTIVES: OBJECTIVES,
     SOLVE_MODES: SOLVE_MODES,
     ALLOCATION_UNITS: ALLOCATION_UNITS,
@@ -3499,6 +3653,7 @@
     defaultState: defaultState,
     defaultHrf: defaultHrf,
     defaultJitter: defaultJitter,
+    defaultTrialRoles: defaultTrialRoles,
     defaultTrial: defaultTrial,
     defaultRun: defaultRun,
     defaultSession: defaultSession,
@@ -3519,6 +3674,9 @@
     objectiveDef: objectiveDef,
     applyHrf: applyHrf,
     jitterSettings: jitterSettings,
+    trialRoles: trialRoles,
+    psychopyConditions: psychopyConditions,
+    psychopyRunConditions: psychopyRunConditions,
     truncGeometric: truncGeometric,
     phaseSpan: phaseSpan,
     jitterProfile: jitterProfile,

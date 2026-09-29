@@ -824,22 +824,64 @@
     };
   }
 
-  var HRF_TRACE_COLOURS = {
-    stimulus: ['#00482B', '#046A38', '#2E7D57', '#6F9E86'],
-    response: ['#AE8643', '#CBA052', '#7A5C2C', '#D9BC80'],
-    other: ['#719949', '#8FB06B', '#5C7F3E', '#B9C0B4']
-  };
+  /* One hue per regressor phase, not one tint per role.  A ramp of shades
+   * inside a single hue cannot be read at a 1.8px line or a 9px swatch: the
+   * old one gave a trial with two response phases #AE8643 and #CBA052, 8.5
+   * dE2000 apart, and its lightest entries sat 16 dE off the white plot
+   * ground.  Every hue here is at least 23 dE from every other and at least
+   * 36 from white.  Kept as hexes rather than as CSS variables because the
+   * canvas and the server-side figure export both read them with no document
+   * to resolve a variable against; --trace-1..6 in static/css/app.css mirror
+   * them, and the two have to move together. */
+  var HRF_TRACE_RAMP = [
+    '#046A38',   // Wright State green
+    '#AE8643',   // Wright State deep gold
+    '#1A4F8A',   // blue
+    '#8A3A34',   // brick
+    '#0E7C86',   // teal
+    '#7A3A91'    // purple
+  ];
 
-  /* One colour per regressor phase - greens for stimuli, golds for response
-   * windows - so the plot, its legend and the table underneath all agree. */
+  /* The first stimulus and the first response keep the house pair, so the
+   * ordinary one-stimulus-one-response trial looks exactly as it always has.
+   * Both are held back even when the trial has no phase of that role: green
+   * means a stimulus and gold means a response window everywhere else in the
+   * planner, and a second response phase borrowing the green would make this
+   * one plot say otherwise. */
+  var HRF_TRACE_ANCHOR = { stimulus: 0, response: 1 };
+
+  /* One colour per regressor phase, shared by the plot, its legend and the
+   * table underneath, so all three agree on which trace is which. */
   function hrfTraceColours(traces) {
-    var seen = {};
-    return (traces || []).map(function (trace) {
-      var role = HRF_TRACE_COLOURS[trace.role] ? trace.role : 'other';
-      var position = seen[role] || 0;
-      seen[role] = position + 1;
-      return HRF_TRACE_COLOURS[role][position % HRF_TRACE_COLOURS[role].length];
+    var list = traces || [];
+    var size = HRF_TRACE_RAMP.length;
+    var reserved = {};     // slots the anchors hold, claimed or not
+    var claimed = {};      // anchors a trace has actually taken
+    var slots = [];
+
+    Object.keys(HRF_TRACE_ANCHOR).forEach(function (role) {
+      reserved[HRF_TRACE_ANCHOR[role]] = true;
     });
+    list.forEach(function (trace, index) {
+      var anchor = HRF_TRACE_ANCHOR[trace.role];
+      if (anchor === undefined || claimed[anchor]) return;
+      claimed[anchor] = true;
+      slots[index] = anchor;
+    });
+
+    /* Everything else takes the next hue nobody has yet.  With more regressor
+     * phases than there are hues it wraps rather than inventing one. */
+    var cursor = 0;
+    list.forEach(function (trace, index) {
+      if (slots[index] !== undefined) return;
+      while (cursor < size && reserved[cursor]) cursor += 1;
+      var slot = cursor % size;
+      reserved[slot] = true;
+      slots[index] = slot;
+      cursor += 1;
+    });
+
+    return slots.map(function (slot) { return HRF_TRACE_RAMP[slot % size]; });
   }
 
   /* One HRF per regressor phase, drawn over a couple of back-to-back trials.
@@ -3145,6 +3187,8 @@
       build: function () { return global.PlannerLibrary.buildRuns(); } },
     { id: 'trials', label: 'Trials', hint: 'What one trial looks like',
       build: function () { return global.PlannerLibrary.buildTrials(); } },
+    { id: 'roles', label: 'Roles', hint: 'Which shape goes with which trial role',
+      build: function () { return global.PlannerLibrary.buildRoles(); } },
     { id: 'jitter', label: 'Jitter', hint: 'How the gap between events is drawn',
       build: function () { return global.PlannerLibrary.buildJitter(); } },
     { id: 'hrf', label: 'HRF model', hint: 'The response, and what counts as separated',

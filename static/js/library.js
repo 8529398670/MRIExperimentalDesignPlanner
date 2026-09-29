@@ -1773,6 +1773,225 @@
     return out;
   }
 
+  /* -------------------------------------------------------------- roles */
+
+  /* Trial roles: what a trial presents, and the shape that tells the
+   * participant which is which.  A study-wide list, like the jitter
+   * settings - every run design's PsychoPy config gets the same roles - and
+   * a different thing from a phase's role, which is what the regressor model
+   * reads and is set in the Trials panel. */
+
+  /* Offered in the shape box, not imposed: the field takes any text. */
+  var SHAPE_CHOICES = ['\u25CF', '\u25CB', '\u25C6', '\u25C7', '\u25B2', '\u25B3',
+    '\u25BC', '\u25BD', '\u25A0', '\u25A1', '\u2605', '\u2606', '\u2716', '\u271A',
+    '\u2B1F', '\u2B22'];
+
+  var SHAPE_LIST_ID = 'role-shape-choices';
+
+  function buildRoles() {
+    var owner = 'roles';
+    var panel = App.h('div', { class: 'panel' });
+    panel.appendChild(App.h('div', { class: 'panel-head' }, [
+      App.h('h2', { text: 'Roles' }),
+      App.h('p', {
+        text: 'A trial role is one of the things a trial can be - the primary task, a '
+          + 'passive-reading control, a catch trial - and each one wears its own shape so '
+          + 'the participant can tell them apart. The pair is what the PsychoPy builder '
+          + 'calls a condition, so this list is what its conditions: block is written from. '
+          + 'This is not a phase\'s role, which is what the regressor model reads and is set '
+          + 'on each phase in the Trials panel.'
+      })
+    ]));
+
+    /* --- the list ------------------------------------------------------- */
+
+    var tableHost = App.h('div', {});
+
+    /* `redraw` is for the two fields the action normalises - a name is
+     * slugged, a shape is trimmed - so what lands in the design is what the
+     * box shows, and a refused rename puts the old name back rather than
+     * leaving invalid text sitting in the table. */
+    function editRole(index, fields, redraw) {
+      var out = App.write('role.update', Object.assign({ role: index }, fields));
+      if (redraw) renderRoles();
+      return out;
+    }
+
+    function renderRoles() {
+      App.clear(tableHost);
+      var roles = M.trialRoles(App.state);
+
+      var rows = roles.map(function (role, index) {
+        return [
+          { text: String(index + 1), num: true },
+          { node: textInput(
+            function () { return role.name; },
+            function (value) { editRole(index, { name: value }, true); }
+          ), copy: role.name },
+          { node: (function () {
+            var input = textInput(
+              function () { return role.shape; },
+              function (value) { editRole(index, { shape: value }, true); },
+              'none'
+            );
+            input.setAttribute('list', SHAPE_LIST_ID);
+            input.classList.add('shape-input');
+            return input;
+          }()), copy: role.shape },
+          { node: (function () {
+            var box = App.h('input', { type: 'checkbox' });
+            box.checked = !!role.showQuestion;
+            box.addEventListener('change', function () {
+              editRole(index, { showQuestion: box.checked });
+              App.refresh();
+            });
+            return box;
+          }()), copy: role.showQuestion ? 'yes' : 'no' },
+          { node: selectInput(
+            function () { return role.response; },
+            function (value) { editRole(index, { response: value }); },
+            M.RESPONSE_TOKENS.map(function (token) { return { value: token, label: token }; })
+          ), copy: role.response },
+          { node: (function () {
+            var box = App.h('input', { type: 'checkbox' });
+            box.checked = !!role.cueFromResponse;
+            box.addEventListener('change', function () {
+              editRole(index, { cueFromResponse: box.checked });
+              App.refresh();
+            });
+            return box;
+          }()), copy: role.cueFromResponse ? 'yes' : 'no' },
+          { node: App.h('div', { class: 'btn-row tight' }, [
+            App.iconButton('\u2191', 'Move up; the first role is the primary one', function () {
+              if (index === 0) return;
+              App.act('role.move', { role: index, delta: -1 });
+              renderRoles();
+            }),
+            App.iconButton('\u2193', 'Move down', function () {
+              if (index >= roles.length - 1) return;
+              App.act('role.move', { role: index, delta: 1 });
+              renderRoles();
+            }),
+            App.iconButton('\u00D7', 'Remove this role', function () {
+              if (App.act('role.remove', { role: index })) renderRoles();
+            }, 'danger')
+          ]), copy: '' }
+        ];
+      });
+
+      var table = App.dataTable(
+        [{ label: '#', num: true }, { label: 'Role' }, { label: 'Shape' },
+          { label: 'Shows question' }, { label: 'Response' }, { label: 'Cue from response' },
+          { label: '' }],
+        rows.map(function (row) {
+          return row.map(function (cell) {
+            return { text: cell.text, num: cell.num, className: cell.node ? 'cell' : '',
+              copy: cell.copy };
+          });
+        }),
+        { caption: 'Trial roles - the first one is the primary role' }
+      );
+
+      /* Put the live inputs into the cells the table just rendered. */
+      var bodyRows = table.querySelectorAll('tbody tr');
+      rows.forEach(function (row, rowIndex) {
+        var tr = bodyRows[rowIndex];
+        if (!tr) return;
+        row.forEach(function (cell, cellIndex) {
+          if (!cell.node) return;
+          var td = tr.children[cellIndex];
+          App.clear(td);
+          td.appendChild(cell.node);
+        });
+      });
+
+      tableHost.appendChild(table);
+      tableHost.appendChild(App.h('datalist', { id: SHAPE_LIST_ID },
+        SHAPE_CHOICES.map(function (shape) { return App.h('option', { value: shape }); })));
+      tableHost.appendChild(App.h('div', { class: 'btn-row mt' }, [
+        App.iconButton('Add role', 'Append a trial role', function () {
+          if (App.act('role.add')) renderRoles();
+        }, ''),
+        App.iconButton('Reset to the lab template',
+          'Put the roles back to the five the lab template ships with', function () {
+            if (App.act('role.reset')) {
+              App.toast('Roles reset to the lab template', 'ok');
+              renderRoles();
+            }
+          })
+      ]));
+    }
+    renderRoles();
+
+    panel.appendChild(App.card('Trial roles',
+      'Name, shape and what each one presents; the first role is the primary one', [
+      App.h('div', {
+        class: 'notice',
+        text: 'The first role takes the trials the trial design does not withhold as its '
+          + 'embedded control share, and the rest split that share as evenly as the count '
+          + 'allows - so the up and down arrows decide which role the primary trials belong '
+          + 'to. The counts themselves stay with the trial design, and which trial comes '
+          + 'when stays with the presentation software. Names are the config\'s condition '
+          + 'keys, so they are slugged and no two may be the same.'
+      }),
+      tableHost
+    ]));
+
+    /* --- what the export gets ------------------------------------------- */
+
+    var previewPicker = App.view(App.h('select', {}));
+    var previewBox = App.h('pre', { class: 'code-box' });
+
+    function previewRun() {
+      var runs = (App.report && App.report.runs.filter(function (run) {
+        return !run.missing;
+      })) || [];
+      return runs.filter(function (run) {
+        return run.id === previewPicker.value;
+      })[0] || runs[0] || null;
+    }
+
+    function renderPreview() {
+      var run = previewRun();
+      previewBox.textContent = run
+        ? M.psychopyRunConditions(App.report, run).join('\n')
+        : 'Build a run design first; the counts come from one.';
+    }
+    previewPicker.addEventListener('change', renderPreview);
+
+    App.registerView(function (report) {
+      var runs = (report.runs || []).filter(function (run) { return !run.missing; });
+      var previous = previewPicker.value;
+      App.clear(previewPicker);
+      runs.forEach(function (run) {
+        previewPicker.appendChild(App.h('option', { value: run.id, text: run.name }));
+      });
+      if (previous && runs.some(function (run) { return run.id === previous; })) {
+        previewPicker.value = previous;
+      }
+      renderPreview();
+    }, owner);
+
+    panel.appendChild(App.card('What the PsychoPy config gets',
+      'The conditions: block, exactly as the export writes it', [
+      App.h('div', {
+        class: 'notice',
+        text: 'This is the export\'s own text, not a second rendering of it. The per_run '
+          + 'counts belong to the run design picked here; everything else on the line is '
+          + 'the role above.'
+      }),
+      App.h('div', { class: 'split-inline mb' }, [
+        previewPicker,
+        App.iconButton('Copy block', 'Copy the shown conditions block', function () {
+          App.copy(previewBox.textContent, 'conditions block');
+        })
+      ]),
+      previewBox
+    ]));
+
+    return panel;
+  }
+
   /* ------------------------------------------------------------- jitter */
 
   function buildJitter() {
@@ -2218,6 +2437,7 @@
     buildSessions: function () { ready(); return buildSessions(); },
     buildExperiments: function () { ready(); return buildExperiments(); },
     buildHrf: function () { ready(); return buildHrf(); },
-    buildJitter: function () { ready(); return buildJitter(); }
+    buildJitter: function () { ready(); return buildJitter(); },
+    buildRoles: function () { ready(); return buildRoles(); }
   };
 }(window));

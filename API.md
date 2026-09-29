@@ -478,6 +478,49 @@ Delete a phase; a trial keeps at least one. Button: _Trials > Trial phases > x_
 - **`phase`** (position or name, also `index`): 0-based position in the trial, or a phase name only one phase carries; trial.inspect calls it "index"
 
 
+### Roles
+
+#### `role.add`
+Add a trial role - what a trial presents, and the shape that identifies it (not a phase role). Default: appended, no shape, the question shown, response "answer". Button: _Roles > Add role_
+
+- `name` (string): Role name. It is the builder's condition key, so it is slugged to lower_case_with_underscores, and no two roles may share one
+- `shape` (string): The shape shown for this role, as the text to draw: "●", "✖", "AB" - anything, or empty for none
+- `showQuestion` (boolean): Whether the question is shown on this trial (show_question)
+- `response` (`answer` | `none` | `ready` | `opposite`): What the participant repeats in the answer window: answer (the true answer), none (stay silent), ready (the constant word) or opposite (the inverted answer)
+- `cueFromResponse` (boolean): Whether the cue displays the response token itself, as cue-only trials do (cue_from_response)
+- `index` (integer, at least 0): 0-based position to insert at (default: the end). Position 0 makes it the primary role
+
+#### `role.update`
+Edit one trial role. Takes its item back as `design.get` returns it. Button: _Roles > Trial roles (a row's name, shape, question, response or cue from response)_
+
+- **`role`** (position or name, also `index`): 0-based position in the role list, or a role name
+- `name` (string): Role name. It is the builder's condition key, so it is slugged to lower_case_with_underscores, and no two roles may share one
+- `shape` (string): The shape shown for this role, as the text to draw: "●", "✖", "AB" - anything, or empty for none
+- `showQuestion` (boolean): Whether the question is shown on this trial (show_question)
+- `response` (`answer` | `none` | `ready` | `opposite`): What the participant repeats in the answer window: answer (the true answer), none (stay silent), ready (the constant word) or opposite (the inverted answer)
+- `cueFromResponse` (boolean): Whether the cue displays the response token itself, as cue-only trials do (cue_from_response)
+
+#### `role.move`
+Reorder a trial role. The first one is the primary role, so moving a role to position 0 is how the primary trials change hands. Button: _Roles > Trial roles > up / down arrows_
+
+- **`role`** (position or name, also `index`): 0-based position in the role list, or a role name
+- `to` (integer, at least 0): New 0-based position (clamped to the list)
+- `delta` (integer): Steps to move: -1 is one earlier, +1 one later
+
+#### `role.remove`
+Delete a trial role; a design keeps at least one. Button: _Roles > Trial roles > x_
+
+- **`role`** (position or name, also `index`): 0-based position in the role list, or a role name
+
+#### `role.setAll`
+Replace every trial role. Each is {name, shape, showQuestion, response, cueFromResponse}; the first is the primary role. Button: _Roles > Trial roles (the whole table at once)_
+
+- **`roles`** (array): The roles in order, at least one
+
+#### `role.reset`
+Put the roles back to the five the lab template ships with. Button: _Roles > Reset to the lab template_
+
+
 ### Runs
 
 #### `run.add`

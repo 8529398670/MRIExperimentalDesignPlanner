@@ -578,11 +578,12 @@
           + 'inter-block rest, inter-trial gap), trial: (the phase list, durations and jitter, '
           + 'in the builder\'s own jitter and jitter_p keys, with each geometric window '
           + 'stopping on its top rung at this run\'s TR, so the builder reproduces exactly '
-          + 'the timing the planner sized against) and the per_run counts of conditions: '
-          + '(primary trials, and the control share spread over the control conditions) '
-          + 'filled in. The conditions themselves, what each trial presents and in what '
-          + 'order stay the lab\'s. Window, text, console, keys and instructions are passed '
-          + 'through unchanged.'
+          + 'the timing the planner sized against) and conditions: written from the '
+          + 'design\'s trial roles - their names, their shapes and what each presents come '
+          + 'from the Roles panel, and the per_run counts are the primary trials with the '
+          + 'control share spread over the rest. Which trial comes when is still the '
+          + 'presentation software\'s. Window, text, console, keys and instructions are '
+          + 'passed through unchanged.'
       }),
       psychopyButtons,
       App.h('div', { class: 'split-inline mt mb' }, [

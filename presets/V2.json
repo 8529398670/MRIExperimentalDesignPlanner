@@ -91,7 +91,7 @@
     },
     {
       "id": "trial-mtmfi9kd-2",
-      "name": "Aim 2 — Question trial",
+      "name": "Aim 2/3 — Question trial",
       "note": "Shared question-task anatomy used by Aims 2 and 3 (compressed runs). Question bank: Standard types (General Knowledge, Arithmetic, Rhyme Judgment, Category, Biographical, Emotional) + Control types (No Prompt affirmative/negative, Neutral 'ready', Opposite Answer, No Answer, Ambiguous Category). Within-trial jitter of the prompt-to-cue delay decorrelates question-reading from repetition responses; between-trial ITI jitter decorrelates from the previous trial's hemodynamic tail.",
       "objective": "estimation",
       "phases": [
@@ -117,16 +117,9 @@
           "role": "delay"
         },
         {
-          "name": "Answer cue",
-          "min": 1,
-          "max": 1,
-          "jitter": false,
-          "role": "response"
-        },
-        {
           "name": "Paced repetition",
-          "min": 6,
-          "max": 6,
+          "min": 5,
+          "max": 5,
           "jitter": false,
           "role": "response"
         },
@@ -606,5 +599,42 @@
     "p": 0.5,
     "truncation": "window",
     "nMaxCap": 4
-  }
+  },
+  "roles": [
+    {
+      "name": "primary",
+      "shape": "●",
+      "showQuestion": true,
+      "response": "answer",
+      "cueFromResponse": false
+    },
+    {
+      "name": "passive_read",
+      "shape": "○",
+      "showQuestion": true,
+      "response": "none",
+      "cueFromResponse": false
+    },
+    {
+      "name": "cue_only",
+      "shape": "◆",
+      "showQuestion": false,
+      "response": "answer",
+      "cueFromResponse": true
+    },
+    {
+      "name": "constant_word",
+      "shape": "▲",
+      "showQuestion": true,
+      "response": "ready",
+      "cueFromResponse": false
+    },
+    {
+      "name": "opposite",
+      "shape": "✖",
+      "showQuestion": true,
+      "response": "opposite",
+      "cueFromResponse": false
+    }
+  ]
 }

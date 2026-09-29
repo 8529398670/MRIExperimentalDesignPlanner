@@ -858,8 +858,8 @@
     }
   });
 
-  var TOP_KEYS = ['meta', 'budget', 'caps', 'hrf', 'jitter', 'trials', 'runs', 'sessions',
-    'experiments', 'dynScansFrom'];
+  var TOP_KEYS = ['meta', 'budget', 'caps', 'hrf', 'jitter', 'roles', 'trials', 'runs',
+    'sessions', 'experiments', 'dynScansFrom'];
 
   action({
     name: 'design.set', group: 'Design',
@@ -1427,6 +1427,218 @@
       if (trial.phases.length <= 1) fail('A trial needs at least one phase.');
       var removed = trial.phases.splice(index, 1)[0];
       return { id: trial.id, removed: removed, index: index };
+    }
+  });
+
+  /* --- trial roles ------------------------------------------------------ */
+
+  /* A *trial* role - what a trial presents, and the shape that identifies it
+   * on screen - not a phase's role, and not an acquisition card's.  The list
+   * is study-wide and goes out as the PsychoPy builder's `conditions:`.  The
+   * first role is the primary one; see M.psychopyConditions for how the
+   * counts fall out of it. */
+
+  var RESPONSE_IDS = M.RESPONSE_TOKENS;
+
+  var ROLE_FIELDS = {
+    name: name('Role name. It is the builder\'s condition key, so it is slugged to '
+      + 'lower_case_with_underscores, and no two roles may share one'),
+    shape: str('The shape shown for this role, as the text to draw: "●", "✖", '
+      + '"AB" - anything, or empty for none'),
+    showQuestion: bool('Whether the question is shown on this trial (show_question)'),
+    response: choice(RESPONSE_IDS, 'What the participant repeats in the answer window: '
+      + 'answer (the true answer), none (stay silent), ready (the constant word) or '
+      + 'opposite (the inverted answer)'),
+    cueFromResponse: bool('Whether the cue displays the response token itself, as cue-only '
+      + 'trials do (cue_from_response)')
+  };
+  var ROLE_FIELD_NAMES = Object.keys(ROLE_FIELDS);
+
+  var ROLE_REF = spec('position', '0-based position in the role list, or a role name',
+    { named: 'a role name', aliases: ['index'] });
+
+  /* The design's roles, normalised in place the first time one is touched, so
+   * a design saved before the Roles panel existed edits like any other. */
+  function stateRoles(ctx) {
+    if (!Array.isArray(ctx.state.roles) || !ctx.state.roles.length) {
+      ctx.state.roles = M.trialRoles(ctx.state);
+    }
+    return ctx.state.roles;
+  }
+
+  function roleSlug(value) {
+    var slug = String(value === undefined || value === null ? '' : value)
+      .toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    if (!slug) fail('A role name needs at least one letter or digit.');
+    return slug;
+  }
+
+  /* Names are the builder's mapping keys, so a clash is refused rather than
+   * quietly numbered: a repeated YAML key keeps only the last role. */
+  function claimRoleName(roles, wanted, exceptIndex) {
+    var slug = roleSlug(wanted);
+    roles.forEach(function (role, index) {
+      if (index !== exceptIndex && role.name === slug) {
+        fail('There is already a role called "' + slug + '" at position ' + index
+          + '. Trial role names have to be unique - they are the config\'s condition keys.');
+      }
+    });
+    return slug;
+  }
+
+  function roleIndex(roles, value) {
+    if (typeof value === 'number') return positionIn(roles, value, 'trial role');
+    var slug = roleSlug(value);
+    for (var i = 0; i < roles.length; i += 1) {
+      if (roles[i].name === slug) return i;
+    }
+    return fail('There is no trial role "' + slug + '". The design\'s roles: '
+      + roles.map(function (role, index) { return index + ' ' + role.name; }).join(', ') + '.');
+  }
+
+  /* One role of a whole list, for role.setAll. */
+  function cleanRole(raw, label, position) {
+    if (!raw || typeof raw !== 'object') fail(label + ' must be an object.');
+    Object.keys(raw).forEach(function (key) {
+      if (key === 'index' && position !== undefined) {
+        if (raw.index !== position) {
+          fail(label + ' says index ' + JSON.stringify(raw.index) + ' but is at position '
+            + position + '. The list order is the role order: drop "index" or reorder the list.');
+        }
+        return;
+      }
+      if (!ROLE_FIELDS[key]) {
+        fail(label + ' has no field "' + key + '". Trial roles take: '
+          + ROLE_FIELD_NAMES.join(', ') + '.');
+      }
+    });
+    if (raw.name === undefined) fail(label + ' needs "name".');
+    /* In the order the design stores a role, so an unchanged list saves byte
+     * for byte as it was. */
+    return {
+      name: roleSlug(checkValue(ROLE_FIELDS.name, raw.name, label + ' name')),
+      shape: raw.shape === undefined ? ''
+        : String(checkValue(ROLE_FIELDS.shape, raw.shape, label + ' shape')).trim(),
+      showQuestion: raw.showQuestion === undefined ? true
+        : checkValue(ROLE_FIELDS.showQuestion, raw.showQuestion, label + ' showQuestion'),
+      response: raw.response === undefined ? 'answer'
+        : checkValue(ROLE_FIELDS.response, raw.response, label + ' response'),
+      cueFromResponse: raw.cueFromResponse === undefined ? false
+        : checkValue(ROLE_FIELDS.cueFromResponse, raw.cueFromResponse, label + ' cueFromResponse')
+    };
+  }
+
+  function cleanRoles(rows, label) {
+    if (!rows.length) fail('A design needs at least one trial role.');
+    var seen = {};
+    return rows.map(function (raw, index) {
+      var role = cleanRole(raw, label + ' ' + index, index);
+      if (seen[role.name]) {
+        fail('Two roles are called "' + role.name + '". Trial role names have to be unique - '
+          + 'they are the config\'s condition keys.');
+      }
+      seen[role.name] = true;
+      return role;
+    });
+  }
+
+  action({
+    name: 'role.add', group: 'Roles',
+    ui: 'Roles > Add role',
+    summary: 'Add a trial role - what a trial presents, and the shape that identifies it (not '
+      + 'a phase role). Default: appended, no shape, the question shown, response "answer"',
+    args: {
+      name: ROLE_FIELDS.name,
+      shape: ROLE_FIELDS.shape,
+      showQuestion: ROLE_FIELDS.showQuestion,
+      response: ROLE_FIELDS.response,
+      cueFromResponse: ROLE_FIELDS.cueFromResponse,
+      index: integer('0-based position to insert at (default: the end). Position 0 makes it '
+        + 'the primary role', 0)
+    },
+    run: function (ctx, args) {
+      var roles = stateRoles(ctx);
+      var raw = { name: has(args, 'name') ? args.name : 'role ' + (roles.length + 1) };
+      ['shape', 'showQuestion', 'response', 'cueFromResponse'].forEach(function (key) {
+        if (has(args, key)) raw[key] = args[key];
+      });
+      var role = cleanRole(raw, 'role.add');
+      role.name = claimRoleName(roles, role.name, -1);
+      var at = insertAt(roles, role, args.index);
+      return { index: at, role: H.deepCopy(role) };
+    }
+  });
+
+  action({
+    name: 'role.update', group: 'Roles',
+    ui: 'Roles > Trial roles (a row\'s name, shape, question, response or cue from response)',
+    summary: 'Edit one trial role',
+    args: Object.assign({ role: required(ROLE_REF) }, ROLE_FIELDS),
+    locate: ['role'],
+    target: function (ctx, args) {
+      var roles = stateRoles(ctx);
+      return roles[roleIndex(roles, args.role)];
+    },
+    run: function (ctx, args) {
+      nothingToChange('role.update', args, ROLE_FIELD_NAMES);
+      var roles = stateRoles(ctx);
+      var index = roleIndex(roles, args.role);
+      var fields = Object.assign({}, args);
+      if (has(args, 'name')) fields.name = claimRoleName(roles, args.name, index);
+      if (has(args, 'shape')) fields.shape = String(args.shape).trim();
+      var changed = assign(roles[index], fields, ROLE_FIELD_NAMES);
+      return { index: index, changed: changed, role: H.deepCopy(roles[index]) };
+    }
+  });
+
+  action({
+    name: 'role.move', group: 'Roles',
+    ui: 'Roles > Trial roles > up / down arrows',
+    summary: 'Reorder a trial role. The first one is the primary role, so moving a role to '
+      + 'position 0 is how the primary trials change hands',
+    args: Object.assign({ role: required(ROLE_REF) }, MOVE_ARGS),
+    run: function (ctx, args) {
+      var roles = stateRoles(ctx);
+      return move(roles, roleIndex(roles, args.role), args);
+    }
+  });
+
+  action({
+    name: 'role.remove', group: 'Roles',
+    ui: 'Roles > Trial roles > x',
+    summary: 'Delete a trial role; a design keeps at least one',
+    args: { role: required(ROLE_REF) },
+    run: function (ctx, args) {
+      var roles = stateRoles(ctx);
+      var index = roleIndex(roles, args.role);
+      if (roles.length <= 1) {
+        fail('A design needs at least one trial role: a config with no conditions is one the '
+          + 'PsychoPy builder refuses to load.');
+      }
+      var removed = roles.splice(index, 1)[0];
+      return { index: index, removed: removed };
+    }
+  });
+
+  action({
+    name: 'role.setAll', group: 'Roles',
+    ui: 'Roles > Trial roles (the whole table at once)',
+    summary: 'Replace every trial role. Each is {name, shape, showQuestion, response, '
+      + 'cueFromResponse}; the first is the primary role',
+    args: { roles: required(list('The roles in order, at least one')) },
+    run: function (ctx, args) {
+      ctx.state.roles = cleanRoles(args.roles, 'role');
+      return { roles: H.deepCopy(ctx.state.roles) };
+    }
+  });
+
+  action({
+    name: 'role.reset', group: 'Roles',
+    ui: 'Roles > Reset to the lab template',
+    summary: 'Put the roles back to the five the lab template ships with',
+    run: function (ctx) {
+      ctx.state.roles = M.defaultTrialRoles();
+      return { roles: H.deepCopy(ctx.state.roles) };
     }
   });
 
