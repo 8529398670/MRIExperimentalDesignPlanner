@@ -149,6 +149,7 @@ On a refusal, `ok` is false and `error` says which action failed and why, for ex
 | GET | `/api/v1/designs/<name>/export/<format>` | `markdown`, `methods` (text), `psychopy` (JSON, or `?run=<run>` for one YAML file), `json`, `figures` (SVG), `xlsx`, `bundle` (zip) |
 | GET | `/designs/<name>/psychopy` | JSON: every PsychoPy config this design compiles, in order, each with the `url` that downloads it |
 | GET | `/designs/<name>/psychopy/<config>.yaml` | One config as a file, addressed by file stem, run design id or 0-based position |
+| GET | `/designs/<name>/demo/<config>.json` | One **built run** of that config: the trial list the presentation computer would present, from the builder's own code |
 
 Workbooks and bundles built through the API are archived in `exports/`, as they are from the
 interface. The bundle has SVG figures but no PNGs, because the server has no browser to
@@ -201,6 +202,49 @@ Both addresses are exports, so both need a session cookie or an API key like eve
 export; without one the answer is 401. A token never goes in the address - it would end up in
 server logs and in referers - so a script sends `Authorization: Bearer`, and a browser is let
 in by the cookie it already has.
+
+### A built run, not just its config
+
+The same three slugs address a *played* run under `/demo/`. This is the config put through the
+PsychoPy builder's own `config.load` and `bank.build_run` (vendored verbatim in
+`planner/builder/`), so it answers the question a YAML file cannot: does this config load, and
+what does a run of it actually look like?
+
+```bash
+curl -s -H "Authorization: Bearer $KEY" \
+  'localhost:8761/designs/V2/demo/run-aim-2-question-run.json?seed=7'
+```
+
+```json
+{
+  "seed": 7,
+  "source": {"source": "planner", "design": "V2", "rev": "193437d76b4a",
+             "id": "run-mtubax2r-1di", "config": "run-aim-2-question-run",
+             "bank": "builtin", "blocks": 3},
+  "cfg": {"scanner": {"tr": 1.0, "...": "..."}, "run": {"...": "..."}},
+  "trials": [{"trial": 0, "block": 0, "condition": "primary", "view": "shapes",
+              "answer": "yes", "response_token": "yes", "cue": "\u25cf",
+              "durations": {"fixation": 3.0, "...": "..."}}],
+  "reused": 0, "n_questions": 80, "total": 592.0
+}
+```
+
+| Query | Means |
+|---|---|
+| `seed=<n>` | Reproduce a run. The same seed rebuilds the same run in real PsychoPy, for a participant with no earlier runs. Omitted, a fresh seed is drawn and returned |
+| `blocks=<n>` | Shorten the run, as `--blocks` does; condition counts rescale. More blocks than the design has is clamped to the design |
+| `bank=<name>` | Which question bank to draw from: `builtin`, or a directory under `PLANNER_DEMO_BANK_DIR` |
+
+A config the builder **refuses** answers `422` carrying its own message - the one thing worth
+having from this address in CI:
+
+```json
+{"error": "ValueError: conditions per_run sums to 29 but the run has 30 trials"}
+```
+
+`400` means the request itself was wrong (a seed that is not a number, an unknown bank). The
+browser demo at `/designs/<name>/demo/` is the same thing with a stage attached; see the
+README.
 
 ## A study from scratch
 
@@ -450,15 +494,17 @@ Add a phase (default: appended, a fixed 2 s baseline). Button: _Trials > Add pha
 - `min` (number, at least 0): Shortest duration in seconds
 - `max` (number, at least 0): Longest duration in seconds; equal to min means no jitter
 - `jitter` (boolean): Whether the wait varies trial to trial inside min..max
+- `shows` (`` | `fixation` | `question` | `cue` | `blank`): What the participant sees: fixation, question, cue or blank. Empty - the default - follows the role, which is what the regressor model reads; set it when the two differ, as an inter-trial interval does (a delay to the model, a fixation cross on screen)
 - `index` (integer, at least 0): 0-based position to insert at (default: the end)
 
 #### `phase.update`
-Edit one phase. As in the table, max is lifted to min if it would fall below it (the result notes it). Takes its item back as `design.get` returns it. Button: _Trials > Trial phases (a row's name, role, min, max and jitter)_
+Edit one phase. As in the table, max is lifted to min if it would fall below it (the result notes it). Takes its item back as `design.get` returns it. Button: _Trials > Trial phases (a row's name, role, shows, min, max and jitter)_
 
 - **`trial`** (trial id or name): Which trial design
 - **`phase`** (position or name, also `index`): 0-based position in the trial, or a phase name only one phase carries; trial.inspect calls it "index"
 - `name` (string): Phase name
 - `role` (`baseline` | `stimulus` | `delay` | `response` | `other`): What the regressor model reads: baseline, stimulus, delay, response or other
+- `shows` (`` | `fixation` | `question` | `cue` | `blank`): What the participant sees: fixation, question, cue or blank. Empty - the default - follows the role, which is what the regressor model reads; set it when the two differ, as an inter-trial interval does (a delay to the model, a fixation cross on screen)
 - `min` (number, at least 0): Shortest duration in seconds
 - `max` (number, at least 0): Longest duration in seconds; equal to min means no jitter
 - `jitter` (boolean): Whether the wait varies trial to trial inside min..max
@@ -478,47 +524,61 @@ Delete a phase; a trial keeps at least one. Button: _Trials > Trial phases > x_
 - **`phase`** (position or name, also `index`): 0-based position in the trial, or a phase name only one phase carries; trial.inspect calls it "index"
 
 
-### Roles
+### Conditions
+
+#### `screen.update`
+Set the fixation mark, what each end of a run shows, the two answer labels, how they are balanced, and how a cue writes a response token. Each is written to the config only when it differs from the task's own default. Button: _Conditions > Screens_
+
+- `fixation` (string): The mark a fixation phase draws, as the text to draw: "+", "●", "" for nothing. The builder reads it as fixation.text
+- `leadIn` (`fixation` | `blank`): What the lead-in shows: the fixation mark, or nothing
+- `leadOut` (`fixation` | `blank`): What the lead-out shows: the fixation mark, or nothing
+- `labels` (array): The two answers a question may carry, as ["yes", "no"]: the first is the one `label_balance_pct` counts, and `opposite` swaps them. The question bank has to use the same two words, or the task refuses it
+- `labelBalancePct` (number, 0 to 100): Share of each condition's trials answered with the first label; 50 is the even split the task uses by default
+- `tokenCase` (`upper` | `lower` | `as_is`): How a cue_from_response cue writes the token it shows: upper, lower or as_is
+
+#### `screen.reset`
+Put the fixation mark, both ends of a run, the labels, their balance and the token case back to the task's defaults. Button: _Conditions > Screens > Reset_
 
 #### `role.add`
-Add a trial role - what a trial presents, and the shape that identifies it (not a phase role). Default: appended, no shape, the question shown, response "answer". Button: _Roles > Add role_
+Add a trial condition - what a trial presents, and the shape that identifies it (not a phase role). Default: appended, no shape, the question shown, response "answer". Button: _Conditions > Add condition_
 
-- `name` (string): Role name. It is the builder's condition key, so it is slugged to lower_case_with_underscores, and no two roles may share one
-- `shape` (string): The shape shown for this role, as the text to draw: "●", "✖", "AB" - anything, or empty for none
+- `name` (string): Condition name. It is the builder's condition key, so it is slugged to lower_case_with_underscores, and no two may share one
+- `shape` (string): The shape shown for this condition, as the text to draw: "●", "✖", "AB" - anything, or empty for none; a phase that shows the cue paints nothing when it is empty
 - `showQuestion` (boolean): Whether the question is shown on this trial (show_question)
-- `response` (`answer` | `none` | `ready` | `opposite`): What the participant repeats in the answer window: answer (the true answer), none (stay silent), ready (the constant word) or opposite (the inverted answer)
+- `response` (`answer` | `none` | `constant` | `ready` | `opposite`): What the participant repeats in the answer window: answer (the true answer), opposite (the other label), none (stay silent) or constant (the condition's own `word`). `ready` is the older spelling of constant and the task reads them the same way
 - `cueFromResponse` (boolean): Whether the cue displays the response token itself, as cue-only trials do (cue_from_response)
 - `index` (integer, at least 0): 0-based position to insert at (default: the end). Position 0 makes it the primary role
 
 #### `role.update`
-Edit one trial role. Takes its item back as `design.get` returns it. Button: _Roles > Trial roles (a row's name, shape, question, response or cue from response)_
+Edit one trial condition. A `word` is kept only while the response repeats one, so changing the response away from constant drops it. Takes its item back as `design.get` returns it. Button: _Conditions > Trial conditions (a row's name, shape, question, response, word or cue from response)_
 
 - **`role`** (position or name, also `index`): 0-based position in the role list, or a role name
-- `name` (string): Role name. It is the builder's condition key, so it is slugged to lower_case_with_underscores, and no two roles may share one
-- `shape` (string): The shape shown for this role, as the text to draw: "●", "✖", "AB" - anything, or empty for none
+- `name` (string): Condition name. It is the builder's condition key, so it is slugged to lower_case_with_underscores, and no two may share one
+- `shape` (string): The shape shown for this condition, as the text to draw: "●", "✖", "AB" - anything, or empty for none; a phase that shows the cue paints nothing when it is empty
 - `showQuestion` (boolean): Whether the question is shown on this trial (show_question)
-- `response` (`answer` | `none` | `ready` | `opposite`): What the participant repeats in the answer window: answer (the true answer), none (stay silent), ready (the constant word) or opposite (the inverted answer)
+- `response` (`answer` | `none` | `constant` | `ready` | `opposite`): What the participant repeats in the answer window: answer (the true answer), opposite (the other label), none (stay silent) or constant (the condition's own `word`). `ready` is the older spelling of constant and the task reads them the same way
 - `cueFromResponse` (boolean): Whether the cue displays the response token itself, as cue-only trials do (cue_from_response)
+- `word` (string): What a `constant` response repeats, when the response is constant (or the older spelling `ready`, which the task reads the same way). Default: "ready"
 
 #### `role.move`
-Reorder a trial role. The first one is the primary role, so moving a role to position 0 is how the primary trials change hands. Button: _Roles > Trial roles > up / down arrows_
+Reorder a trial condition. The first one is primary, so moving one to position 0 is how the primary trials change hands. Button: _Conditions > Trial conditions > up / down arrows_
 
 - **`role`** (position or name, also `index`): 0-based position in the role list, or a role name
 - `to` (integer, at least 0): New 0-based position (clamped to the list)
 - `delta` (integer): Steps to move: -1 is one earlier, +1 one later
 
 #### `role.remove`
-Delete a trial role; a design keeps at least one. Button: _Roles > Trial roles > x_
+Delete a trial condition; a design keeps at least one. Button: _Conditions > Trial conditions > x_
 
 - **`role`** (position or name, also `index`): 0-based position in the role list, or a role name
 
 #### `role.setAll`
-Replace every trial role. Each is {name, shape, showQuestion, response, cueFromResponse}; the first is the primary role. Button: _Roles > Trial roles (the whole table at once)_
+Replace every trial condition. Each is {name, shape, showQuestion, response, cueFromResponse}; the first is the primary condition. Button: _Conditions > Trial conditions (the whole table at once)_
 
-- **`roles`** (array): The roles in order, at least one
+- **`roles`** (array): The conditions in order, at least one
 
 #### `role.reset`
-Put the roles back to the five the lab template ships with. Button: _Roles > Reset to the lab template_
+Put the conditions back to the five the lab template ships with. Button: _Conditions > Reset to the lab template_
 
 
 ### Runs

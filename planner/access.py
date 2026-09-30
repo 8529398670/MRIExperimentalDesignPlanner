@@ -35,9 +35,15 @@ OPEN_POSTS = frozenset({"/api/auth/redeem", "/api/auth/resume"})
 # though they sit under the design rather than under /api/v1: the index is a
 # list of files to fetch and each one is a file to take away, so both want the
 # same sign-in.
+#
+# So is the demo: it plays a run rather than handing over a file, but what it
+# sends the page is the config itself, which is exactly what the download is.
+# Gating one and not the other would only mean the config left by the quieter
+# door.  A figure is different - that is a view of the design, and open.
 EXPORT_READS = (
     re.compile(r"^/api/v1/designs/[^/]+/export(/|$)"),
     re.compile(r"^/designs/[^/]+/psychopy(/|$)"),
+    re.compile(r"^/designs/[^/]+/demo(/|$)"),
 )
 
 

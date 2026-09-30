@@ -377,6 +377,55 @@ select { cursor: pointer; }
 .btn[disabled] { opacity: .45; cursor: not-allowed; }
 .btn-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
+/* The three settings that decide what is on screen when no condition is. */
+.screen-fields { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; }
+.screen-field { display: flex; flex-direction: column; gap: 4px; }
+.screen-field > span {
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--ink-faint); font-weight: 600;
+}
+.screen-field input { width: 7em; text-align: center; font-size: 16px; }
+
+/* A glyph shown at the size and on the ground it will actually be drawn on,
+   so two that look alike on a white table look alike here too. */
+.glyph {
+  display: inline-block; min-width: 2em; padding: 2px 8px; border-radius: 4px;
+  background: #000; color: #fff; text-align: center; font-size: 17px; line-height: 1.3;
+}
+
+/* What a participant actually sees, phase by phase: the consequence of the
+   phase table above it, which is the part worth checking at a glance. */
+.screen-head {
+  display: flex; gap: 10px; align-items: baseline; margin: 14px 0 6px;
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;
+}
+.screen-head .muted { text-transform: none; letter-spacing: normal; font-weight: 400; }
+.screen-strip { display: flex; gap: 6px; flex-wrap: wrap; }
+.screen-step {
+  flex: 1 1 0; min-width: 82px; display: flex; flex-direction: column; gap: 3px;
+  align-items: center; padding: 8px 6px; border-radius: 6px;
+  border: 1px solid var(--line); background: #000; cursor: default;
+}
+.screen-step b {
+  font-size: 20px; line-height: 1.1; color: #fff; font-weight: 400;
+  min-height: 24px; display: block;
+}
+.screen-step.show-blank b { color: #3a3a3a; }
+.screen-step.show-question b { font-size: 13px; color: #cfd3d6; }
+.screen-step i {
+  font-style: normal; font-size: 11px; color: var(--ink-faint);
+  text-align: center; overflow-wrap: anywhere;
+}
+
+/* Two buttons that act on the same thing - download this run's config, play
+   it - joined so the row reads as one item per run rather than two. */
+.btn-pair { display: inline-flex; }
+.btn-pair .btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.btn-pair .btn + .btn {
+  border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px;
+}
+.btn-pair .btn:hover { position: relative; }
+
 .lock-btn {
   width: 26px; height: 24px; flex: none;
   border: 1px solid var(--line-strong); background: var(--surface);

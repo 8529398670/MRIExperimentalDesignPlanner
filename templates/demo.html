@@ -1,0 +1,143 @@
+{#
+  The PsychoPy demo player, on one run design of one planner design.
+
+  The chrome, the option form and the stage are the lab player's own
+  (static/player/, vendored from the builder); what this page adds is the run
+  and question-bank pickers, and the fact that the config being played was
+  compiled by the planner a moment ago rather than fetched from a checkout.
+#}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demo — {{ design }} | MRI Experimental Design Planner | Wright State University</title>
+<link rel="icon" href="{{ asset('wsu-mark.svg') }}" type="image/svg+xml">
+<link rel="stylesheet" href="{{ asset('player/style.css') }}">
+<link rel="stylesheet" href="{{ asset('player/planner.css') }}">
+</head>
+<body data-design="{{ design }}" data-slug="{{ slug }}">
+
+<main class="launcher" id="launcher">
+  <header class="top">
+    <div class="brand">
+      <div class="mark" aria-hidden="true">W</div>
+      <div>
+        <h1>{{ design }} · PsychoPy demo</h1>
+        <p>Every run is built by the PsychoPy builder's own loader, from the config this
+          design compiles. Nothing is recorded.</p>
+      </div>
+    </div>
+    <a class="btn" href="/designs/{{ design }}/export">← Back to the design</a>
+    {%- if runs %}
+    <button class="ghost" id="open-debug" title="Open the debug window (d on the stage)">Debug window</button>
+    <button class="ghost" id="theme" title="Light / dark">Theme</button>
+    {%- endif %}
+  </header>
+
+  {% if runs %}
+  <div class="toolbar">
+    <label class="picker">Run
+      <select id="run" aria-label="Run design">
+        {%- for run in runs %}
+        <option value="{{ run.stem }}"{% if run.stem == slug %} selected{% endif %}>{{ run.name or run.stem }}{% if run.error %} — will not load{% endif %}</option>
+        {%- endfor %}
+      </select>
+    </label>
+    <label class="picker">Questions
+      <select id="bank" aria-label="Question bank">
+        {%- for bank in banks %}
+        <option value="{{ bank.key }}">{{ bank.label }}{% if bank.error %} — unreadable{% else %} ({{ bank.questions }}){% endif %}</option>
+        {%- endfor %}
+      </select>
+    </label>
+    <div class="chips" id="opt-chips"></div>
+    <span style="flex:1"></span>
+    <div class="seg" role="group" aria-label="Presets">
+      <button type="button" data-preset="quick" title="2 blocks, no scanner, auto-advance, ×5, debug keys">Quick look</button>
+      <button type="button" data-preset="full" title="The whole run, simulated scanner, ×1">Full run</button>
+    </div>
+    <button id="toggle-options" aria-expanded="false">Options</button>
+    <button class="primary" id="play">▶ Play</button>
+  </div>
+
+  <form class="options" id="options" hidden>
+    <div class="field">
+      <label class="title" for="o-seed">Seed</label>
+      <div class="row">
+        <input type="number" id="o-seed" name="seed" placeholder="random" min="0" step="1">
+        <input type="number" id="o-blocks" name="blocks" placeholder="all blocks" min="1" step="1" aria-label="Blocks">
+      </div>
+      <span class="hint">The same seed rebuilds the same run in PsychoPy. Blocks shortens the
+        run (<code>--blocks</code>); condition counts rescale.</span>
+    </div>
+    <div class="field">
+      <label class="title">Scanner</label>
+      <div class="seg" role="group" data-name="scanner">
+        <button type="button" data-value="none">None</button>
+        <button type="button" data-value="simulate">Simulate</button>
+        <button type="button" data-value="key">Trigger key</button>
+      </div>
+      <span class="hint">Simulate sends the dummy pulses every TR; Trigger key waits for you to press it.</span>
+    </div>
+    <div class="field">
+      <label class="title">Speed</label>
+      <div class="seg" role="group" data-name="speed">
+        <button type="button" data-value="1">×1</button>
+        <button type="button" data-value="2">×2</button>
+        <button type="button" data-value="5">×5</button>
+        <button type="button" data-value="10">×10</button>
+        <button type="button" data-value="30">×30</button>
+      </div>
+      <span class="hint">The run clock runs faster; onset drift is only measured at ×1.</span>
+    </div>
+    <div class="field">
+      <label class="title">Run</label>
+      <div class="checks">
+        <label><input type="checkbox" name="auto"> Auto-advance instructions (<code>--auto</code>)</label>
+        <label><input type="checkbox" name="debug"> Debug keys: space pauses, → skips, +/− speed</label>
+        <label><input type="checkbox" name="fullscreen"> Fullscreen</label>
+      </div>
+    </div>
+    <div class="field">
+      <label class="title">Debug view</label>
+      <div class="checks">
+        <label><input type="checkbox" name="popup"> Open the debug window on start</label>
+        <label><input type="checkbox" name="hud"> Show the HUD on the stage (h)</label>
+      </div>
+      <span class="hint">Every event also goes to the JS console: open devtools.</span>
+    </div>
+  </form>
+
+  <div class="banner error" id="banner" hidden></div>
+  <div id="run-card"></div>
+
+  <script type="application/json" id="run-data">{{ runs | tojson }}</script>
+  {% else %}
+  <div class="banner" id="banner">
+    {% if exists %}This design has no run designs, so there is nothing to play.
+    {% else %}There is no design called <strong>{{ design }}</strong>.
+      <a href="/">See the designs that exist.</a>{% endif %}
+  </div>
+  {% endif %}
+</main>
+
+<div class="stage" id="stage" tabindex="-1" hidden></div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+{%- if runs %}
+{# player.js carries a cache stamp, but its own `import './stage.js'` does not,
+   so a browser can hold a stale module against a server that has moved on -
+   which is exactly how a config whose shape changed once turned the stage
+   black. The map gives every module the stamped URL, so a rebuilt file is a
+   URL the browser has never seen. #}
+<script type="importmap">
+{"imports": {
+  "/static/player/stage.js": "{{ asset('player/stage.js') }}",
+  "/static/player/feed.js": "{{ asset('player/feed.js') }}"
+}}
+</script>
+<script type="module" src="{{ asset('player/player.js') }}"></script>
+{%- endif %}
+</body>
+</html>

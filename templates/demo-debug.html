@@ -1,0 +1,70 @@
+{#
+  The demo player's debug window, opened from the stage (`d`) or the toolbar.
+
+  The lab player's own page (V1/web/debug.html), kept as a template only so the
+  stylesheet and script carry the planner's cache stamp.  It connects to the
+  stage over a BroadcastChannel, so it needs nothing from the server.
+#}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demo debug — {{ design }}</title>
+<link rel="icon" href="{{ asset('wsu-mark.svg') }}" type="image/svg+xml">
+<link rel="stylesheet" href="{{ asset('player/style.css') }}">
+<link rel="stylesheet" href="{{ asset('player/planner.css') }}">
+<script type="importmap">
+{"imports": {"/static/player/feed.js": "{{ asset('player/feed.js') }}"}}
+</script>
+<script type="module" src="{{ asset('player/debug.js') }}"></script>
+</head>
+<body class="debug">
+  <div class="dbg">
+    <header class="dbg-head">
+      <h1><span class="status-dot" id="dot"></span><span id="title">Waiting for the stage…</span></h1>
+      <button class="small" id="copy" disabled title="The PsychoPy command for this run">Copy command</button>
+      <button class="small ghost" id="theme">Theme</button>
+    </header>
+
+    <dl class="kv" id="meta"></dl>
+
+    <div class="live" id="live">
+      <div class="line"><span class="label">run</span><div class="bar"><i id="run-bar"></i></div><span class="right" id="run-right">–</span></div>
+      <div class="line"><span></span><span class="right" id="run-where" style="text-align:left">idle</span><span></span></div>
+      <div class="line"><span class="label">phase</span><div class="bar phase"><i id="phase-bar"></i></div><span class="right" id="phase-right">–</span></div>
+      <div class="line"><span></span><span class="phase-strip" id="phase-strip"></span><span></span></div>
+      <div class="q now"><span class="label">now</span><span class="text" id="now-text">—</span><span class="badge" id="now-badge"></span></div>
+      <div class="q next"><span class="label">next</span><span class="text" id="next-text">—</span><span class="badge" id="next-badge"></span></div>
+      <div class="stat-row" id="stats"></div>
+    </div>
+
+    <div class="controls">
+      <button class="small" id="pause">Pause</button>
+      <button class="small" id="skip" title="End the current phase now (→ on the stage)">Skip phase</button>
+      <div class="seg" id="speed" role="group" aria-label="Speed">
+        <button type="button" class="small" data-value="1">×1</button>
+        <button type="button" class="small" data-value="2">×2</button>
+        <button type="button" class="small" data-value="5">×5</button>
+        <button type="button" class="small" data-value="10">×10</button>
+        <button type="button" class="small" data-value="30">×30</button>
+      </div>
+      <form id="jump" class="controls" style="gap:4px"><input type="number" name="n" min="1" placeholder="trial" aria-label="Jump to trial" style="width:70px;padding:3px 6px"><button class="small">Jump</button></form>
+      <span class="spacer"></span>
+      <button class="small ghost" id="hud" title="Toggle the HUD on the stage (h)">HUD</button>
+      <button class="small" id="abort" title="Abort the run (esc on the stage)">Abort</button>
+    </div>
+
+    <div class="log-tools">
+      <input type="search" id="filter" placeholder="Filter the log" aria-label="Filter the log">
+      <label><input type="checkbox" data-cat="trial" checked> trials</label>
+      <label><input type="checkbox" data-cat="phase" checked> phases</label>
+      <label><input type="checkbox" data-cat="pulse" checked> pulses</label>
+      <label><input type="checkbox" data-cat="volume"> volumes</label>
+      <label><input type="checkbox" data-cat="control" checked> controls</label>
+      <button class="small ghost" id="clear">Clear</button>
+    </div>
+    <div class="log" id="log" aria-live="off"></div>
+  </div>
+</body>
+</html>

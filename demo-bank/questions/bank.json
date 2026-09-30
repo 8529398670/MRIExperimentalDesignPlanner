@@ -1,0 +1,1130 @@
+[
+ {
+  "uuid": "b5f8c7d7-82f5-5776-8566-cf2656496059",
+  "category": "perceptual_relational",
+  "view": "shapes",
+  "text": "Is the triangle above the square?",
+  "answer": "yes",
+  "family": "relpos_triangle_square",
+  "params": {
+   "shapes": [
+    {
+     "kind": "triangle",
+     "pos": [
+      0.0,
+      0.06
+     ]
+    },
+    {
+     "kind": "square",
+     "pos": [
+      0.0,
+      -0.16
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "uuid": "0dc4f333-1379-52d1-8a48-1ddbf7545608",
+  "category": "perceptual_relational",
+  "view": "shapes",
+  "text": "Is the triangle below the square?",
+  "answer": "no",
+  "family": "relpos_triangle_square",
+  "params": {
+   "shapes": [
+    {
+     "kind": "triangle",
+     "pos": [
+      0.0,
+      0.06
+     ]
+    },
+    {
+     "kind": "square",
+     "pos": [
+      0.0,
+      -0.16
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "uuid": "5d05bf1b-c6b3-506a-ac8e-4093dbefa24a",
+  "category": "perceptual_relational",
+  "view": "shapes",
+  "text": "Is the triangle left of the square?",
+  "answer": "yes",
+  "family": "relpos_triangle_square",
+  "params": {
+   "shapes": [
+    {
+     "kind": "triangle",
+     "pos": [
+      -0.16,
+      -0.05
+     ]
+    },
+    {
+     "kind": "square",
+     "pos": [
+      0.16,
+      -0.05
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "uuid": "a966f4f2-bfc8-53bc-b51d-52ddac8fbe74",
+  "category": "perceptual_relational",
+  "view": "shapes",
+  "text": "Is the triangle right of the square?",
+  "answer": "no",
+  "family": "relpos_triangle_square",
+  "params": {
+   "shapes": [
+    {
+     "kind": "triangle",
+     "pos": [
+      -0.16,
+      -0.05
+     ]
+    },
+    {
+     "kind": "square",
+     "pos": [
+      0.16,
+      -0.05
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "uuid": "9e872828-7704-5579-b862-37830e939be3",
+  "category": "perceptual_relational",
+  "view": "shapes",
+  "text": "Is the circle above the diamond?",
+  "answer": "no",
+  "family": "relpos_circle_diamond",
+  "params": {
+   "shapes": [
+    {
+     "kind": "circle",
+     "pos": [
+      0.0,
+      -0.16
+     ]
+    },
+    {
+     "kind": "diamond",
+     "pos": [
+      0.0,
+      0.06
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "uuid": "2bafacdf-4d9f-5dcb-8a23-78fb0e050bf9",
+  "category": "perceptual_relational",
+  "view": "shapes",
+  "text": "Is the circle below the diamond?",
+  "answer": "yes",
+  "family": "relpos_circle_diamond",
+  "params": {
+   "shapes": [
+    {
+     "kind": "circle",
+     "pos": [
+      0.0,
+      -0.16
+     ]
+    },
+    {
+     "kind": "diamond",
+     "pos": [
+      0.0,
+      0.06
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "uuid": "c9d433a0-0ce1-5257-a645-38f67365aeab",
+  "category": "perceptual_relational",
+  "view": "shapes",
+  "text": "Is the circle left of the diamond?",
+  "answer": "no",
+  "family": "relpos_circle_diamond",
+  "params": {
+   "shapes": [
+    {
+     "kind": "circle",
+     "pos": [
+      0.16,
+      -0.05
+     ]
+    },
+    {
+     "kind": "diamond",
+     "pos": [
+      -0.16,
+      -0.05
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "uuid": "2286f5a7-f4af-5db3-94e2-dea85977e967",
+  "category": "perceptual_relational",
+  "view": "shapes",
+  "text": "Is the circle right of the diamond?",
+  "answer": "yes",
+  "family": "relpos_circle_diamond",
+  "params": {
+   "shapes": [
+    {
+     "kind": "circle",
+     "pos": [
+      0.16,
+      -0.05
+     ]
+    },
+    {
+     "kind": "diamond",
+     "pos": [
+      -0.16,
+      -0.05
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "uuid": "9af9efd6-88e7-5749-a577-d42d2624ad45",
+  "category": "perceptual_relational",
+  "view": "shapes",
+  "text": "Is the pentagon above the hexagon?",
+  "answer": "yes",
+  "family": "relpos_pentagon_hexagon",
+  "params": {
+   "shapes": [
+    {
+     "kind": "pentagon",
+     "pos": [
+      0.0,
+      0.06
+     ]
+    },
+    {
+     "kind": "hexagon",
+     "pos": [
+      0.0,
+      -0.16
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "uuid": "2905e144-6026-59bf-adde-a01fdf1e30db",
+  "category": "perceptual_relational",
+  "view": "shapes",
+  "text": "Is the pentagon below the hexagon?",
+  "answer": "no",
+  "family": "relpos_pentagon_hexagon",
+  "params": {
+   "shapes": [
+    {
+     "kind": "pentagon",
+     "pos": [
+      0.0,
+      0.06
+     ]
+    },
+    {
+     "kind": "hexagon",
+     "pos": [
+      0.0,
+      -0.16
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "uuid": "cc83613b-017f-51a8-989a-b90185ee16ff",
+  "category": "perceptual_relational",
+  "view": "shapes",
+  "text": "Is the pentagon left of the hexagon?",
+  "answer": "yes",
+  "family": "relpos_pentagon_hexagon",
+  "params": {
+   "shapes": [
+    {
+     "kind": "pentagon",
+     "pos": [
+      -0.16,
+      -0.05
+     ]
+    },
+    {
+     "kind": "hexagon",
+     "pos": [
+      0.16,
+      -0.05
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "uuid": "5d4ba2bc-d88b-549d-8126-992143a54d3f",
+  "category": "perceptual_relational",
+  "view": "shapes",
+  "text": "Is the pentagon right of the hexagon?",
+  "answer": "no",
+  "family": "relpos_pentagon_hexagon",
+  "params": {
+   "shapes": [
+    {
+     "kind": "pentagon",
+     "pos": [
+      -0.16,
+      -0.05
+     ]
+    },
+    {
+     "kind": "hexagon",
+     "pos": [
+      0.16,
+      -0.05
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "uuid": "09a1478a-63e8-5017-aecf-0fa83a0bddb1",
+  "category": "perceptual_relational",
+  "view": "shapes",
+  "text": "Is the square above the circle?",
+  "answer": "no",
+  "family": "relpos_square_circle",
+  "params": {
+   "shapes": [
+    {
+     "kind": "square",
+     "pos": [
+      0.0,
+      -0.16
+     ]
+    },
+    {
+     "kind": "circle",
+     "pos": [
+      0.0,
+      0.06
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "uuid": "81b76b68-0fcf-54a2-9d0a-caeeb4e026fe",
+  "category": "perceptual_relational",
+  "view": "shapes",
+  "text": "Is the square below the circle?",
+  "answer": "yes",
+  "family": "relpos_square_circle",
+  "params": {
+   "shapes": [
+    {
+     "kind": "square",
+     "pos": [
+      0.0,
+      -0.16
+     ]
+    },
+    {
+     "kind": "circle",
+     "pos": [
+      0.0,
+      0.06
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "uuid": "c6c05e8f-cdbe-594d-af4c-8d03c6ea0757",
+  "category": "perceptual_relational",
+  "view": "shapes",
+  "text": "Is the square left of the circle?",
+  "answer": "no",
+  "family": "relpos_square_circle",
+  "params": {
+   "shapes": [
+    {
+     "kind": "square",
+     "pos": [
+      0.16,
+      -0.05
+     ]
+    },
+    {
+     "kind": "circle",
+     "pos": [
+      -0.16,
+      -0.05
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "uuid": "41d8e308-85df-5b1e-b6ac-c785c2b6bfa9",
+  "category": "perceptual_relational",
+  "view": "shapes",
+  "text": "Is the square right of the circle?",
+  "answer": "yes",
+  "family": "relpos_square_circle",
+  "params": {
+   "shapes": [
+    {
+     "kind": "square",
+     "pos": [
+      0.16,
+      -0.05
+     ]
+    },
+    {
+     "kind": "circle",
+     "pos": [
+      -0.16,
+      -0.05
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "uuid": "9198a5de-9ff8-596e-bb1d-9f3bf324da22",
+  "category": "perceptual_relational",
+  "view": "shapes",
+  "text": "Is the triangle above the hexagon?",
+  "answer": "yes",
+  "family": "relpos_triangle_hexagon",
+  "params": {
+   "shapes": [
+    {
+     "kind": "triangle",
+     "pos": [
+      0.0,
+      0.06
+     ]
+    },
+    {
+     "kind": "hexagon",
+     "pos": [
+      0.0,
+      -0.16
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "uuid": "fbc686b6-7173-5588-8c2a-ad476630be6c",
+  "category": "perceptual_relational",
+  "view": "shapes",
+  "text": "Is the triangle below the hexagon?",
+  "answer": "no",
+  "family": "relpos_triangle_hexagon",
+  "params": {
+   "shapes": [
+    {
+     "kind": "triangle",
+     "pos": [
+      0.0,
+      0.06
+     ]
+    },
+    {
+     "kind": "hexagon",
+     "pos": [
+      0.0,
+      -0.16
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "uuid": "fa0e6090-d9ee-5d23-8c73-45cc00ed0ef2",
+  "category": "perceptual_relational",
+  "view": "shapes",
+  "text": "Is the triangle left of the hexagon?",
+  "answer": "yes",
+  "family": "relpos_triangle_hexagon",
+  "params": {
+   "shapes": [
+    {
+     "kind": "triangle",
+     "pos": [
+      -0.16,
+      -0.05
+     ]
+    },
+    {
+     "kind": "hexagon",
+     "pos": [
+      0.16,
+      -0.05
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "uuid": "48a564e6-535d-53a2-a334-cdaaa73d5705",
+  "category": "perceptual_relational",
+  "view": "shapes",
+  "text": "Is the triangle right of the hexagon?",
+  "answer": "no",
+  "family": "relpos_triangle_hexagon",
+  "params": {
+   "shapes": [
+    {
+     "kind": "triangle",
+     "pos": [
+      -0.16,
+      -0.05
+     ]
+    },
+    {
+     "kind": "hexagon",
+     "pos": [
+      0.16,
+      -0.05
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "uuid": "ea629976-9997-5024-bb2b-86c866e923ce",
+  "category": "perceptual_relational",
+  "view": "shapes",
+  "text": "Is the diamond above the pentagon?",
+  "answer": "no",
+  "family": "relpos_diamond_pentagon",
+  "params": {
+   "shapes": [
+    {
+     "kind": "diamond",
+     "pos": [
+      0.0,
+      -0.16
+     ]
+    },
+    {
+     "kind": "pentagon",
+     "pos": [
+      0.0,
+      0.06
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "uuid": "d7be614c-1c1a-53b0-81b5-0f8d21fea8e2",
+  "category": "perceptual_relational",
+  "view": "shapes",
+  "text": "Is the diamond below the pentagon?",
+  "answer": "yes",
+  "family": "relpos_diamond_pentagon",
+  "params": {
+   "shapes": [
+    {
+     "kind": "diamond",
+     "pos": [
+      0.0,
+      -0.16
+     ]
+    },
+    {
+     "kind": "pentagon",
+     "pos": [
+      0.0,
+      0.06
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "uuid": "ed01a5d6-b755-53d5-ba9a-aec55d12e52d",
+  "category": "perceptual_relational",
+  "view": "shapes",
+  "text": "Is the diamond left of the pentagon?",
+  "answer": "no",
+  "family": "relpos_diamond_pentagon",
+  "params": {
+   "shapes": [
+    {
+     "kind": "diamond",
+     "pos": [
+      0.16,
+      -0.05
+     ]
+    },
+    {
+     "kind": "pentagon",
+     "pos": [
+      -0.16,
+      -0.05
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "uuid": "de3e71cf-7e4f-52fc-96f3-6ccdd28e3c4d",
+  "category": "perceptual_relational",
+  "view": "shapes",
+  "text": "Is the diamond right of the pentagon?",
+  "answer": "yes",
+  "family": "relpos_diamond_pentagon",
+  "params": {
+   "shapes": [
+    {
+     "kind": "diamond",
+     "pos": [
+      0.16,
+      -0.05
+     ]
+    },
+    {
+     "kind": "pentagon",
+     "pos": [
+      -0.16,
+      -0.05
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "uuid": "94e44712-0508-5c20-9a8a-529184250a5c",
+  "category": "arithmetic",
+  "view": "text",
+  "text": "Is 3 + 4 greater than 6?",
+  "answer": "yes",
+  "family": "arith_sum_greater",
+  "params": {}
+ },
+ {
+  "uuid": "d2d326cd-8650-5749-890e-378d57699a1c",
+  "category": "arithmetic",
+  "view": "text",
+  "text": "Is 4 + 7 greater than 13?",
+  "answer": "no",
+  "family": "arith_sum_greater",
+  "params": {}
+ },
+ {
+  "uuid": "2d60dabb-bd5b-597f-93f3-8f086910caf7",
+  "category": "arithmetic",
+  "view": "text",
+  "text": "Is 5 + 10 greater than 12?",
+  "answer": "yes",
+  "family": "arith_sum_greater",
+  "params": {}
+ },
+ {
+  "uuid": "3fc9f8af-19aa-54fe-b248-d3011be24c91",
+  "category": "arithmetic",
+  "view": "text",
+  "text": "Is 6 + 6 greater than 13?",
+  "answer": "no",
+  "family": "arith_sum_greater",
+  "params": {}
+ },
+ {
+  "uuid": "17f9237b-92e6-593c-8c3e-d3f27886b1c2",
+  "category": "arithmetic",
+  "view": "text",
+  "text": "Is 7 + 9 greater than 14?",
+  "answer": "yes",
+  "family": "arith_sum_greater",
+  "params": {}
+ },
+ {
+  "uuid": "2b8101ba-dbf6-505d-866c-210a16ea5b09",
+  "category": "arithmetic",
+  "view": "text",
+  "text": "Is 8 + 5 greater than 16?",
+  "answer": "no",
+  "family": "arith_sum_greater",
+  "params": {}
+ },
+ {
+  "uuid": "13caf270-b2e8-5213-88bb-4c8395c2ebab",
+  "category": "arithmetic",
+  "view": "text",
+  "text": "Is 9 + 8 greater than 16?",
+  "answer": "yes",
+  "family": "arith_sum_greater",
+  "params": {}
+ },
+ {
+  "uuid": "aaa412e3-00b1-5866-86b9-8cbed8cf0823",
+  "category": "arithmetic",
+  "view": "text",
+  "text": "Is 10 + 4 greater than 16?",
+  "answer": "no",
+  "family": "arith_sum_greater",
+  "params": {}
+ },
+ {
+  "uuid": "5441dfe6-912f-516d-9b84-037ad71e08b0",
+  "category": "arithmetic",
+  "view": "text",
+  "text": "Is 11 + 7 greater than 15?",
+  "answer": "yes",
+  "family": "arith_sum_greater",
+  "params": {}
+ },
+ {
+  "uuid": "05ee5939-1d7f-5b0d-a352-125e49a5b21c",
+  "category": "arithmetic",
+  "view": "text",
+  "text": "Is 12 + 10 greater than 23?",
+  "answer": "no",
+  "family": "arith_sum_greater",
+  "params": {}
+ },
+ {
+  "uuid": "af856388-753e-5219-8873-fe858c17ef9f",
+  "category": "arithmetic",
+  "view": "text",
+  "text": "Is 12 − 2 less than 11?",
+  "answer": "yes",
+  "family": "arith_difference_less",
+  "params": {}
+ },
+ {
+  "uuid": "f6215ef6-51d6-5f53-9ff9-11c8a111f76a",
+  "category": "arithmetic",
+  "view": "text",
+  "text": "Is 17 − 3 less than 12?",
+  "answer": "no",
+  "family": "arith_difference_less",
+  "params": {}
+ },
+ {
+  "uuid": "13ec566d-db74-5d28-bab0-dc52952b106f",
+  "category": "arithmetic",
+  "view": "text",
+  "text": "Is 13 − 4 less than 12?",
+  "answer": "yes",
+  "family": "arith_difference_less",
+  "params": {}
+ },
+ {
+  "uuid": "fdef598b-d314-55cc-9fc4-d36293bc2413",
+  "category": "arithmetic",
+  "view": "text",
+  "text": "Is 18 − 5 less than 12?",
+  "answer": "no",
+  "family": "arith_difference_less",
+  "params": {}
+ },
+ {
+  "uuid": "f01cf718-0963-5ed5-be5a-b3be81538f85",
+  "category": "arithmetic",
+  "view": "text",
+  "text": "Is 14 − 6 less than 10?",
+  "answer": "yes",
+  "family": "arith_difference_less",
+  "params": {}
+ },
+ {
+  "uuid": "932522bc-f509-5466-8913-f83227987a94",
+  "category": "arithmetic",
+  "view": "text",
+  "text": "Is 19 − 7 less than 9?",
+  "answer": "no",
+  "family": "arith_difference_less",
+  "params": {}
+ },
+ {
+  "uuid": "2c4a1d2a-6300-56c4-95ef-c89676646865",
+  "category": "arithmetic",
+  "view": "text",
+  "text": "Is 15 − 2 less than 14?",
+  "answer": "yes",
+  "family": "arith_difference_less",
+  "params": {}
+ },
+ {
+  "uuid": "ee7652b1-ad3c-59c9-8802-0a17600d8c85",
+  "category": "arithmetic",
+  "view": "text",
+  "text": "Is 20 − 3 less than 15?",
+  "answer": "no",
+  "family": "arith_difference_less",
+  "params": {}
+ },
+ {
+  "uuid": "b860c64a-cc43-5697-b0eb-182499d62a83",
+  "category": "arithmetic",
+  "view": "text",
+  "text": "Is 16 − 4 less than 15?",
+  "answer": "yes",
+  "family": "arith_difference_less",
+  "params": {}
+ },
+ {
+  "uuid": "164c681c-7f77-5676-83e8-5c4aae6c0958",
+  "category": "arithmetic",
+  "view": "text",
+  "text": "Is 12 − 5 less than 6?",
+  "answer": "no",
+  "family": "arith_difference_less",
+  "params": {}
+ },
+ {
+  "uuid": "8d13333c-d41d-53e5-ad80-999e740e221c",
+  "category": "linguistic",
+  "view": "text",
+  "text": "Does M come after H in the alphabet?",
+  "answer": "yes",
+  "family": "alpha_after",
+  "params": {}
+ },
+ {
+  "uuid": "fea11169-7405-51e9-bfc7-6aacc3363add",
+  "category": "linguistic",
+  "view": "text",
+  "text": "Does D come after R in the alphabet?",
+  "answer": "no",
+  "family": "alpha_after",
+  "params": {}
+ },
+ {
+  "uuid": "04ec58c3-b4c7-542c-8098-fdb4a9ff7a46",
+  "category": "linguistic",
+  "view": "text",
+  "text": "Does K come after B in the alphabet?",
+  "answer": "yes",
+  "family": "alpha_after",
+  "params": {}
+ },
+ {
+  "uuid": "0137d549-dde5-5481-a8f6-abc59339c4f6",
+  "category": "linguistic",
+  "view": "text",
+  "text": "Does P come after T in the alphabet?",
+  "answer": "no",
+  "family": "alpha_after",
+  "params": {}
+ },
+ {
+  "uuid": "5996b415-c41d-5049-8bbf-14411acf603d",
+  "category": "linguistic",
+  "view": "text",
+  "text": "Does F come after C in the alphabet?",
+  "answer": "yes",
+  "family": "alpha_after",
+  "params": {}
+ },
+ {
+  "uuid": "d2367880-2301-5824-9cb1-81c80887ee02",
+  "category": "linguistic",
+  "view": "text",
+  "text": "Does N come after W in the alphabet?",
+  "answer": "no",
+  "family": "alpha_after",
+  "params": {}
+ },
+ {
+  "uuid": "3c17a561-137f-5e46-a4d0-50abb0558ab5",
+  "category": "linguistic",
+  "view": "text",
+  "text": "Does J come after G in the alphabet?",
+  "answer": "yes",
+  "family": "alpha_after",
+  "params": {}
+ },
+ {
+  "uuid": "ad243585-d9ed-5e71-ac48-0f2bccb1a335",
+  "category": "linguistic",
+  "view": "text",
+  "text": "Does L come after S in the alphabet?",
+  "answer": "no",
+  "family": "alpha_after",
+  "params": {}
+ },
+ {
+  "uuid": "438dcf0e-fc37-509c-b8cc-4c8a36fdb052",
+  "category": "linguistic",
+  "view": "text",
+  "text": "Does Q come after E in the alphabet?",
+  "answer": "yes",
+  "family": "alpha_after",
+  "params": {}
+ },
+ {
+  "uuid": "8449bdd0-dc5e-5165-9926-f59b50777690",
+  "category": "linguistic",
+  "view": "text",
+  "text": "Does M come before H in the alphabet?",
+  "answer": "no",
+  "family": "alpha_before",
+  "params": {}
+ },
+ {
+  "uuid": "c233e757-8af5-5522-8433-7c6ca919c665",
+  "category": "linguistic",
+  "view": "text",
+  "text": "Does D come before R in the alphabet?",
+  "answer": "yes",
+  "family": "alpha_before",
+  "params": {}
+ },
+ {
+  "uuid": "823203ba-fab0-5089-85ca-77fe85a895cb",
+  "category": "linguistic",
+  "view": "text",
+  "text": "Does K come before B in the alphabet?",
+  "answer": "no",
+  "family": "alpha_before",
+  "params": {}
+ },
+ {
+  "uuid": "07b250fa-a835-5ced-a722-4727ce4c023c",
+  "category": "linguistic",
+  "view": "text",
+  "text": "Does P come before T in the alphabet?",
+  "answer": "yes",
+  "family": "alpha_before",
+  "params": {}
+ },
+ {
+  "uuid": "e81aec54-3560-5448-9a27-18f9542a5417",
+  "category": "linguistic",
+  "view": "text",
+  "text": "Does F come before C in the alphabet?",
+  "answer": "no",
+  "family": "alpha_before",
+  "params": {}
+ },
+ {
+  "uuid": "4343126f-9bf9-5612-a55b-1203bed7e652",
+  "category": "linguistic",
+  "view": "text",
+  "text": "Does N come before W in the alphabet?",
+  "answer": "yes",
+  "family": "alpha_before",
+  "params": {}
+ },
+ {
+  "uuid": "e4d548c9-efdd-59b3-86be-ce89483a906f",
+  "category": "linguistic",
+  "view": "text",
+  "text": "Does J come before G in the alphabet?",
+  "answer": "no",
+  "family": "alpha_before",
+  "params": {}
+ },
+ {
+  "uuid": "44821361-0478-5608-9b0d-d29cf17615d6",
+  "category": "linguistic",
+  "view": "text",
+  "text": "Does L come before S in the alphabet?",
+  "answer": "yes",
+  "family": "alpha_before",
+  "params": {}
+ },
+ {
+  "uuid": "8aacea90-6406-56cf-a3f9-d14e8ff644e6",
+  "category": "linguistic",
+  "view": "text",
+  "text": "Does Q come before E in the alphabet?",
+  "answer": "no",
+  "family": "alpha_before",
+  "params": {}
+ },
+ {
+  "uuid": "8afc7fb2-3160-5082-81ff-935385be2f8f",
+  "category": "logic",
+  "view": "text",
+  "text": "Is 14 an even number?",
+  "answer": "yes",
+  "family": "parity",
+  "params": {}
+ },
+ {
+  "uuid": "a3749e4c-f202-5c57-803b-8eab8c475dc7",
+  "category": "logic",
+  "view": "text",
+  "text": "Is 21 an even number?",
+  "answer": "no",
+  "family": "parity",
+  "params": {}
+ },
+ {
+  "uuid": "9fea2d90-88f9-5a89-aa33-a8db1b4f9d71",
+  "category": "logic",
+  "view": "text",
+  "text": "Is 28 an even number?",
+  "answer": "yes",
+  "family": "parity",
+  "params": {}
+ },
+ {
+  "uuid": "d53e5b6a-1c12-56e9-b3e8-d64ff433fec0",
+  "category": "logic",
+  "view": "text",
+  "text": "Is 35 an even number?",
+  "answer": "no",
+  "family": "parity",
+  "params": {}
+ },
+ {
+  "uuid": "6158d3c2-614b-5581-a42a-cf58e225b0bb",
+  "category": "logic",
+  "view": "text",
+  "text": "Is 42 an even number?",
+  "answer": "yes",
+  "family": "parity",
+  "params": {}
+ },
+ {
+  "uuid": "3e0bf1b9-06db-5b68-8fa8-8936068e5fd3",
+  "category": "logic",
+  "view": "text",
+  "text": "Is 49 an even number?",
+  "answer": "no",
+  "family": "parity",
+  "params": {}
+ },
+ {
+  "uuid": "506bbbf9-294a-5002-9316-4b3c20b083fc",
+  "category": "logic",
+  "view": "text",
+  "text": "Is 12 divisible by 3?",
+  "answer": "yes",
+  "family": "divisible",
+  "params": {}
+ },
+ {
+  "uuid": "22368d90-b98b-5f63-90b0-181be6ff00f3",
+  "category": "logic",
+  "view": "text",
+  "text": "Is 21 divisible by 4?",
+  "answer": "no",
+  "family": "divisible",
+  "params": {}
+ },
+ {
+  "uuid": "46309abb-b3be-5693-86bb-4cdfa0b33e18",
+  "category": "logic",
+  "view": "text",
+  "text": "Is 30 divisible by 5?",
+  "answer": "yes",
+  "family": "divisible",
+  "params": {}
+ },
+ {
+  "uuid": "a80d40a3-4f79-5e32-8bd6-6bc79dfa382d",
+  "category": "logic",
+  "view": "text",
+  "text": "Is 22 divisible by 3?",
+  "answer": "no",
+  "family": "divisible",
+  "params": {}
+ },
+ {
+  "uuid": "af3bf5c4-e0bb-5866-982e-f4c0f4673837",
+  "category": "logic",
+  "view": "text",
+  "text": "Is 32 divisible by 4?",
+  "answer": "yes",
+  "family": "divisible",
+  "params": {}
+ },
+ {
+  "uuid": "bd0eccbe-8db4-5c95-8d9b-de5d4a2024d5",
+  "category": "logic",
+  "view": "text",
+  "text": "Is 46 divisible by 5?",
+  "answer": "no",
+  "family": "divisible",
+  "params": {}
+ },
+ {
+  "uuid": "74cbbe9f-ee64-5877-ac5b-198bed26b730",
+  "category": "logic",
+  "view": "text",
+  "text": "Is 25 greater than 10 and less than 40?",
+  "answer": "yes",
+  "family": "between",
+  "params": {}
+ },
+ {
+  "uuid": "ddd6b20c-9c93-57d3-8545-c25b4bb0df6b",
+  "category": "logic",
+  "view": "text",
+  "text": "Is 47 greater than 14 and less than 44?",
+  "answer": "no",
+  "family": "between",
+  "params": {}
+ },
+ {
+  "uuid": "520c3988-40b5-5433-952c-b953970324b5",
+  "category": "logic",
+  "view": "text",
+  "text": "Is 33 greater than 18 and less than 48?",
+  "answer": "yes",
+  "family": "between",
+  "params": {}
+ },
+ {
+  "uuid": "b29356bb-25ba-5c48-bdeb-b80e35bcb12e",
+  "category": "logic",
+  "view": "text",
+  "text": "Is 55 greater than 22 and less than 52?",
+  "answer": "no",
+  "family": "between",
+  "params": {}
+ },
+ {
+  "uuid": "99ce56fb-d108-58db-9331-d557419ca3b2",
+  "category": "logic",
+  "view": "text",
+  "text": "Is 41 greater than 26 and less than 56?",
+  "answer": "yes",
+  "family": "between",
+  "params": {}
+ },
+ {
+  "uuid": "6c1e7975-287c-52fe-b7bb-5d8a9c3f4549",
+  "category": "logic",
+  "view": "text",
+  "text": "Is 63 greater than 30 and less than 60?",
+  "answer": "no",
+  "family": "between",
+  "params": {}
+ }
+]

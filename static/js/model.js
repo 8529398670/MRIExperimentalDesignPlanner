@@ -156,7 +156,37 @@
     return PHASE_ROLES.some(function (entry) { return entry.id === key; }) ? key : 'other';
   }
 
-  /* --- trial roles ------------------------------------------------------
+  /* What a phase puts on the screen, which is not the same question as what
+   * the regressor model calls it.  A maintenance delay and an inter-trial
+   * interval are both `delay` to the model, but one wants a blank screen -
+   * nothing to read during the retention - and the other wants the fixation
+   * cross, as the lab's own configs do with their `fixation_post`.
+   *
+   * So a phase may say so.  Unset - the first entry - means follow the role,
+   * which is what every design did before this field existed, so nothing
+   * moves until someone sets it.  The four after that are the only values
+   * the builder knows: `config._validate` refuses a file with any other. */
+  var PHASE_SHOWS = [
+    { id: '', label: 'From the role' },
+    { id: 'fixation', label: 'Fixation cross' },
+    { id: 'question', label: 'The question' },
+    { id: 'cue', label: 'The role\'s cue' },
+    { id: 'blank', label: 'Blank screen' }
+  ];
+
+  function normaliseShow(show) {
+    var key = String(show === undefined || show === null ? '' : show).toLowerCase().trim();
+    return PHASE_SHOWS.some(function (entry) { return entry.id === key; }) ? key : '';
+  }
+
+  /* What one phase shows: its own answer if it has one, else its role's. */
+  function phaseShow(phase) {
+    var own = normaliseShow(phase && phase.shows);
+    if (own) return own;
+    return PSYCHOPY_SHOW[normaliseRole(phase && phase.role)] || 'blank';
+  }
+
+  /* --- trial conditions -------------------------------------------------
    *
    * A different thing from the phase roles above, and from the acquisition
    * card roles in `boot.roles`: a *trial* role is one of the things a trial
@@ -179,10 +209,22 @@
    *   answer   - the true answer        none  - stay silent
    *   opposite - the inverted answer    ready - the constant word "ready"
    */
-  var RESPONSE_TOKENS = ['answer', 'none', 'ready', 'opposite'];
+  /* What a trial's participant repeats.  `constant` says a fixed word, which
+   * the condition carries as `word`; the task reads the older `ready` the
+   * same way, so designs written before it keep working untouched. */
+  var RESPONSE_TOKENS = ['answer', 'none', 'constant', 'ready', 'opposite'];
+
+  /* A response that repeats a word rather than an answer, so the condition
+   * needs one.  The task's own default is "ready". */
+  var CONSTANT_RESPONSES = ['constant', 'ready'];
+  var DEFAULT_CONSTANT_WORD = 'ready';
+
+  function needsWord(role) {
+    return CONSTANT_RESPONSES.indexOf(normaliseResponse(role && role.response)) >= 0;
+  }
 
   /* The lab template's five, which is what every design starts from and what
-   * a design saved before the Roles panel existed comes back carrying - so
+   * a design saved before the Conditions panel existed comes back carrying - so
    * its exports are unchanged. */
   var DEFAULT_TRIAL_ROLES = [
     { name: 'primary', shape: '\u25CF', showQuestion: true, response: 'answer',
@@ -204,7 +246,7 @@
     return RESPONSE_TOKENS.indexOf(key) >= 0 ? key : 'answer';
   }
 
-  /* One trial role, cleaned.  `taken` carries the names already used so a
+  /* One trial condition, cleaned.  `taken` carries the names already used so a
    * duplicate is numbered rather than silently swallowing the earlier role:
    * the builder keys its conditions by name, and a repeated YAML key keeps
    * only the last one. */
@@ -214,13 +256,22 @@
     var name = base;
     for (var i = 2; taken && taken[name]; i += 1) name = base + '_' + i;
     if (taken) taken[name] = true;
-    return {
+    var clean = {
       name: name,
       shape: String(role.shape === undefined || role.shape === null ? '' : role.shape).trim(),
       showQuestion: role.showQuestion === undefined ? true : !!role.showQuestion,
       response: normaliseResponse(role.response),
       cueFromResponse: !!role.cueFromResponse
     };
+    /* Only on the conditions that repeat one: the task fills the rest in
+     * from `condition_defaults`, and a design that never used a constant
+     * response keeps the shape it was saved with. */
+    if (needsWord(clean)) {
+      var word = String(role.word === undefined || role.word === null
+        ? DEFAULT_CONSTANT_WORD : role.word).trim();
+      clean.word = word || DEFAULT_CONSTANT_WORD;
+    }
+    return clean;
   }
 
   /* The trial roles in force, whatever a saved design happens to carry.  An
@@ -821,6 +872,7 @@
 
     return {
       version: 2,
+      screens: defaultScreens(),
       meta: {
         studyTitle: 'MRI Experimental Design',
         investigator: '',
@@ -1196,6 +1248,9 @@
     delete state.aims;
     delete state.session;
 
+    /* Designs saved before the screens block existed come back with the lab
+     * template's own marks, which is exactly what their exports said. */
+    state.screens = screens(state);
     state.hrf = Object.assign(defaultHrf(), state.hrf || {});
     state.hrf.objectives = Object.assign(defaultHrf().objectives, state.hrf.objectives || {});
     /* Designs saved before geometric jitter existed come back uniform, which is
@@ -1203,7 +1258,7 @@
     state.jitter = jitterSettings(Object.assign({}, state, {
       jitter: Object.assign(defaultJitter(), state.jitter || {})
     }));
-    /* Designs saved before the Roles panel existed come back carrying the
+    /* Designs saved before the Conditions panel existed come back carrying the
      * lab template, which is exactly what their exports already said. */
     state.roles = trialRoles(state);
 
@@ -1214,13 +1269,19 @@
     state.trials.forEach(function (trial) {
       if (!trial.id) trial.id = makeId('trial');
       trial.phases = (trial.phases || []).map(function (phase) {
-        return {
+        var clean = {
           name: String(phase.name || 'Phase'),
           min: num(phase.min),
           max: Math.max(num(phase.min), num(phase.max)),
           jitter: !!phase.jitter,
           role: normaliseRole(phase.role)
         };
+        /* Only when the phase has something of its own to say: a phase that
+         * follows its role carries no `shows`, so a design saved before the
+         * field existed comes back exactly as it went in. */
+        var shows = normaliseShow(phase.shows);
+        if (shows) clean.shows = shows;
+        return clean;
       });
       if (trial.controlPct === undefined) trial.controlPct = 0;
       if (!trial.objective) trial.objective = 'estimation';
@@ -2560,46 +2621,102 @@
   /* The lab template - the builder's own config, section for section.  Its
    * loader refuses a file without `paths.bank`, and a `show` outside
    * fixation / question / cue / blank, so these are not cosmetic. */
-  var PSYCHOPY_PRESENTATION = [
-    'paths:',
-    '  data_dir: data                 # the common JSON database lives here',
-    '  bank: questions/bank.json',
-    '  images_dir: questions/images',
-    '',
-    'window:',
-    '  size: [1280, 800]',
-    '  fullscreen: true',
-    '  screen: 0',
-    '  color: [-1, -1, -1]            # PsychoPy rgb, -1..1  (black)',
-    '  units: height',
-    '  mouse_visible: false',
-    '',
-    'text:',
-    '  font: Arial',
-    '  height: 0.06',
-    '  wrap_width: 1.3',
-    '  color: [1, 1, 1]',
-    '  title_pos: [0, 0.30]           # where views that also show graphics put the text',
-    '',
-    'fixation:',
-    '  text: "+"',
-    '  height: 0.08',
-    '  color: [1, 1, 1]',
-    '',
-    'cue:',
-    '  height: 0.12',
-    '  color: [1, 1, 1]'
+  /* The mark a `show: fixation` phase puts up, when a design has not said
+   * otherwise.  The builder reads it as `fixation.text`. */
+  var FIXATION_GLYPH = '+';
+
+  /* What the lead-in and the lead-out can put up.  There is no trial yet (or
+   * any more) at either end of a run, so a cue and a question have nothing to
+   * draw from: the mark, or nothing. */
+  var LEAD_SHOWS = [
+    { id: 'fixation', label: 'The fixation mark' },
+    { id: 'blank', label: 'Nothing - a blank screen' }
   ];
 
-  var PSYCHOPY_KEYS = [
-    'console:                         # operator readout in the terminal',
-    '  refresh_hz: 10                 # live redraw rate; 0 for one plain line per trial',
-    '  colour: true',
-    '',
-    'keys:',
-    '  quit: ["escape"]',
-    '  advance: ["space"]'
+  function normaliseLeadShow(value) {
+    var key = String(value || '').toLowerCase().trim();
+    return LEAD_SHOWS.some(function (entry) { return entry.id === key; }) ? key : 'fixation';
+  }
+
+  /* How a cue-from-response cue writes the token it shows. */
+  var TOKEN_CASES = [
+    { id: 'upper', label: 'UPPER CASE' },
+    { id: 'lower', label: 'lower case' },
+    { id: 'as_is', label: 'As the label is written' }
   ];
+
+  var DEFAULT_LABELS = ['yes', 'no'];
+
+  function defaultScreens() {
+    return {
+      fixation: FIXATION_GLYPH, leadIn: 'fixation', leadOut: 'fixation',
+      labels: DEFAULT_LABELS.slice(), labelBalancePct: 50, tokenCase: 'upper'
+    };
+  }
+
+  /* The two answers a question may carry.  They have to differ, and a blank
+   * one would make a question the bank could never match, so an unusable
+   * pair falls back to the task's own. */
+  function answerLabels(held) {
+    var given = (held && held.labels) || [];
+    var first = String(given[0] === undefined ? '' : given[0]).trim();
+    var second = String(given[1] === undefined ? '' : given[1]).trim();
+    if (!first || !second || first === second) return DEFAULT_LABELS.slice();
+    return [first, second];
+  }
+
+  /* Everything on screen that is not a condition's cue: the fixation mark
+   * itself, and what the two ends of a run put up.  Study-wide, like the
+   * conditions, because one config carries one of each. */
+  function screens(state) {
+    var held = (state && state.screens) || {};
+    var mark = held.fixation === undefined || held.fixation === null
+      ? FIXATION_GLYPH : String(held.fixation);
+    var token = String(held.tokenCase || '').toLowerCase().trim();
+    return {
+      fixation: mark,
+      leadIn: normaliseLeadShow(held.leadIn),
+      leadOut: normaliseLeadShow(held.leadOut),
+      labels: answerLabels(held),
+      labelBalancePct: round(clamp(num(held.labelBalancePct, 50), 0, 100), 1),
+      tokenCase: TOKEN_CASES.some(function (c) { return c.id === token; }) ? token : 'upper'
+    };
+  }
+
+  /* The glyph a `show` puts up for this design, or '' when it draws nothing.
+   * `cue` needs a trial to know which condition, so it is not answered here. */
+  function screenGlyph(state, show) {
+    if (show === 'fixation') return screens(state).fixation;
+    return '';
+  }
+
+  /* What a config has to say about presentation, which since the task grew
+   * a `config/defaults.yaml` is almost nothing.  Every key left out comes
+   * from there, so writing the lab's own values back into every export would
+   * pin them: a later change to a default could never reach a design the
+   * planner produced.  So only the mark is written, and only when the design
+   * has moved it. */
+  function psychopyPresentation(state) {
+    var held = screens(state);
+    var lines = [];
+    if (held.fixation !== FIXATION_GLYPH) {
+      lines.push('', 'fixation:',
+        '  text: ' + yamlQuoted(held.fixation)
+          + (held.fixation ? '' : '   # nothing: a blank screen'));
+    }
+    if (held.tokenCase !== 'upper') {
+      lines.push('', 'cue:', yamlSetting('token_case', held.tokenCase,
+        'how a cue_from_response cue writes the token'));
+    }
+    if (held.labels[0] !== DEFAULT_LABELS[0] || held.labels[1] !== DEFAULT_LABELS[1]) {
+      lines.push('', 'responses:');
+      /* Quoted on purpose: bare yes / no are booleans in YAML, and the
+       * task's loader says so when it gets one. */
+      lines.push('  labels: [' + held.labels.map(yamlQuoted).join(', ') + ']'
+        + '   # the two answers in the question bank');
+    }
+    return lines;
+  }
 
   /* What the screen shows during a phase, by the phase's planner role. */
   var PSYCHOPY_SHOW = {
@@ -2680,9 +2797,9 @@
   }
 
   /* The builder's `conditions:` block, which its loader requires and checks
-   * sums to the run.  Which trial roles exist, the shape each one wears and
-   * what it presents come from the design's Roles panel; the counts are the
-   * only part the run's solved size decides.
+   * sums to the run.  Which conditions exist, the shape each one wears and
+   * what it presents come from the design's Conditions panel; the counts are
+   * the only part the run's solved size decides.
    *
    * The first role is the primary one: it takes the trials the trial design
    * does not withhold as its control share, and the rest split that share as
@@ -2690,27 +2807,47 @@
    * with a single role gives it every trial - anything else would leave the
    * per_run values short of the run and the builder would refuse the file.
    *
-   * Returns the block's lines, so the Roles panel can show exactly what the
-   * export writes rather than its own rendering of it. */
+   * Returns the block's lines, so the Conditions panel can show exactly what
+   * the export writes rather than its own rendering of it. */
+  /* How many trials each condition takes of a run of `total`, given the trial
+   * design's control share.  The export and the Trials panel both read it, so
+   * neither can disagree with the other about which conditions occur. */
+  function conditionCounts(roles, trialsPerRun, controlPct) {
+    var total = Math.max(0, Math.round(num(trialsPerRun)));
+    var pct = clamp(num(controlPct), 0, 100);
+    var controlTrials = Math.min(total, Math.round(total * pct / 100));
+    var controlRoles = roles.length - 1;
+    return roles.map(function (role, index) {
+      if (index === 0) return controlRoles ? total - controlTrials : total;
+      var position = index - 1;
+      return Math.floor(controlTrials / controlRoles)
+        + (position < controlTrials % controlRoles ? 1 : 0);
+    });
+  }
+
+  /* The conditions a trial design can actually present, with the shape each
+   * would draw.  A nominal hundred trials is enough to answer "can this one
+   * ever come up": the real counts belong to a run design. */
+  function conditionsInPlay(state, controlPct) {
+    var roles = trialRoles(state);
+    var counts = conditionCounts(roles, 100, controlPct);
+    return roles.filter(function (role, index) { return counts[index] > 0; });
+  }
+
   function psychopyConditions(state, trialsPerRun, controlPct) {
     var roles = trialRoles(state);
     var total = Math.max(0, Math.round(num(trialsPerRun)));
     var pct = clamp(num(controlPct), 0, 100);
     var controlTrials = Math.min(total, Math.round(total * pct / 100));
     var controlRoles = roles.length - 1;
-
-    var counts = roles.map(function (role, index) {
-      if (index === 0) return controlRoles ? total - controlTrials : total;
-      var position = index - 1;
-      return Math.floor(controlTrials / controlRoles)
-        + (position < controlTrials % controlRoles ? 1 : 0);
-    });
+    var counts = conditionCounts(roles, total, controlPct);
 
     /* Every column is measured, so a long role name or a shape that is more
      * than one glyph still lays the block out straight. */
     var specs = roles.map(function (role) {
       return { cue: yamlQuoted(role.shape) + ',', flag: (role.showQuestion ? 'true' : 'false') + ',' };
     });
+    var anyWord = roles.some(needsWord);
     var nameWidth = 0;
     var cueWidth = 0;
     var flagWidth = 0;
@@ -2724,10 +2861,10 @@
     var lines = [];
     lines.push('# Trial conditions. `per_run` must sum to n_blocks * trials_per_block ('
       + total + ').');
-    lines.push('# The roles, their cues and what each presents are the design\'s, from its '
-      + 'Roles panel.');
+    lines.push('# The conditions, their cues and what each presents are the design\'s, '
+      + 'from its Conditions panel.');
     if (controlRoles === 0) {
-      lines.push('# The design has one trial role, so it takes every trial.');
+      lines.push('# The design has one condition, so it takes every trial.');
     } else if (controlTrials > 0) {
       lines.push('# The control share is the trial design\'s embedded control-trial share ('
         + round(pct, 1) + '%),');
@@ -2740,7 +2877,10 @@
     }
     lines.push('# response = the token the participant actually repeats during the answer window.');
     lines.push('#   answer   -> the true answer          none  -> stay silent');
-    lines.push('#   opposite -> the inverted answer      ready -> the constant word "ready"');
+    lines.push('#   opposite -> the inverted answer      constant -> the condition\'s own `word`');
+    if (anyWord) {
+      lines.push('# (`ready` is the older spelling of `constant`; the task reads them the same.)');
+    }
     lines.push('# cue_from_response: the cue displays the token itself (used for cue-only trials).');
     lines.push('conditions:');
     roles.forEach(function (role, index) {
@@ -2749,6 +2889,7 @@
         + 'cue: ' + padRight(specs[index].cue, cueWidth)
         + 'show_question: ' + padRight(specs[index].flag, flagWidth)
         + 'response: ' + role.response
+        + (needsWord(role) ? ', word: ' + yamlQuoted(role.word || DEFAULT_CONSTANT_WORD) : '')
         + (role.cueFromResponse ? ', cue_from_response: true' : '')
         + '}');
     });
@@ -2756,7 +2897,7 @@
   }
 
   /* How big one run of a run design is, in the terms the conditions block
-   * counts in.  Both the export and the Roles panel's preview read it, so
+   * counts in.  Both the export and the Conditions panel's preview read it, so
    * the two cannot disagree about what a run holds. */
   function psychopyRunSize(report, runReport) {
     var structure = (runReport && runReport.structure) || {};
@@ -2829,12 +2970,13 @@
     lines.push('# The plan calls for ' + fmtNumber(derived.totalRuns) + ' '
       + plural(derived.totalRuns, 'run') + ' in total, '
       + fmtNumber(derived.totalRuns * trialsPerRun) + ' trials.');
-    lines.push('# The scanner, run and trial blocks and the condition counts are filled');
-    lines.push('# in from the solved design. Everything else is the lab template, unchanged.');
+    lines.push('# The scanner, run and trial blocks and the condition counts are filled in');
+    lines.push('# from the solved design. Everything this file leaves out comes from the');
+    lines.push('# task\'s own config/defaults.yaml, so a default changed there reaches this');
+    lines.push('# design too.');
     lines.push('');
     lines.push('experiment: ' + yamlSlug(runReport.name));
-    lines.push('');
-    lines = lines.concat(PSYCHOPY_PRESENTATION);
+    lines = lines.concat(psychopyPresentation(report.state));
 
     lines.push('');
     lines.push('scanner:');
@@ -2847,8 +2989,17 @@
 
     lines.push('');
     lines.push('run:');
-    lines.push('  lead_in: ' + yamlSeconds(structure.leadIn));
-    lines.push('  lead_out: ' + yamlSeconds(structure.leadOut));
+    /* The two ends of a run are phases like any other: a name, what they
+     * show, and how long.  A bare number would set only the duration and
+     * leave `show` at the template's fixation mark. */
+    var ends = screens(report.state);
+    ['leadIn', 'leadOut'].forEach(function (key) {
+      var name = key === 'leadIn' ? 'lead_in' : 'lead_out';
+      lines.push('  ' + padRight(name + ':', 10) + '{name: ' + padRight(name + ',', 10)
+        + 'show: ' + padRight(ends[key] + ',', 10)
+        + 'dur: ' + yamlSeconds(key === 'leadIn' ? structure.leadIn : structure.leadOut)
+        + '}');
+    });
     lines.push('  n_blocks: ' + blocksPerRun);
     lines.push(yamlSetting('trials_per_block', trialsPerBlock,
       '-> ' + trialsPerRun + ' trials/run'));
@@ -2856,6 +3007,10 @@
       'rest between blocks, inside the run'));
     lines.push(yamlSetting('inter_trial_gap', yamlSeconds(structure.interTrialGap),
       'dead time between successive trials'));
+    if (ends.labelBalancePct !== 50) {
+      lines.push(yamlSetting('label_balance_pct', trim(ends.labelBalancePct, 1),
+        'share of each condition\'s trials answered ' + ends.labels[0]));
+    }
 
     lines.push('');
     lines.push('trial:');
@@ -2908,7 +3063,7 @@
             + yamlSeconds(lo) + ' s'
           : null,
         text: '    - {name: ' + padRight(names[index] + ',', nameWidth)
-          + 'show: ' + padRight((PSYCHOPY_SHOW[normaliseRole(phase.role)] || 'blank') + ',', 10)
+          + 'show: ' + padRight(phaseShow(phase) + ',', 10)
           + 'dur: ' + (jittered ? '[' + yamlSeconds(lo) + ', ' + yamlSeconds(hi) + ']' : yamlSeconds(lo))
           /* A ranged phase the planner sizes as uniform inside a geometric
            * design (its Jitter box is off) has to say so, or it inherits
@@ -2927,9 +3082,6 @@
 
     lines.push('');
     lines = lines.concat(psychopyRunConditions(report, runReport));
-
-    lines.push('');
-    lines = lines.concat(PSYCHOPY_KEYS);
 
     lines.push('');
     lines.push('instructions: |');
@@ -3642,6 +3794,7 @@
 
   global.PlannerModel = {
     PHASE_ROLES: PHASE_ROLES,
+    PHASE_SHOWS: PHASE_SHOWS,
     RESPONSE_TOKENS: RESPONSE_TOKENS,
     OBJECTIVES: OBJECTIVES,
     SOLVE_MODES: SOLVE_MODES,
@@ -3671,11 +3824,25 @@
     runDesign: runDesign,
     unitOf: unitOf,
     normaliseRole: normaliseRole,
+    normaliseShow: normaliseShow,
+    phaseShow: phaseShow,
     objectiveDef: objectiveDef,
     applyHrf: applyHrf,
     jitterSettings: jitterSettings,
     trialRoles: trialRoles,
     psychopyConditions: psychopyConditions,
+    conditionCounts: conditionCounts,
+    conditionsInPlay: conditionsInPlay,
+    FIXATION_GLYPH: FIXATION_GLYPH,
+    LEAD_SHOWS: LEAD_SHOWS,
+    TOKEN_CASES: TOKEN_CASES,
+    DEFAULT_LABELS: DEFAULT_LABELS,
+    DEFAULT_CONSTANT_WORD: DEFAULT_CONSTANT_WORD,
+    needsWord: needsWord,
+    defaultScreens: defaultScreens,
+    normaliseLeadShow: normaliseLeadShow,
+    screens: screens,
+    screenGlyph: screenGlyph,
     psychopyRunConditions: psychopyRunConditions,
     truncGeometric: truncGeometric,
     phaseSpan: phaseSpan,

@@ -60,30 +60,33 @@
   "trials": [
     {
       "id": "trial-mtmfi9kd-1",
-      "name": "Aim 1 — Block localizer",
+      "name": "Aim 1 — Block Localizer",
       "note": "Counterbalanced cued-repetition blocks (yes / no / neutral 'ready' / rest) for the Aim 1 localizer. Block order counterbalanced across the session. Outputs functional ROI masks + production-vs-auditory-monitoring stage labels for Aims 2-3.",
       "objective": "detection",
       "phases": [
         {
           "name": "Rest",
-          "min": 16,
-          "max": 16,
+          "min": 8,
+          "max": 8,
           "jitter": false,
-          "role": "baseline"
+          "role": "baseline",
+          "shows": "cue"
         },
         {
           "name": "Cued repetition block",
-          "min": 24,
-          "max": 24,
-          "jitter": false,
-          "role": "stimulus"
-        },
-        {
-          "name": "Rest",
           "min": 16,
           "max": 16,
           "jitter": false,
-          "role": "baseline"
+          "role": "stimulus",
+          "shows": "fixation"
+        },
+        {
+          "name": "ITI",
+          "min": 8,
+          "max": 8,
+          "jitter": false,
+          "role": "baseline",
+          "shows": "blank"
         }
       ],
       "controlPct": 0,
@@ -91,7 +94,7 @@
     },
     {
       "id": "trial-mtmfi9kd-2",
-      "name": "Aim 2/3 — Question trial",
+      "name": "Aim 2/3 — Question Trial",
       "note": "Shared question-task anatomy used by Aims 2 and 3 (compressed runs). Question bank: Standard types (General Knowledge, Arithmetic, Rhyme Judgment, Category, Biographical, Emotional) + Control types (No Prompt affirmative/negative, Neutral 'ready', Opposite Answer, No Answer, Ambiguous Category). Within-trial jitter of the prompt-to-cue delay decorrelates question-reading from repetition responses; between-trial ITI jitter decorrelates from the previous trial's hemodynamic tail.",
       "objective": "estimation",
       "phases": [
@@ -103,21 +106,21 @@
           "role": "baseline"
         },
         {
-          "name": "Question prompt",
+          "name": "Question Prompt",
           "min": 4,
           "max": 4,
           "jitter": false,
           "role": "stimulus"
         },
         {
-          "name": "Maintenance delay",
-          "min": 4,
-          "max": 8,
+          "name": "Delay",
+          "min": 2,
+          "max": 5,
           "jitter": true,
           "role": "delay"
         },
         {
-          "name": "Paced repetition",
+          "name": "Paced Repetition",
           "min": 5,
           "max": 5,
           "jitter": false,
@@ -126,9 +129,9 @@
         {
           "name": "ITI",
           "min": 2,
-          "max": 6,
+          "max": 5,
           "jitter": true,
-          "role": "baseline"
+          "role": "delay"
         }
       ],
       "controlPct": 0,
@@ -136,7 +139,7 @@
     },
     {
       "id": "trial-mtmfi9kd-3",
-      "name": "Aim 3 — Separated calibration trial",
+      "name": "Aim 3 — Separated Calibration Trial",
       "note": "No question prompt: cued yes/no at a jittered long wait. Doubles as long-delay reference data; the FIR time courses estimated here set Aim 3's window lengths and initialise the state-space kernel.",
       "objective": "separation",
       "phases": [
@@ -145,35 +148,39 @@
           "min": 2,
           "max": 6,
           "jitter": true,
-          "role": "baseline"
+          "role": "baseline",
+          "shows": "cue"
         },
         {
-          "name": "Long wait",
+          "name": "Question Prompt",
+          "min": 4,
+          "max": 4,
+          "jitter": false,
+          "role": "stimulus",
+          "shows": "question"
+        },
+        {
+          "name": "Long Wait",
           "min": 10,
           "max": 14,
           "jitter": true,
           "role": "delay"
         },
         {
-          "name": "Answer cue",
-          "min": 1,
-          "max": 1,
+          "name": "Paced Repetition",
+          "min": 5,
+          "max": 5,
           "jitter": false,
-          "role": "response"
+          "role": "response",
+          "shows": "fixation"
         },
         {
-          "name": "Paced repetition",
-          "min": 6,
-          "max": 6,
-          "jitter": false,
-          "role": "response"
-        },
-        {
-          "name": "Rest tail",
-          "min": 24,
-          "max": 28,
+          "name": "ITI",
+          "min": 8,
+          "max": 12,
           "jitter": true,
-          "role": "baseline"
+          "role": "baseline",
+          "shows": "blank"
         }
       ],
       "controlPct": 0,
@@ -231,7 +238,7 @@
   "runs": [
     {
       "id": "run-mtmfi9kd-4",
-      "name": "Aim 1 — Block localizer run",
+      "name": "Aim 1 — Block Localizer Run",
       "note": "8 blocks per run (cued-yes, cued-no, neutral 'ready', rest x2, counterbalanced). Each block is one trial design instance: rest / cued repetition / rest. Placeholder counts.",
       "trial": "trial-mtmfi9kd-1",
       "protocol": "EPI-TR2000-Task",
@@ -245,7 +252,7 @@
     },
     {
       "id": "run-mtubax2r-1di",
-      "name": "Aim 2 — Question run",
+      "name": "Aim 2 — Question Run",
       "note": "Question-task runs for Aim 2 single-trial LSS decoding. Answers balanced within category, delay regime, run, and session.",
       "trial": "trial-mtmfi9kd-2",
       "protocol": "EPI-TR1000-Task",
@@ -259,7 +266,7 @@
     },
     {
       "id": "run-mtubcfoz-1qv",
-      "name": "Aim 3 — Compressed question run",
+      "name": "Aim 3 — Compressed Question Run",
       "note": "Compressed-delay regime (~4-8 s prompt-to-cue): the bulk of Aim 3 sessions. Feeds the spatiotemporal model ladder; decision-deadline and delay-regime accuracy curves.",
       "trial": "trial-mtmfi9kd-2",
       "protocol": "EPI-TR800-Task",
@@ -273,7 +280,7 @@
     },
     {
       "id": "run-muhaoj8n-2o",
-      "name": "Aim 3 — Separated calibration run",
+      "name": "Aim 3 — Separated Calibration Run",
       "note": "Session opener for Aim 3: ~5-10 fully separated trials at jittered long delay (placeholder: 8). Long-delay reference data + FIR timing estimates. Also usable as separated-delay data for Aims 1-2.",
       "trial": "trial-mtmfi9kd-3",
       "protocol": "EPI-Base-Template",
@@ -287,7 +294,7 @@
     },
     {
       "id": "run-muhaoj8n-2q",
-      "name": "Rest run (unlabeled)",
+      "name": "Rest Run",
       "note": "Optional resting run (placeholder 6 min): unlabeled data for Aim 3 arm 12 self-supervised pretraining.",
       "trial": "trial-muhaofiu-2o",
       "protocol": "EPI-Base-Template",
@@ -301,7 +308,7 @@
     },
     {
       "id": "run-mulkww7p-2l",
-      "name": "Perceived-speech control run",
+      "name": "Perceived-Speech Control Run",
       "note": "Approx 5-minute perceived-speech positive control for TRIBE fine-tuning (see fine-tuning plan tab). 28 passive-listening trials (balanced yes/no audio tokens) on the TR800 card shared with the compressed question runs. Placed right after the structurals as a low-effort lead-in to the functional block. Placeholder counts.",
       "trial": "trial-mulkww7o-2j",
       "protocol": "EPI-TR800-Task",
@@ -317,7 +324,7 @@
   "sessions": [
     {
       "id": "session-mtmfi9kd-7",
-      "name": "Aim 1 — Localizer & question session",
+      "name": "Aim 1 — Localizer & Question Session",
       "note": "Localizer + event-related question task. First-level GLM: question-reading boxcar, delay/maintenance boxcar, cue-locked repetition regressors (yes/no/ready/opposite-rule), no-answer and cue-only trials; canonical double-gamma HRF + temporal derivative; FIR model on separated calibration data for timing estimates. Participants report trials they could not answer correctly. Session order: prep → 2 localizer runs → structurals → 1 question run.",
       "breakMinutes": 3,
       "blocks": [
@@ -396,7 +403,7 @@
     },
     {
       "id": "session-mtubalg3-14a",
-      "name": "Aim 2 — MVPA session",
+      "name": "Aim 2 — MVPA Session",
       "note": "Single-trial LSS response estimates; linear classifiers (L2 logistic regression, linear SVM, ridge, shrinkage LDA) on Aim-1 ROI / anatomical language / whole-brain features, + searchlight. Leave-one-session-out and leave-question-family-out splits; sealed sessions touched once. Nuisance-only, control-region, and question-text-only negative controls on every split. Session order: prep → 1 question run → structurals → 2 question runs.",
       "autoBreak": true,
       "breakMinutes": 3,
@@ -475,7 +482,7 @@
     },
     {
       "id": "session-mtubfgy7-3ho",
-      "name": "Aim 3 — Time-series session",
+      "name": "Aim 3 — Time-Series Session",
       "note": "Delay is a within-session factor: separated-delay calibration run first, then structurals, then compressed-delay question runs, then optional rest. Feeds the spatiotemporal model ladder (arms 0-14) trained on identical data budgets; accuracy-vs-deadline and accuracy-vs-delay curves. Approved Aim 3 analyses: (1) linguistic-stage split — yes/no decoded separately from production voxels (IFG/SMA) vs auditory-monitoring voxels (STG), with stage labels from Aim 1; (2) three-way temporal ablation (context length x hemodynamic lag x temporal smoothing), Aim-3-only; (3) supplementary retrieval-style decoding (embedding prediction + candidate ranking, arm-14 contrastive-to-text objective), supplementary not primary.",
       "autoBreak": true,
       "breakMinutes": 3,
@@ -563,7 +570,7 @@
   "experiments": [
     {
       "id": "exp-mtmfi9kd-b",
-      "name": "V2 — Study plan",
+      "name": "V2 — Study Plan",
       "short": "V2",
       "note": "Placeholder session mix carried over from V1. All session counts, trial counts, and durations remain bracketed placeholders per the design docs until the protocol is locked. Budget: max 100 scanner hours (IRB).",
       "enabled": true,
@@ -603,7 +610,7 @@
   "roles": [
     {
       "name": "primary",
-      "shape": "●",
+      "shape": "✚",
       "showQuestion": true,
       "response": "answer",
       "cueFromResponse": false
@@ -627,7 +634,8 @@
       "shape": "▲",
       "showQuestion": true,
       "response": "ready",
-      "cueFromResponse": false
+      "cueFromResponse": false,
+      "word": "ready"
     },
     {
       "name": "opposite",
@@ -635,6 +643,31 @@
       "showQuestion": true,
       "response": "opposite",
       "cueFromResponse": false
+    },
+    {
+      "name": "delay",
+      "shape": "■",
+      "showQuestion": true,
+      "response": "none",
+      "cueFromResponse": false
+    },
+    {
+      "name": "paced_repetition",
+      "shape": "✚",
+      "showQuestion": true,
+      "response": "answer",
+      "cueFromResponse": false
     }
-  ]
+  ],
+  "screens": {
+    "fixation": "",
+    "leadIn": "blank",
+    "leadOut": "blank",
+    "labels": [
+      "yes",
+      "no"
+    ],
+    "labelBalancePct": 50,
+    "tokenCase": "upper"
+  }
 }

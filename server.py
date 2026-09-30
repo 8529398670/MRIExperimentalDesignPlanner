@@ -39,6 +39,13 @@ from planner.access import install as install_access
 from planner.api import create_blueprint, render_docs
 from planner.auth import AUTH_DIR, PUBLIC_URL, Accounts, Throttle
 from planner.bundle import build_bundle
+from planner.demo import (
+    Banks as QuestionBanks,
+    DemoError,
+    default_bank_dir,
+    plan as demo_plan,
+    summary as demo_summary,
+)
 from planner.designs import DesignConflict, DesignGone, DesignStore, clean_name, page_path
 from planner.engine import Engine
 from planner.figures import Figures
@@ -66,6 +73,10 @@ PRESET_DIR = os.environ.get("PLANNER_PRESET_DIR", os.path.join(BASE_DIR, "preset
 EXPORT_DIR = os.environ.get("PLANNER_EXPORT_DIR", os.path.join(BASE_DIR, "exports"))
 FIGURE_DIR = os.environ.get("PLANNER_FIGURE_DIR",
                             os.path.join(BASE_DIR, "figure-cache"))
+# The demo player's questions: the placeholder bank that ships with the
+# planner, and wherever real banks are dropped in (planner/demo.py).
+BUILTIN_BANK_DIR = os.path.join(BASE_DIR, "demo-bank")
+DEMO_BANK_DIR = default_bank_dir(BASE_DIR)
 MAX_PAYLOAD_BYTES = 96 * 1024 * 1024  # the export bundle carries rendered figures
 
 os.makedirs(PRESET_DIR, exist_ok=True)
@@ -103,6 +114,7 @@ engine = Engine(STATIC_DIR)
 figures = Figures(engine, lambda name: designs.read(name), lambda: _boot(),
                   published_dir=FIGURE_DIR or None)
 psychopy = PsychopyConfigs(engine, lambda name: designs.read(name), lambda: _boot())
+banks = QuestionBanks(BUILTIN_BANK_DIR, DEMO_BANK_DIR)
 COMPRESSIBLE_TYPES = {
     "application/javascript",
     "application/json",
@@ -187,9 +199,11 @@ def _cards_rev() -> str:
 # /<view> and /<view>/<item id>, or the same under /designs/<name>.  The page
 # reads the rest from the address (ui.js, readAddress); keep this list and
 # PANELS there together.
+# "roles" is the Conditions panel's old address, kept so links written before
+# the rename still open the page; ui.js sends them on to /conditions.
 VIEWS = (
-    "overview", "experiments", "sessions", "runs", "trials", "roles", "jitter",
-    "hrf", "budget", "acquisition", "study", "export", "people",
+    "overview", "experiments", "sessions", "runs", "trials", "conditions", "roles",
+    "jitter", "hrf", "budget", "acquisition", "study", "export", "people",
 )
 VIEW = "<any(" + ", ".join(VIEWS) + "):view>"
 
@@ -432,6 +446,123 @@ def psychopy_yaml(name: str, slug: str) -> Response:
     response = Response(config.get("yaml", ""), mimetype="text/yaml")
     response.headers["Content-Disposition"] = f'attachment; filename="{config["file"]}"'
     return _cached(response, rev, psychopy_stem(config), "yaml")
+
+
+# -------------------------------------------------------------------- demo
+
+#: A demo address.  The page is a page; everything under it is data or a file,
+#: so a broken one is a plain 404 rather than the application shell.
+DEMO_PATH = re.compile(r"^/designs/[^/]+/demo(/|$)")
+
+
+# The PsychoPy browser demo, on this server.  A run design already compiles to
+# a config; this plays one, built by the builder's own loader and run builder
+# (planner/builder/, vendored).  So a config the presentation computer would
+# refuse is refused here, in the builder's words, next to the design that
+# wrote it - which is the point, rather than the animation.
+#
+# The demo hands back the whole config, which is what the YAML download hands
+# back, so it needs the same sign-in (planner/access.py, EXPORT_READS).
+
+
+def _demo_runs(design: str) -> list:
+    """Every run design of a design, as the run picker shows it.
+
+    One entry per config, carrying both its addresses and what
+    ``planner.demo.summary`` makes of it; a config that will not load says so
+    in ``error`` and is still listed, because that is the thing worth seeing.
+    """
+    sheet, _rev = psychopy.sheet(design)
+    _key, root = banks.root(None)          # `paths:` resolves against a bank
+    listed = []
+    for item in sheet:
+        stem = psychopy_stem(item)
+        listed.append({
+            "index": item["index"], "id": item.get("id", ""),
+            "stem": stem, "name": item.get("run", "") or stem,
+            "file": item.get("file", ""),
+            **demo_summary(item.get("yaml", ""), root),
+        })
+    return listed
+
+
+def _demo_page(name: str, slug: Optional[str] = None, status: int = 200) -> Response:
+    design = clean_name(name)
+    if not designs.exists(name):
+        return _page("demo.html", status=404, design=design, runs=[], banks=[],
+                     slug="", exists=False)
+    runs = _demo_runs(design)
+    if slug is None and runs:
+        slug = runs[0]["stem"]
+    return _page("demo.html", status=status, design=design, runs=runs,
+                 banks=banks.listed(), slug=slug or "", exists=True)
+
+
+@app.route("/designs/<name>/demo")
+@app.route("/designs/<name>/demo/")
+def demo_index(name: str) -> Response:
+    """The demo, opened on the design's first run."""
+    target = page_path(name) + "/demo/"
+    if request.path != target:
+        return redirect(quote(target))
+    return _demo_page(name)
+
+
+@app.route("/designs/<name>/demo/debug.html")
+def demo_debug(name: str) -> Response:
+    """The debug window the stage opens.  It talks to the stage over a
+    BroadcastChannel, so it is the same page whichever run is playing."""
+    return _page("demo-debug.html", design=clean_name(name))
+
+
+@app.route("/designs/<name>/demo/<slug>")
+def demo_run_page(name: str, slug: str) -> Response:
+    """The demo, opened on one run - the address the Export panel links to."""
+    if not designs.exists(name) or not psychopy.valid_slug(slug):
+        return _demo_page(name, status=404)
+    sheet, _rev = psychopy.sheet(clean_name(name))
+    found = psychopy.find(sheet, slug)
+    # An unknown run still gets the page: it lists the runs that do exist, so
+    # a stale link lands somewhere useful rather than on a plain 404.
+    return _demo_page(name, psychopy_stem(found) if found else None,
+                      status=200 if found else 404)
+
+
+@app.route("/designs/<name>/demo/<slug>.json")
+def demo_run(name: str, slug: str) -> Response:
+    """One run of one config, built the way the presentation computer builds
+    it: ``?seed=`` to reproduce one, ``?blocks=`` to shorten it, ``?bank=``
+    to choose the questions.
+
+    A config the builder refuses answers 422 carrying its own words; a
+    request that cannot be made at all answers 400.
+    """
+    config, rev = _config_or_404(name, slug)
+    source = {"source": "planner", "design": clean_name(name), "rev": rev,
+              "id": config.get("id", ""), "run": config.get("run", ""),
+              "config": psychopy_stem(config), "file": config.get("file", "")}
+    try:
+        built = demo_plan(
+            config.get("yaml", ""), banks, source,
+            bank_key=request.args.get("bank"), seed=request.args.get("seed"),
+            blocks=request.args.get("blocks"),
+            files_base=page_path(name) + "/demo/files")
+    except DemoError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001 - the builder's refusal is the answer
+        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 422
+    return jsonify(built)
+
+
+@app.route("/designs/<name>/demo/files/<bank>/<path:relative>")
+def demo_file(name: str, bank: str, relative: str) -> Response:
+    """One picture from one question bank, for a trial that shows an image."""
+    if not designs.exists(name):
+        abort(404)
+    found = banks.image(bank, relative)
+    if found is None:
+        abort(404)
+    return send_from_directory(found.parent, found.name, max_age=0)
 
 
 @app.route("/favicon.ico")
@@ -821,6 +952,11 @@ def handle_404(_exc) -> Response:
         return Response(f"No figure at {request.path}\n", status=404, mimetype="text/plain")
     if PSYCHOPY_PATH.match(request.path):
         return Response(f"No PsychoPy config at {request.path}\n", status=404,
+                        mimetype="text/plain")
+    # The demo page answers its own misses - it can list the runs that exist -
+    # so what reaches here is one of its data or image addresses.
+    if DEMO_PATH.match(request.path):
+        return Response(f"Nothing to demo at {request.path}\n", status=404,
                         mimetype="text/plain")
     return _page("index.html")
 

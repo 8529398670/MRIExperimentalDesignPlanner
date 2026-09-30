@@ -75,6 +75,7 @@
   }
 
   var PHASE_ROLE_IDS = M.PHASE_ROLES.map(function (role) { return role.id; });
+  var PHASE_SHOW_IDS = M.PHASE_SHOWS.map(function (show) { return show.id; });
   var OBJECTIVE_IDS = M.OBJECTIVES.map(function (objective) { return objective.id; });
   var SOLVE_MODE_IDS = M.SOLVE_MODES.map(function (mode) { return mode.id; });
   var UNIT_IDS = M.ALLOCATION_UNITS.map(function (unit) { return unit.id; });
@@ -457,7 +458,11 @@
       + 'response or other'),
     min: number('Shortest duration in seconds', 0),
     max: number('Longest duration in seconds; equal to min means no jitter', 0),
-    jitter: bool('Whether the wait varies trial to trial inside min..max')
+    jitter: bool('Whether the wait varies trial to trial inside min..max'),
+    shows: choice(PHASE_SHOW_IDS, 'What the participant sees: fixation, question, cue or '
+      + 'blank. Empty - the default - follows the role, which is what the regressor model '
+      + 'reads; set it when the two differ, as an inter-trial interval does (a delay to '
+      + 'the model, a fixation cross on screen)')
   };
 
   /* One phase of a whole list.  `position` is where it sits: trial.inspect
@@ -484,7 +489,7 @@
     if (max < min) fail(label + ': max (' + max + ') is below min (' + min + ').');
     /* In the order the design stores a phase, so an unchanged list saves byte
      * for byte as it was. */
-    return {
+    var phase = {
       name: raw.name === undefined ? 'Phase' : checkValue(PHASE_FIELDS.name, raw.name, label + ' name'),
       min: min,
       max: max,
@@ -493,6 +498,13 @@
       role: raw.role === undefined ? 'baseline'
         : checkValue(PHASE_FIELDS.role, raw.role, label + ' role')
     };
+    /* Only when it says something: a phase that follows its role carries no
+     * `shows` at all, so a design written before the field existed saves back
+     * exactly as it was read. */
+    var shows = raw.shows === undefined ? ''
+      : checkValue(PHASE_FIELDS.shows, raw.shows, label + ' shows');
+    if (shows) phase.shows = shows;
+    return phase;
   }
 
   function cleanPhases(rows, label) {
@@ -1345,12 +1357,13 @@
       min: PHASE_FIELDS.min,
       max: PHASE_FIELDS.max,
       jitter: PHASE_FIELDS.jitter,
+      shows: PHASE_FIELDS.shows,
       index: integer('0-based position to insert at (default: the end)', 0)
     },
     run: function (ctx, args) {
       var trial = M.trialById(ctx.state, args.trial);
       var raw = { min: has(args, 'min') ? args.min : 2 };
-      ['name', 'role', 'max', 'jitter'].forEach(function (key) {
+      ['name', 'role', 'max', 'jitter', 'shows'].forEach(function (key) {
         if (has(args, key)) raw[key] = args[key];
       });
       if (!has(args, 'name')) raw.name = 'Phase ' + (trial.phases.length + 1);
@@ -1362,7 +1375,7 @@
 
   action({
     name: 'phase.update', group: 'Trials',
-    ui: 'Trials > Trial phases (a row\'s name, role, min, max and jitter)',
+    ui: 'Trials > Trial phases (a row\'s name, role, shows, min, max and jitter)',
     summary: 'Edit one phase. As in the table, max is lifted to min if it would fall below it '
       + '(the result notes it)',
     args: {
@@ -1370,6 +1383,7 @@
       phase: required(PHASE_REF),
       name: PHASE_FIELDS.name,
       role: PHASE_FIELDS.role,
+      shows: PHASE_FIELDS.shows,
       min: PHASE_FIELDS.min,
       max: PHASE_FIELDS.max,
       jitter: PHASE_FIELDS.jitter
@@ -1380,7 +1394,7 @@
       return trial.phases[phaseIndex(trial, args.phase)];
     },
     run: function (ctx, args) {
-      var fields = ['name', 'role', 'min', 'max', 'jitter'];
+      var fields = ['name', 'role', 'shows', 'min', 'max', 'jitter'];
       nothingToChange('phase.update', args, fields);
       var trial = M.trialById(ctx.state, args.trial);
       var index = phaseIndex(trial, args.phase);
@@ -1392,6 +1406,12 @@
       if (max < min) { max = min; notes.push('max set to ' + min + ' so it is not below min'); }
       if (has(args, 'name')) phase.name = args.name;
       if (has(args, 'role')) phase.role = args.role;
+      /* Empty puts the phase back to following its role, and takes the key
+       * out with it rather than leaving "" behind. */
+      if (has(args, 'shows')) {
+        if (args.shows) phase.shows = args.shows;
+        else delete phase.shows;
+      }
       if (has(args, 'jitter')) phase.jitter = args.jitter;
       phase.min = min;
       phase.max = max;
@@ -1441,16 +1461,20 @@
   var RESPONSE_IDS = M.RESPONSE_TOKENS;
 
   var ROLE_FIELDS = {
-    name: name('Role name. It is the builder\'s condition key, so it is slugged to '
-      + 'lower_case_with_underscores, and no two roles may share one'),
-    shape: str('The shape shown for this role, as the text to draw: "●", "✖", '
-      + '"AB" - anything, or empty for none'),
+    name: name('Condition name. It is the builder\'s condition key, so it is slugged to '
+      + 'lower_case_with_underscores, and no two may share one'),
+    shape: str('The shape shown for this condition, as the text to draw: "●", "✖", '
+      + '"AB" - anything, or empty for none; a phase that shows the cue paints nothing '
+      + 'when it is empty'),
     showQuestion: bool('Whether the question is shown on this trial (show_question)'),
     response: choice(RESPONSE_IDS, 'What the participant repeats in the answer window: '
-      + 'answer (the true answer), none (stay silent), ready (the constant word) or '
-      + 'opposite (the inverted answer)'),
+      + 'answer (the true answer), opposite (the other label), none (stay silent) or '
+      + 'constant (the condition\'s own `word`). `ready` is the older spelling of '
+      + 'constant and the task reads them the same way'),
     cueFromResponse: bool('Whether the cue displays the response token itself, as cue-only '
-      + 'trials do (cue_from_response)')
+      + 'trials do (cue_from_response)'),
+    word: str('What a `constant` response repeats, when the response is constant (or the '
+      + 'older spelling `ready`, which the task reads the same way). Default: "ready"')
   };
   var ROLE_FIELD_NAMES = Object.keys(ROLE_FIELDS);
 
@@ -1458,7 +1482,7 @@
     { named: 'a role name', aliases: ['index'] });
 
   /* The design's roles, normalised in place the first time one is touched, so
-   * a design saved before the Roles panel existed edits like any other. */
+   * a design saved before the Conditions panel existed edits like any other. */
   function stateRoles(ctx) {
     if (!Array.isArray(ctx.state.roles) || !ctx.state.roles.length) {
       ctx.state.roles = M.trialRoles(ctx.state);
@@ -1487,16 +1511,18 @@
   }
 
   function roleIndex(roles, value) {
-    if (typeof value === 'number') return positionIn(roles, value, 'trial role');
+    if (typeof value === 'number') return positionIn(roles, value, 'trial condition');
     var slug = roleSlug(value);
     for (var i = 0; i < roles.length; i += 1) {
       if (roles[i].name === slug) return i;
     }
-    return fail('There is no trial role "' + slug + '". The design\'s roles: '
+    return fail('There is no trial condition "' + slug + '". The design\'s conditions: '
       + roles.map(function (role, index) { return index + ' ' + role.name; }).join(', ') + '.');
   }
 
-  /* One role of a whole list, for role.setAll. */
+  /* One condition of a whole list, for role.setAll.  The state and these
+   * action names still say `role`, which is what a saved design carries;
+   * everything a person reads says condition. */
   function cleanRole(raw, label, position) {
     if (!raw || typeof raw !== 'object') fail(label + ' must be an object.');
     Object.keys(raw).forEach(function (key) {
@@ -1508,14 +1534,14 @@
         return;
       }
       if (!ROLE_FIELDS[key]) {
-        fail(label + ' has no field "' + key + '". Trial roles take: '
+        fail(label + ' has no field "' + key + '". Trial conditions take: '
           + ROLE_FIELD_NAMES.join(', ') + '.');
       }
     });
     if (raw.name === undefined) fail(label + ' needs "name".');
     /* In the order the design stores a role, so an unchanged list saves byte
      * for byte as it was. */
-    return {
+    var role = {
       name: roleSlug(checkValue(ROLE_FIELDS.name, raw.name, label + ' name')),
       shape: raw.shape === undefined ? ''
         : String(checkValue(ROLE_FIELDS.shape, raw.shape, label + ' shape')).trim(),
@@ -1526,26 +1552,91 @@
       cueFromResponse: raw.cueFromResponse === undefined ? false
         : checkValue(ROLE_FIELDS.cueFromResponse, raw.cueFromResponse, label + ' cueFromResponse')
     };
+    if (raw.word !== undefined) role.word = checkValue(ROLE_FIELDS.word, raw.word, label + ' word');
+    /* M.trialRoles puts the default word in for a constant response, and
+     * takes the key away again for one that does not repeat a word. */
+    return M.trialRoles({ roles: [role] })[0];
   }
 
   function cleanRoles(rows, label) {
-    if (!rows.length) fail('A design needs at least one trial role.');
+    if (!rows.length) fail('A design needs at least one trial condition.');
     var seen = {};
     return rows.map(function (raw, index) {
       var role = cleanRole(raw, label + ' ' + index, index);
       if (seen[role.name]) {
-        fail('Two roles are called "' + role.name + '". Trial role names have to be unique - '
-          + 'they are the config\'s condition keys.');
+        fail('Two conditions are called "' + role.name + '". Condition names have to be '
+          + 'unique - they are the config\'s condition keys.');
       }
       seen[role.name] = true;
       return role;
     });
   }
 
+  /* --- screens ----------------------------------------------------------
+   *
+   * What is on screen when no condition is: the fixation mark itself, and
+   * what each end of a run puts up.  One of each per config, so they live on
+   * the design rather than on a trial or a run design. */
+
+  var LEAD_SHOW_IDS = M.LEAD_SHOWS.map(function (entry) { return entry.id; });
+
+  var TOKEN_CASE_IDS = M.TOKEN_CASES.map(function (entry) { return entry.id; });
+
+  var SCREEN_FIELDS = {
+    fixation: str('The mark a fixation phase draws, as the text to draw: "+", "\u25CF", '
+      + '"" for nothing. The builder reads it as fixation.text'),
+    leadIn: choice(LEAD_SHOW_IDS, 'What the lead-in shows: the fixation mark, or nothing'),
+    leadOut: choice(LEAD_SHOW_IDS, 'What the lead-out shows: the fixation mark, or nothing'),
+    labels: list('The two answers a question may carry, as ["yes", "no"]: the first is the '
+      + 'one `label_balance_pct` counts, and `opposite` swaps them. The question bank has '
+      + 'to use the same two words, or the task refuses it'),
+    labelBalancePct: number('Share of each condition\'s trials answered with the first '
+      + 'label; 50 is the even split the task uses by default', 0, 100),
+    tokenCase: choice(TOKEN_CASE_IDS, 'How a cue_from_response cue writes the token it '
+      + 'shows: upper, lower or as_is')
+  };
+  var SCREEN_FIELD_NAMES = Object.keys(SCREEN_FIELDS);
+
   action({
-    name: 'role.add', group: 'Roles',
-    ui: 'Roles > Add role',
-    summary: 'Add a trial role - what a trial presents, and the shape that identifies it (not '
+    name: 'screen.update', group: 'Conditions',
+    ui: 'Conditions > Screens',
+    summary: 'Set the fixation mark, what each end of a run shows, the two answer labels, '
+      + 'how they are balanced, and how a cue writes a response token. Each is written to '
+      + 'the config only when it differs from the task\'s own default',
+    args: SCREEN_FIELDS,
+    run: function (ctx, args) {
+      nothingToChange('screen.update', args, SCREEN_FIELD_NAMES);
+      var held = M.screens(ctx.state);
+      SCREEN_FIELD_NAMES.forEach(function (key) {
+        if (has(args, key)) held[key] = args[key];
+      });
+      if (has(args, 'labels')) {
+        var given = args.labels.map(function (word) { return String(word).trim(); });
+        if (given.length !== 2 || !given[0] || !given[1] || given[0] === given[1]) {
+          fail('screen.update "labels" must be two different words, as ["yes", "no"].');
+        }
+        held.labels = given;
+      }
+      ctx.state.screens = M.screens({ screens: held });
+      return { screens: H.deepCopy(ctx.state.screens) };
+    }
+  });
+
+  action({
+    name: 'screen.reset', group: 'Conditions',
+    ui: 'Conditions > Screens > Reset',
+    summary: 'Put the fixation mark, both ends of a run, the labels, their balance and the '
+      + 'token case back to the task\'s defaults',
+    run: function (ctx) {
+      ctx.state.screens = M.defaultScreens();
+      return { screens: H.deepCopy(ctx.state.screens) };
+    }
+  });
+
+  action({
+    name: 'role.add', group: 'Conditions',
+    ui: 'Conditions > Add condition',
+    summary: 'Add a trial condition - what a trial presents, and the shape that identifies it (not '
       + 'a phase role). Default: appended, no shape, the question shown, response "answer"',
     args: {
       name: ROLE_FIELDS.name,
@@ -1570,9 +1661,10 @@
   });
 
   action({
-    name: 'role.update', group: 'Roles',
-    ui: 'Roles > Trial roles (a row\'s name, shape, question, response or cue from response)',
-    summary: 'Edit one trial role',
+    name: 'role.update', group: 'Conditions',
+    ui: 'Conditions > Trial conditions (a row\'s name, shape, question, response, word or cue from response)',
+    summary: 'Edit one trial condition. A `word` is kept only while the response repeats '
+      + 'one, so changing the response away from constant drops it',
     args: Object.assign({ role: required(ROLE_REF) }, ROLE_FIELDS),
     locate: ['role'],
     target: function (ctx, args) {
@@ -1587,14 +1679,17 @@
       if (has(args, 'name')) fields.name = claimRoleName(roles, args.name, index);
       if (has(args, 'shape')) fields.shape = String(args.shape).trim();
       var changed = assign(roles[index], fields, ROLE_FIELD_NAMES);
+      /* `word` belongs to a constant response and to no other, so the row is
+       * put back through the model rather than left carrying a stale key. */
+      roles[index] = M.trialRoles({ roles: [roles[index]] })[0];
       return { index: index, changed: changed, role: H.deepCopy(roles[index]) };
     }
   });
 
   action({
-    name: 'role.move', group: 'Roles',
-    ui: 'Roles > Trial roles > up / down arrows',
-    summary: 'Reorder a trial role. The first one is the primary role, so moving a role to '
+    name: 'role.move', group: 'Conditions',
+    ui: 'Conditions > Trial conditions > up / down arrows',
+    summary: 'Reorder a trial condition. The first one is primary, so moving one to '
       + 'position 0 is how the primary trials change hands',
     args: Object.assign({ role: required(ROLE_REF) }, MOVE_ARGS),
     run: function (ctx, args) {
@@ -1604,15 +1699,15 @@
   });
 
   action({
-    name: 'role.remove', group: 'Roles',
-    ui: 'Roles > Trial roles > x',
-    summary: 'Delete a trial role; a design keeps at least one',
+    name: 'role.remove', group: 'Conditions',
+    ui: 'Conditions > Trial conditions > x',
+    summary: 'Delete a trial condition; a design keeps at least one',
     args: { role: required(ROLE_REF) },
     run: function (ctx, args) {
       var roles = stateRoles(ctx);
       var index = roleIndex(roles, args.role);
       if (roles.length <= 1) {
-        fail('A design needs at least one trial role: a config with no conditions is one the '
+        fail('A design needs at least one condition: a config with none is one the '
           + 'PsychoPy builder refuses to load.');
       }
       var removed = roles.splice(index, 1)[0];
@@ -1621,11 +1716,11 @@
   });
 
   action({
-    name: 'role.setAll', group: 'Roles',
-    ui: 'Roles > Trial roles (the whole table at once)',
-    summary: 'Replace every trial role. Each is {name, shape, showQuestion, response, '
-      + 'cueFromResponse}; the first is the primary role',
-    args: { roles: required(list('The roles in order, at least one')) },
+    name: 'role.setAll', group: 'Conditions',
+    ui: 'Conditions > Trial conditions (the whole table at once)',
+    summary: 'Replace every trial condition. Each is {name, shape, showQuestion, response, '
+      + 'cueFromResponse}; the first is the primary condition',
+    args: { roles: required(list('The conditions in order, at least one')) },
     run: function (ctx, args) {
       ctx.state.roles = cleanRoles(args.roles, 'role');
       return { roles: H.deepCopy(ctx.state.roles) };
@@ -1633,9 +1728,9 @@
   });
 
   action({
-    name: 'role.reset', group: 'Roles',
-    ui: 'Roles > Reset to the lab template',
-    summary: 'Put the roles back to the five the lab template ships with',
+    name: 'role.reset', group: 'Conditions',
+    ui: 'Conditions > Reset to the lab template',
+    summary: 'Put the conditions back to the five the lab template ships with',
     run: function (ctx) {
       ctx.state.roles = M.defaultTrialRoles();
       return { roles: H.deepCopy(ctx.state.roles) };

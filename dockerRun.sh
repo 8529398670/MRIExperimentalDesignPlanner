@@ -156,7 +156,8 @@ if [ "$REBUILD" = "1" ] || ! $ENGINE image inspect "$IMAGE" >/dev/null 2>&1; the
   build
 fi
 
-mkdir -p "$DATA_DIR/scanner-parameters" "$DATA_DIR/presets" "$DATA_DIR/exports" "$DATA_DIR/accounts"
+mkdir -p "$DATA_DIR/scanner-parameters" "$DATA_DIR/presets" "$DATA_DIR/exports" "$DATA_DIR/accounts" \
+         "$DATA_DIR/demo-banks"
 
 exists && $ENGINE rm -f "$CONTAINER" >/dev/null
 
@@ -179,6 +180,9 @@ ARGS=(
   --volume "$DATA_DIR/presets:/data/presets"
   --volume "$DATA_DIR/exports:/data/exports"
   --volume "$DATA_DIR/accounts:/data/accounts"
+  # Question banks for the demo player: empty unless one is dropped in,
+  # and read-only to the container, which only ever reads them.
+  --volume "$DATA_DIR/demo-banks:/data/demo-banks:ro"
 
   --env HOME=/tmp
   --env PLANNER_PORT="$CONTAINER_PORT"
@@ -207,6 +211,7 @@ if [ "$FOREGROUND" != "1" ]; then
   printf '  container : %s (%s)\n' "$CONTAINER" "$IMAGE"
   printf '  user      : %s, read-only rootfs, no capabilities\n' "$RUN_USER"
   printf '  data      : %s/{scanner-parameters,presets,exports,accounts}\n' "$DATA_DIR"
+  printf '  demo banks: %s/demo-banks  (empty: the built-in placeholders are used)\n' "$DATA_DIR"
   printf '  open      : http://%s:%s\n' "$BIND_ADDR" "$HOST_PORT"
   printf '  sign in   : ./dockerRun.sh --link NAME  (a one-time login link; others view only)\n\n'
   printf '  logs: ./dockerRun.sh --logs    stop: ./dockerRun.sh --stop\n\n'

@@ -1,0 +1,43 @@
+/* What the planner's copy of the demo player adds to the lab's stylesheet.
+
+   style.css is vendored from the builder and styles the chrome, the stage and
+   the debug window.  These are the parts that only exist here: the run and
+   question-bank pickers, the card describing the chosen run, and the banner
+   that carries the builder's refusal when a config will not load. */
+
+select {
+  font: inherit; font-weight: 550; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; max-width: 320px;
+}
+select:hover { border-color: var(--muted); }
+
+.picker {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 0;
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--muted); font-weight: 600;
+}
+.picker select { text-transform: none; letter-spacing: normal; font-size: 14px; }
+
+.top .btn { text-decoration: none; }
+
+/* The builder's own words when it refuses a config: the thing this page is
+   for, so it stays put rather than fading like a toast. */
+.banner {
+  margin: 16px 0 0; padding: 10px 14px; border-radius: var(--radius);
+  background: var(--surface); border: 1px solid var(--line); font-size: 13px;
+}
+.banner.error {
+  background: var(--error-soft); border-color: transparent; color: var(--error);
+  font-family: var(--mono); word-break: break-word;
+}
+.banner .what { font-family: var(--sans); font-weight: 600; display: block; margin-bottom: 4px; }
+
+/* One run, as the chosen line of the picker describes it. */
+.run-card {
+  margin-top: 16px; background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;
+}
+.run-card h2 { margin: 0; font-size: 15px; }
+.run-card .file { color: var(--muted); font-size: 12px; font-family: var(--mono); }
+.run-card .footnote a { color: inherit; }

@@ -147,6 +147,34 @@
     App.toast('PsychoPy config downloaded: ' + name, 'ok');
   }
 
+  /* Where the browser demo plays one run design.  The file stem is the
+   * readable one of the three addresses the server accepts, and the one the
+   * download button names, so a link built from either matches. */
+  function demoUrl(runReport) {
+    return '/designs/' + encodeURIComponent(App.designName) + '/demo/'
+      + encodeURIComponent(M.psychopyFileName(runReport).replace(/\.yaml$/, ''));
+  }
+
+  /* The demo plays the design as *saved* - the server compiles the config
+   * from the store - so an edit still inside the autosave delay is sent
+   * first.  The window has to be opened on the click itself or a pop-up
+   * blocker takes it, so when there is something to save it opens blank and
+   * follows the save. */
+  function demoPsychopy(runReport) {
+    var url = demoUrl(runReport);
+    var waiting = App.busySaving();
+    var win = window.open(waiting ? '' : url, 'planner-demo');
+    if (!win) {
+      App.toast('The browser blocked the demo window. Allow pop-ups for the planner, '
+        + 'or open ' + url, 'bad');
+      return;
+    }
+    win.focus();
+    if (!waiting) return;
+    function go() { win.location = url; }
+    App.saveWorking().then(go, go);
+  }
+
   function refreshPsychopy() {
     if (!App.report || !psychopyButtons) return;
     var runs = App.report.runs.filter(function (run) { return !run.missing; });
@@ -158,11 +186,19 @@
       }));
     }
     runs.forEach(function (run) {
-      psychopyButtons.appendChild(App.h('button', {
-        class: 'btn sm', type: 'button', text: run.name,
-        title: 'Download ' + M.psychopyFileName(run) + ' for ' + run.name,
-        onclick: function () { downloadPsychopy(run); }
-      }));
+      psychopyButtons.appendChild(App.h('span', { class: 'btn-pair' }, [
+        App.h('button', {
+          class: 'btn sm', type: 'button', text: run.name,
+          title: 'Download ' + M.psychopyFileName(run) + ' for ' + run.name,
+          onclick: function () { downloadPsychopy(run); }
+        }),
+        App.h('button', {
+          class: 'btn sm', type: 'button', text: '\u25b6',
+          title: 'Play ' + run.name + ' in the browser, built by the PsychoPy '
+            + 'builder\'s own loader - a config it refuses is refused here',
+          onclick: function () { demoPsychopy(run); }
+        })
+      ]));
     });
 
     var previous = psychopyPicker.value;
@@ -579,11 +615,13 @@
           + 'in the builder\'s own jitter and jitter_p keys, with each geometric window '
           + 'stopping on its top rung at this run\'s TR, so the builder reproduces exactly '
           + 'the timing the planner sized against) and conditions: written from the '
-          + 'design\'s trial roles - their names, their shapes and what each presents come '
-          + 'from the Roles panel, and the per_run counts are the primary trials with the '
-          + 'control share spread over the rest. Which trial comes when is still the '
+          + 'design\'s conditions - their names, their shapes and what each presents come '
+          + 'from the Conditions panel, and the per_run counts are the primary trials with '
+          + 'the control share spread over the rest. Which trial comes when is still the '
           + 'presentation software\'s. Window, text, console, keys and instructions are '
-          + 'passed through unchanged.'
+          + 'passed through unchanged. \u25b6 plays a run here in the browser, built by '
+          + 'the builder\'s own loader from this config: a file the presentation '
+          + 'computer would refuse is refused on the spot, in the builder\'s own words.'
       }),
       psychopyButtons,
       App.h('div', { class: 'split-inline mt mb' }, [
@@ -594,7 +632,12 @@
         App.iconButton('Download shown', 'Write the shown config out', function () {
           var run = currentPsychopyRun();
           if (run) downloadPsychopy(run);
-        })
+        }),
+        App.iconButton('\u25b6 Demo shown', 'Play the shown config in the browser',
+          function () {
+            var run = currentPsychopyRun();
+            if (run) demoPsychopy(run);
+          })
       ]),
       psychopyBox
     ]);

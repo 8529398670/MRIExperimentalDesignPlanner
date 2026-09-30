@@ -2,6 +2,10 @@ Flask==3.1.3
 waitress==3.0.2
 openpyxl==3.1.5
 quickjs==1.19.4
+PyYAML==6.0.2
+# The PsychoPy builder's own loader (planner/builder/, vendored) reads the task
+# config as YAML, so the demo player can build a run with the builder's code.
+
 # Rasterises the figures so each one can be served as a PNG as well as an SVG.
 # Optional: without it the .png addresses redirect to the .svg, which every
 # browser renders anyway. The image needs the cairo and font packages for it.

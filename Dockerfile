@@ -65,6 +65,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PLANNER_EXPORT_DIR=/data/exports \
     PLANNER_FIGURE_DIR=/data/figure-cache \
     PLANNER_AUTH_DIR=/data/accounts \
+    PLANNER_DEMO_BANK_DIR=/data/demo-banks \
     PLANNER_SEED_DIR=/app/seed
 
 COPY --from=build /opt/venv /opt/venv
@@ -77,6 +78,11 @@ COPY server.py API.md ./
 COPY planner ./planner
 COPY static ./static
 COPY templates ./templates
+
+# The demo player's placeholder questions.  Read-only and part of the
+# application, not state: a real question bank is dropped into the mounted
+# /data/demo-banks instead.
+COPY demo-bank ./demo-bank
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 # The pristine protocol cards ship inside the image and are copied into the
@@ -93,7 +99,7 @@ RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh \
  && install -d -o "${APP_UID}" -g "${APP_GID}" -m 0755 /data \
  && install -d -o "${APP_UID}" -g "${APP_GID}" -m 0770 \
       /data/scanner-parameters /data/presets /data/exports /data/accounts \
-      /data/figure-cache
+      /data/figure-cache /data/demo-banks
 
 VOLUME ["/data"]
 EXPOSE 8761

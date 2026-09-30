@@ -167,26 +167,91 @@ reads:
 An **embedded control share** withholds a fraction of trials as control or null trials;
 trials minus that share is the count every goal is denominated in.
 
-### Trial roles
+### What a phase shows
 
-A phase role is one thing; a **trial role** is another. A trial role is one of the things a
-trial can *be* — the primary task, a passive-reading control, a catch trial — and each one
-wears its own shape on screen so the participant can tell them apart. The **Roles** panel
-owns that list, study-wide:
+The role is what the *model* calls a phase. What the *participant* sees follows from it —
+baseline shows the fixation cross, stimulus the question, response the trial condition's cue, and
+delay a blank screen — and most of the time that is right.
+
+It is not always right. A maintenance delay and an inter-trial interval are both `delay` to
+the model, but one wants a blank screen, with nothing to read during the retention, and the
+other wants the fixation cross back — which is what the lab's own configs do, ending a trial
+on `fixation_post`. Changing the role to get the screen you want would misdescribe the
+phase to the GLM.
+
+So each phase has a **Shows** column, and it is empty by default: the row reads *From the
+role (blank)*, naming the answer the role already gives, and the export is unchanged.
+Set it — fixation, question, cue or blank, the only four the PsychoPy builder knows — and
+that phase's `show:` in the config follows the column instead of the role. Nothing else
+moves: the role still decides the regressor, and the trial-timeline figure still colours by
+role, because that figure is the model's view and this column is the screen's.
+
+### Conditions
+
+A phase's **role** belongs to one slice of a trial's timeline and is what the regressor model
+reads. A **condition** is one of the things a whole trial can *be* — the primary task, a
+passive-reading control, a catch trial — and each one wears its own shape so the participant
+can tell them apart. Two different questions; the **Conditions** panel owns the second,
+study-wide:
 
 | Column | What it is | In the config |
 |---|---|---|
-| Role | The name, slugged and unique | the `conditions:` key |
+| Condition | The name, slugged and unique | the `conditions:` key |
 | Shape | The text drawn as the cue: `●`, `✖`, anything | `cue` |
 | Shows question | Whether the question is shown on this trial | `show_question` |
-| Response | `answer`, `none`, `ready` or `opposite` | `response` |
+| Response | `answer`, `opposite`, `none` or `constant` | `response` |
+| Repeats | The word a `constant` response says; the others show what they repeat | `word` |
 | Cue from response | The cue displays the response token itself | `cue_from_response` |
 
-The first role is the **primary** one: it takes the trials the trial design does not withhold
-as its control share, and the rest split that share as evenly as the count allows — so the up
-and down arrows decide which role the primary trials belong to. The counts stay with the trial
-design, and which trial comes when stays with the presentation software. The panel previews
-the exact `conditions:` block the export writes, for any run design.
+`ready` is the older spelling of `constant`, and the task reads them the same way, so a
+design written before this keeps working — it picks up `word: "ready"`, the task's own
+default, the first time it is saved.
+
+The name is the builder's own: this list is written straight into the config's
+`conditions:` block. A condition with no shape writes `cue: ""`, and a phase showing the cue
+then paints nothing at all for those trials, so the panel says so rather than leaving it to
+be found on screen.
+
+The first condition is the **primary** one: it takes the trials the trial design does not
+withhold as its control share, and the rest split that share as evenly as the count allows —
+so the up and down arrows decide which condition the primary trials belong to. The counts
+stay with the trial design, and which trial comes when stays with the presentation software.
+The panel previews the exact `conditions:` block the export writes, for any run design.
+
+#### Screens, and every symbol on screen
+
+A condition's cue is only part of what a participant sees. The **Screens** card on the same
+page owns the rest:
+
+| Setting | What it does | In the config |
+|---|---|---|
+| Fixation mark | What every fixation phase draws. `+` by default; set it to anything, or to nothing | `fixation.text` |
+| Lead-in shows | The mark, or nothing, during the quiet stretch that opens a run | `run.lead_in.show` |
+| Lead-out shows | The same, for the stretch that closes it | `run.lead_out.show` |
+| Answer labels | The two answers a question may carry | `responses.labels` |
+| First-label share | How each condition's trials are split between them | `run.label_balance_pct` |
+| Cue token case | How a cue-from-response cue writes the token | `cue.token_case` |
+
+All six reach a real run: the task reads every one. The two ends of a run are phases in
+their own right now — `lead_in: {name: lead_in, show: fixation, dur: 12.0}` — so they can
+show any screen, and `session.py` paints them through the same map a trial phase uses.
+
+Changing the **answer labels** needs a question bank whose `answer` values are those two
+words: the task refuses one that is not, and the demo shows the refusal in its own words.
+The panel says so beside the field.
+
+Below it, the whole inventory: the fixation mark, each condition's cue, the question and the
+blank screen, each with what it is and every phase it appears in. Two things it exists to
+make obvious. The mark is drawn at **both ends of every run** as well as every fixation
+phase, so it is spoken for before you choose anything. And a condition with **cue from
+response** never draws its shape at all — the token itself (`YES` / `NO` / `READY`) is drawn
+instead. It also warns when two symbols on screen in the same study read as the same shape —
+`+` and `✚`, `●` and `○`, `◆` and `◇`.
+
+The panel was called **Roles** until that word collided with a phase's role — one list per
+tab, both labelled Role, and no way to tell from the label that neither fed the other. Links
+to `/designs/<name>/roles` still work and land on `/conditions`; a saved design still stores
+them under `roles`, and the API actions are still `role.add`, `role.update` and the rest.
 
 ### Objective and the separation solver
 
@@ -467,7 +532,7 @@ rather than a table; its solved timeline underneath copies as a table.
   template, with the scanner block (TR, dummy volumes), `run:` (lead-in and lead-out, blocks
   per run, trials per block, inter-block rest, inter-trial gap), `trial:` (jitter
   distribution, phase list and durations) and `conditions:` taken from that run's solved
-  design — the roles, their cues and what each presents from the Roles panel, and the
+  design — the conditions, their cues and what each presents from the Conditions panel, and the
   `per_run` counts from the run's size and the trial design's control share. The builder
   loads these files unchanged. It does not yet run `inter_block_rest` or `inter_trial_gap`,
   so a multi-block run it presents is shorter than the planner books.
@@ -572,6 +637,57 @@ they are keyed by revision, so a stale one is never served — and publishing fo
 deletes the old one. Nothing needs clearing by hand, and somewhere unwritable just means the
 server renders instead. Server-side rendering needs CairoSVG (in `requirements.txt`, with
 `cairo` and `font-liberation` in the image).
+
+### Playing a run in the browser
+
+Next to each run design's download button in *Report and export* is a **▶**. It opens the
+PsychoPy demo player on that run, on this server:
+
+```
+/designs/V2/demo/                                  the first run of the design
+/designs/V2/demo/run-aim-2-question-run            one run, by file name (or id, or position)
+/designs/V2/demo/run-aim-2-question-run.json       the run it plays, as JSON
+```
+
+The page is the lab player's own — the stage, the debug window and the stylesheet are copied
+from the builder (`static/player/`, from
+[fMRIInnerSpeechPsychoPy](https://github.com/2634367/fMRIInnerSpeechPsychoPy)) — and so is the
+code that builds the run. `planner/builder/` holds the builder's `config.py` and `bank.py`
+**verbatim**, and the demo loads the compiled config through them, exactly as the presentation
+computer does.
+
+That is the point of it. The animation is a bonus; what the button really buys is that a
+config the builder would **refuse** — conditions that do not sum to the trial count, a phase
+`show` outside the four it knows, a geometric window narrower than the run's TR — is refused
+here, in the builder's own words, a second after the edit that caused it, instead of on the
+scanner console. A run that will not build says so in a banner and names the reason.
+
+The options are the lab player's: a seed (the same seed rebuilds the same run in real
+PsychoPy), fewer blocks, no scanner / simulated pulses / a trigger key, ×1 to ×30, auto-advance,
+debug keys, the HUD and the debug window. **Copy command** on the stage gives the
+`./run.sh planner --design … --run …` that plays the same thing for real. Nothing is recorded:
+the demo writes nothing, here or in the builder's `data/`.
+
+**Questions.** Stimuli are not the planner's business, so it ships eighty placeholder
+propositions — arithmetic, alphabet order and shape positions, forty *yes* and forty *no* — in
+`demo-bank/`, enough to exercise every timing path without borrowing anyone's stimuli. They are
+generated by `demo-bank/make-bank.py`; run it from the repository root to rewrite them.
+
+To play the real thing instead, drop a bank into `PLANNER_DEMO_BANK_DIR` (`demo-banks/` in a
+checkout, `/data/demo-banks` in the image). A bank is a directory in the builder's own layout,
+so installing one is a copy:
+
+```bash
+cp -R ../fMRIInnerSpeechPsychoPy/V1/questions demo-banks/lab/questions
+```
+
+Each such directory is offered by name in the **Questions** picker, with how many questions it
+holds; one that will not load is listed too, saying so. Drop-in banks are gitignored and
+mounted read-only — the planner only ever reads them.
+
+Like a config download, the demo needs a sign-in or an API key: it hands the page the whole
+config, which is the same thing the `.yaml` address hands over, so gating one and not the other
+would only mean the config left by the quieter door.
 
 ## API
 

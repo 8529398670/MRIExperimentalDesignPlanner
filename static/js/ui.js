@@ -3187,7 +3187,7 @@
       build: function () { return global.PlannerLibrary.buildRuns(); } },
     { id: 'trials', label: 'Trials', hint: 'What one trial looks like',
       build: function () { return global.PlannerLibrary.buildTrials(); } },
-    { id: 'roles', label: 'Roles', hint: 'Which shape goes with which trial role',
+    { id: 'conditions', label: 'Conditions', hint: 'The kinds of trial, and the shape each wears',
       build: function () { return global.PlannerLibrary.buildRoles(); } },
     { id: 'jitter', label: 'Jitter', hint: 'How the gap between events is drawn',
       build: function () { return global.PlannerLibrary.buildJitter(); } },
@@ -3268,6 +3268,11 @@
     return base + '/' + panel + (item ? '/' + encodeURIComponent(item) : '');
   }
 
+  /* The Conditions panel was called Roles until that word collided with a
+   * phase's role, which is a different thing entirely.  Links written before
+   * the rename still land on it; address() then corrects the bar. */
+  var LEGACY_PANELS = { roles: 'conditions' };
+
   function panelAllowed(id) {
     return PANELS.some(function (entry) {
       return entry.id === id && !(entry.signedIn && App.readOnly);
@@ -3280,7 +3285,8 @@
       try { return decodeURIComponent(part); } catch (error) { return part; }
     });
     if (parts[0] === 'designs') parts = parts.slice(2);
-    var panel = parts[0] && panelAllowed(parts[0]) ? parts[0] : 'overview';
+    var first = LEGACY_PANELS[parts[0]] || parts[0];
+    var panel = first && panelAllowed(first) ? first : 'overview';
     return { panel: panel, item: panel === 'overview' ? null : parts[1] || null };
   }
 
