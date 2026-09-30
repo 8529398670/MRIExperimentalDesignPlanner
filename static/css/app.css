@@ -1062,6 +1062,7 @@ body.view-only .seg button[data-locked]:not(.active):hover { background: var(--s
 .people-link { font-family: var(--mono); font-size: 11.5px; }
 .people-hint { margin: 8px 0 0; font-size: 12px; color: var(--ink-faint); }
 .people-add > .btn, .people-self > .btn, .people-link-row > .btn { flex: none; }
+.people-add > select { flex: none; width: auto; }
 .people-key-add { margin-top: 12px; }
 
 /* The list of designs, at /. */
@@ -1091,3 +1092,55 @@ a.brand { color: inherit; text-decoration: none; }
 /* The design this page works on is a link back to the list. */
 .mast-design a.name { color: inherit; text-decoration: none; }
 .mast-design a.name:hover .v { text-decoration: underline; }
+
+/* A screen drawn small, as the task draws it.  `--u` is the tile's height and
+   everything inside sits and sizes in those units - the stage's own formula
+   (static/player/style.css), so what reads as small or off-centre here does
+   on the scanner's screen too. */
+.tile {
+  position: relative; overflow: hidden; flex: none; border-radius: 4px;
+  border: 1px solid var(--line-strong); background: #000;
+}
+.tile .tile-text, .tile .tile-img {
+  position: absolute; left: calc(50% + var(--x, 0) * var(--u));
+  top: calc(50% - var(--y, 0) * var(--u)); transform: translate(-50%, -50%);
+}
+.tile .tile-text {
+  font-size: calc(var(--h, 0.06) * var(--u)); line-height: 1.15; white-space: pre;
+}
+.tile .tile-img { height: calc(var(--h, 0.06) * var(--u)); width: auto; }
+.tile.stand-in .tile-text { opacity: .55; }
+.tile .tile-missing {
+  position: absolute; inset: 3px; display: flex; align-items: center; justify-content: center;
+  border: 1px dashed #b08a7e; border-radius: 3px; color: #d8b3a6; font-size: 9.5px;
+  text-align: center; overflow-wrap: anywhere; padding: 2px;
+}
+
+/* The shape designer (Conditions > Screens).  A setting shows the value the
+   task will use; a grey one is the task's default and ↺ puts a changed one
+   back. */
+.ownable { display: inline-flex; align-items: center; gap: 4px; }
+.ownable.inherited input:not([type="color"]), .ownable.inherited select {
+  color: var(--ink-faint); font-style: italic;
+}
+.ownable.inherited input[type="color"] { opacity: .55; }
+.ownable .btn.sm { padding: 1px 5px; }
+.with-unit { display: inline-flex; align-items: center; gap: 3px; }
+.with-unit small { color: var(--ink-faint); }
+.pos-pair { display: inline-flex; gap: 3px; }
+table.data td .cell-input.size-input, .size-input { width: 4.6em; min-width: 0; }
+table.data td .cell-input.pos-input, .pos-input { width: 4.2em; min-width: 0; }
+table.data td .cell-input.font-input { width: 7.5em; min-width: 0; }
+table.data td .cell-input.draws-input { width: 11em; min-width: 0; font-size: 15px; }
+.label-input { width: 6em; }
+.colour-input { width: 38px; height: 26px; padding: 1px; border: 1px solid var(--line-strong); }
+.draws-cell { display: flex; flex-direction: column; gap: 3px; }
+.designer-display { margin-bottom: 12px; }
+.designer-table table.data td { vertical-align: middle; }
+.designer-table table.data td:first-child { width: 1%; }
+.screen-strip.tiles { gap: 8px; }
+.screen-step.tile-step {
+  flex: 0 0 auto; min-width: 0; background: transparent; border: 0; padding: 0; gap: 2px;
+}
+.screen-step.tile-step small { font-size: 10px; color: var(--ink-faint); font-family: var(--mono); }
+.notice.warn { border-left-color: #b0472e; background: #fbeee9; color: #6b2a1a; }

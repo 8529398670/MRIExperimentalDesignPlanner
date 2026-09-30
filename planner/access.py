@@ -7,7 +7,13 @@ whoever needs to see it.  Changing anything - any request that is not a GET
 ``Authorization: Bearer <API key>`` for a script or an agent.  Without one the
 answer is 401, and the page, told the same thing at bootstrap, runs view-only.
 
-An API key may do all of that, but none of /api/auth: it cannot add or
+A session is an admin's or a viewer's.  A viewer gets the exports and the
+demo - everything there is to look at or take away - and nothing that
+changes anything: every other write is 403, and so is all of /api/auth but
+who they are and signing out.  The page, told the role at bootstrap, runs
+view-only with its export buttons left working.
+
+An API key may do what its maker may, but none of /api/auth: it cannot add or
 remove people, or make links or keys.  A key that got out is then ended by
 revoking it, and only a person signed in with a login link can do that.
 
@@ -23,7 +29,7 @@ from urllib.parse import urlsplit
 
 from flask import Blueprint, Flask, Response, g, jsonify, render_template, request
 
-from planner.auth import COOKIE, COOKIE_AGE, KEY_PREFIX, Accounts, Throttle, log
+from planner.auth import ADMIN, COOKIE, COOKIE_AGE, KEY_PREFIX, ROLES, Accounts, Throttle, log
 
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
@@ -40,6 +46,9 @@ OPEN_POSTS = frozenset({"/api/auth/redeem", "/api/auth/resume"})
 # sends the page is the config itself, which is exactly what the download is.
 # Gating one and not the other would only mean the config left by the quieter
 # door.  A figure is different - that is a view of the design, and open.
+#
+# A viewer's session opens all of these: taking a design away, and playing
+# it, changes nothing.
 EXPORT_READS = (
     re.compile(r"^/api/v1/designs/[^/]+/export(/|$)"),
     re.compile(r"^/designs/[^/]+/psychopy(/|$)"),
@@ -66,6 +75,27 @@ UNKNOWN_TOKEN = ("That token is not recognised: the API key was revoked or the p
 KEY_AUTH_ROUTES = frozenset({("GET", "/api/auth/me")})
 KEY_REFUSED = ("An API key cannot manage people, login links or keys: that takes a person "
                "signed in with a login link.")
+
+# The writes a viewer may make, because they change nothing: the exports the
+# page builds by posting what it has solved, and the action runner, which
+# then refuses them anything but a query (planner/api.py).
+VIEWER_WRITES = (
+    re.compile(r"^/api/export/(xlsx|bundle|json)$"),
+    re.compile(r"^/api/v1/designs/[^/]+/actions$"),
+)
+
+# What a viewer may ask of /api/auth: who they are, signing out, and opening
+# another login link - which may be the one that makes them an admin.
+VIEWER_AUTH_ROUTES = frozenset({("GET", "/api/auth/me"), ("POST", "/api/auth/logout"),
+                                *(("POST", path) for path in OPEN_POSTS)})
+
+VIEWER_REFUSED = ("View only: this sign-in can look, play the demos and download, but not "
+                  "change anything. An admin can change that in People.")
+VIEWER_AUTH_REFUSED = "Only an admin can manage people, login links and API keys."
+
+
+def a_viewer_write(path: str) -> bool:
+    return any(pattern.match(path) for pattern in VIEWER_WRITES)
 
 
 def _fail(status: int, message: str, **extra: Any) -> Tuple[Response, int]:
@@ -126,6 +156,7 @@ def install(app: Flask, accounts: Accounts, throttle: Throttle, public_url: str 
         # One worker thread serves many requests, so who is asking is worked
         # out afresh every time.
         g.user = None
+        g.can_edit = False
         g.token, g.via_cookie = "", False
         if request.path.startswith("/static/"):
             return None
@@ -138,9 +169,13 @@ def install(app: Flask, accounts: Accounts, throttle: Throttle, public_url: str 
                 g.user = None if via_cookie else accounts.key_for(token)
             else:
                 g.user = accounts.user_for(token)
-        if (g.user and g.user.get("key") and request.path.startswith("/api/auth/")
-                and (request.method, request.path) not in KEY_AUTH_ROUTES):
-            return _fail(403, KEY_REFUSED)
+        g.can_edit = bool(g.user) and g.user.get("role") == ADMIN
+        route = (request.method, request.path)
+        if g.user and request.path.startswith("/api/auth/"):
+            if g.user.get("key") and route not in KEY_AUTH_ROUTES:
+                return _fail(403, KEY_REFUSED)
+            if not g.can_edit and route not in VIEWER_AUTH_ROUTES:
+                return _fail(403, VIEWER_AUTH_REFUSED, viewOnly=True)
         # A browser with a dead cookie is simply signed out; a script is told why.
         unknown = UNKNOWN_TOKEN if token and not via_cookie and g.user is None else ""
         if request.method not in SAFE_METHODS:
@@ -150,6 +185,9 @@ def install(app: Flask, accounts: Accounts, throttle: Throttle, public_url: str 
                 return None
             if g.user is None:
                 return _fail(401, unknown or VIEW_ONLY, viewOnly=True, signIn="/login")
+            if not g.can_edit and route not in VIEWER_AUTH_ROUTES \
+                    and not a_viewer_write(request.path):
+                return _fail(403, VIEWER_REFUSED, viewOnly=True)
         elif g.user is None and an_export(request.path):
             return _fail(401, unknown or "Exports need a sign-in with a login link.",
                          viewOnly=True, signIn="/login")
@@ -208,7 +246,8 @@ def install(app: Flask, accounts: Accounts, throttle: Throttle, public_url: str 
         # The token goes back in the body as well as the cookie, for the page
         # to keep in localStorage - the one copy that outlives a lost cookie -
         # and for a script to send as a Bearer token.
-        response = jsonify({"ok": True, "token": session, "id": user["id"], "name": user["name"]})
+        response = jsonify({"ok": True, "token": session, "id": user["id"], "name": user["name"],
+                            "role": user["role"]})
         set_session(response, session)
         return response
 
@@ -243,7 +282,12 @@ def install(app: Flask, accounts: Accounts, throttle: Throttle, public_url: str 
         response.delete_cookie(COOKIE, path="/", httponly=True, samesite="Lax", secure=https())
         return response
 
-    # Everyone signed in may do all of this - there are no roles, only names.
+    # Every admin may do all of this; a viewer never gets this far (the guard).
+
+    def role_given(default: str) -> Optional[str]:
+        payload = request.get_json(silent=True)
+        role = payload.get("role", default) if isinstance(payload, dict) else default
+        return role if role in ROLES else None
 
     @bp.get("/api/auth/users")
     def list_users():
@@ -255,10 +299,13 @@ def install(app: Flask, accounts: Accounts, throttle: Throttle, public_url: str 
     def add_user():
         payload = request.get_json(silent=True)
         name = payload.get("name") if isinstance(payload, dict) else None
-        user, why = accounts.add(name, g.user["id"])
+        role = role_given(ADMIN)
+        if role is None:
+            return _fail(400, "A person is an admin or a viewer.")
+        user, why = accounts.add(name, g.user["id"], role)
         if not user:
             return _fail(400, why)
-        log(f"{g.user['name']} added {user['name']}")
+        log(f"{g.user['name']} added {user['name']} as {'an admin' if role == ADMIN else 'a viewer'}")
         # Somebody is added to be let in, so their first link comes with them.
         made = accounts.link(user["id"], g.user["id"])
         return jsonify({"ok": True, "user": user, "link": link_out(made)}), 201
@@ -282,6 +329,21 @@ def install(app: Flask, accounts: Accounts, throttle: Throttle, public_url: str 
             return _fail(404, "Nobody by that id.")
         log(f"{g.user['name']} removed {name}")
         return jsonify({"ok": True, "removed": name})
+
+    @bp.post("/api/auth/users/<uid>/role")
+    def change_role(uid: str):
+        # Not your own, for the reason you cannot remove yourself: the last
+        # admin would otherwise be one click from nobody being able to.
+        if uid == g.user["id"]:
+            return _fail(400, "You cannot change your own role; another admin can.")
+        role = role_given("")
+        if role is None:
+            return _fail(400, "A person is an admin or a viewer.")
+        name = accounts.set_role(uid[:32], role)
+        if name is None:
+            return _fail(404, "Nobody by that id.")
+        log(f"{g.user['name']} made {name} {'an admin' if role == ADMIN else 'a viewer'}")
+        return jsonify({"ok": True, "id": uid, "name": name, "role": role})
 
     @bp.delete("/api/auth/links/<link_id>")
     def cancel_link(link_id: str):

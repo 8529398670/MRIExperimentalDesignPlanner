@@ -35,7 +35,16 @@ class Config(dict):
 
     def path(self, key):
         """Resolve a `paths:` entry against the project root."""
-        return self.root / self["paths"][key]
+        return self.file(self["paths"][key])
+
+    def file(self, value):
+        """Resolve a path written in the config against the project root.
+
+        An absolute path stands as it is; anything else is relative to the
+        project directory, the way `paths:` entries are.
+        """
+        path = Path(value)
+        return path if path.is_absolute() else self.root / path
 
 
 def short_name(path):
@@ -154,6 +163,14 @@ def _validate(cfg):
         raise ValueError(
             f"conditions per_run sums to {total} but the run has {n} trials"
         )
+
+    for name, s in cfg["screens"].items():
+        image = s.get("image")
+        if image is not None and not (isinstance(image, str) and image):
+            raise ValueError(f"screen `{name}`: `image` must be a path, got {image!r}")
+        if image is None and s.get("text") is None:
+            raise ValueError(f"screen `{name}`: needs `text` (a line to show) or "
+                             "`image` (a picture to show)")
 
     screens = set(cfg["screens"])
     unknown = {p["show"] for p in trial["phases"]} - screens - set(BUILTIN_SHOWS)

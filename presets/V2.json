@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "meta": {
     "studyTitle": "Inner Speech Decoding",
     "investigator": "",
@@ -103,35 +103,40 @@
           "min": 2,
           "max": 6,
           "jitter": true,
-          "role": "baseline"
+          "role": "baseline",
+          "shows": "fixation"
         },
         {
           "name": "Question Prompt",
           "min": 4,
           "max": 4,
           "jitter": false,
-          "role": "stimulus"
+          "role": "stimulus",
+          "shows": "question"
         },
         {
           "name": "Delay",
           "min": 2,
           "max": 5,
           "jitter": true,
-          "role": "delay"
+          "role": "delay",
+          "shows": "blank"
         },
         {
           "name": "Paced Repetition",
           "min": 5,
           "max": 5,
           "jitter": false,
-          "role": "response"
+          "role": "response",
+          "shows": "cue"
         },
         {
           "name": "ITI",
           "min": 2,
           "max": 5,
           "jitter": true,
-          "role": "delay"
+          "role": "delay",
+          "shows": "blank"
         }
       ],
       "controlPct": 0,
@@ -164,7 +169,8 @@
           "min": 10,
           "max": 14,
           "jitter": true,
-          "role": "delay"
+          "role": "delay",
+          "shows": "blank"
         },
         {
           "name": "Paced Repetition",
@@ -197,7 +203,8 @@
           "min": 360,
           "max": 360,
           "jitter": false,
-          "role": "baseline"
+          "role": "baseline",
+          "shows": "fixation"
         }
       ],
       "controlPct": 0,
@@ -214,21 +221,24 @@
           "min": 2,
           "max": 2,
           "jitter": false,
-          "role": "baseline"
+          "role": "baseline",
+          "shows": "fixation"
         },
         {
           "name": "Audio token",
           "min": 1,
           "max": 1,
           "jitter": false,
-          "role": "stimulus"
+          "role": "stimulus",
+          "shows": "question"
         },
         {
           "name": "ITI",
           "min": 4,
           "max": 8,
           "jitter": true,
-          "role": "baseline"
+          "role": "baseline",
+          "shows": "fixation"
         }
       ],
       "controlPct": 0,
@@ -659,15 +669,17 @@
       "cueFromResponse": false
     }
   ],
-  "screens": {
-    "fixation": "",
-    "leadIn": "blank",
-    "leadOut": "blank",
-    "labels": [
-      "yes",
-      "no"
-    ],
-    "labelBalancePct": 50,
-    "tokenCase": "upper"
+  "presentation": {
+    "fixation": {
+      "text": ""
+    },
+    "run": {
+      "lead_in": {
+        "show": "blank"
+      },
+      "lead_out": {
+        "show": "blank"
+      }
+    }
   }
 }

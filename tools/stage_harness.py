@@ -69,13 +69,20 @@ var __feed = {
   idle: function () { __events.push({ kind: 'idle' }); },
 };
 
+/* What one screen element draws: its line of text, or - since c4deb46, a
+   screen may be a picture - the picture it was given, or none. */
+function __drawn(el) {
+  if (el.tagName === 'IMG') return 'picture:' + (el.src || '(none)');
+  return el.textContent;
+}
+
 /* Since f141c38 the stage holds one element per `screens:` entry in
    stage.screens, keyed by name, beside the three it builds itself. */
 function __visible(stage) {
   var on = [];
   var named = stage.screens || {};
   for (var name in named) {
-    if (named[name] && !named[name].hidden) on.push({ el: name, text: named[name].textContent });
+    if (named[name] && !named[name].hidden) on.push({ el: name, text: __drawn(named[name]) });
   }
   var built = { cue: stage.cue, qtext: stage.qtext, message: stage.message };
   for (var key in built) {
@@ -130,7 +137,7 @@ function __play(plan, opts, maxFrames) {
   /* What each screen is set to draw, so the check compares a segment with
      the design's own mark rather than a cross it assumes. */
   var marks = {};
-  for (var name in (stage.screens || {})) marks[name] = stage.screens[name].textContent;
+  for (var name in (stage.screens || {})) marks[name] = __drawn(stage.screens[name]);
 
   var segs = stage.segs.map(function (seg, i) {
     var got = seen[String(i)] || { painted: [], frames: 0 };
@@ -189,6 +196,10 @@ def check(result: dict) -> list:
             if not label.startswith(want + "="):
                 problems.append(f"{where}: should paint `{want}`, painted {label!r}")
         if want in result["marks"]:
+            if result["marks"][want] == "picture:(none)":
+                # The stage draws an empty picture and warns; the task stops.
+                problems.append(f"{where}: its picture is not in the question bank's "
+                                "screens/, so nothing was drawn (PsychoPy would stop here)")
             # A screen draws whatever the design set it to, which may be nothing.
             expected = f"{want}={result['marks'][want]}"
             for label in painted:
@@ -233,7 +244,8 @@ def design_plans(name: str, banks: demo.Banks, seed: int, run_only):
         label = f"{name} / {item.get('run') or item.get('file')}"
         source = {"source": "planner", "design": name, "id": item.get("id", ""),
                   "file": item.get("file", "")}
-        yield label, demo.plan(item.get("yaml", ""), banks, source, seed=seed)
+        yield label, demo.plan(item.get("yaml", ""), banks, source, seed=seed,
+                               files_base="/demo/files")
 
 
 def example_plans(banks: demo.Banks, seed: int):

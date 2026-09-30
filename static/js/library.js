@@ -212,6 +212,27 @@
     return select;
   }
 
+  /* What one `show` puts up, in words - the same wording wherever a screen is
+   * named: the phase dropdown, the strip, the designer.  `inPlay` is the
+   * conditions a trial can present, for what its cue draws. */
+  function describeShow(show, shown, inPlay) {
+    var screen = shown.screens.filter(function (item) { return item.name === show; })[0];
+    if (screen) {
+      if (screen.look.image) return 'picture ' + String(screen.look.image).split('/').pop();
+      return screen.look.text ? screen.look.text : 'nothing (its symbol is empty)';
+    }
+    if (show === 'question') return 'the question';
+    if (show === 'blank') return 'nothing';
+    if (show === 'cue') {
+      var symbols = (inPlay || M.trialRoles(App.state)).map(function (role) {
+        return role.shape || '(none)';
+      });
+      return symbols.join(' ') + (symbols.length === 1 ? ' (the condition\'s cue)'
+        : ' (each condition\'s cue)');
+    }
+    return show;
+  }
+
   function cardOptions(role) {
     return (App.boot.manifest || []).filter(function (entry) {
       return !role || entry.role === role;
@@ -285,39 +306,37 @@
       return M.conditionsInPlay(App.state, H.num(trial.controlPct));
     }
 
-    /* What one `show` value actually puts on screen, named so the dropdown
-     * and the strip below it can say the same thing. */
-    function showLabel(show) {
-      if (show === 'fixation') {
-        var mark = M.screens(App.state).fixation;
-        return mark ? 'The fixation mark  ' + mark
-          : 'The fixation mark - set to nothing, so blank';
-      }
-      if (show === 'question') return 'The question';
-      if (show === 'blank') return 'Nothing - a blank screen';
-      if (show !== 'cue') return show;
-      var shapes = inPlay().map(function (role) {
-        return (role.shape || '(no shape)') + ' ' + role.name;
-      });
-      return shapes.length === 1
-        ? 'The trial\'s condition cue  ' + shapes[0]
-        : 'The trial\'s condition cue  (' + shapes.join(', ') + ')';
+    function cueSymbols() {
+      return inPlay().map(function (role) { return role.shape; });
     }
 
-    /* One line of what a participant sees, in order.  Everything above is a
-     * setting; this is the consequence, which is the thing worth checking. */
+    /* What one `show` puts up, in words, so the dropdown, the strip and the
+     * designer all name it the same way. */
+    function showLabel(show, shown) {
+      return describeShow(show, shown || M.resolvedPresentation(App.state, App.boot), inPlay());
+    }
+
+    /* One line of what a participant sees, in order, each screen drawn the
+     * way the task draws it.  Everything above is a setting; this is the
+     * consequence, which is the thing worth checking. */
+    var stripHost = App.h('div', {});
+    function renderStrip() {
+      App.clear(stripHost);
+      stripHost.appendChild(renderScreen());
+    }
+
     function renderScreen() {
-      var strip = App.h('div', { class: 'screen-strip' });
+      var shown = M.resolvedPresentation(App.state, App.boot);
+      var strip = App.h('div', { class: 'screen-strip tiles' });
       trial.phases.forEach(function (phase) {
-        var show = M.phaseShow(phase);
-        var glyph = show === 'fixation' ? (M.screens(App.state).fixation || '\u00b7')
-          : show === 'question' ? 'Q?'
-            : show === 'blank' ? '\u00b7'
-              : (inPlay().map(function (r) { return r.shape || '?'; }).join('') || '?');
-        strip.appendChild(App.h('span', { class: 'screen-step show-' + show, title:
-          phase.name + ' \u2014 ' + showLabel(show) }, [
-          App.h('b', { text: glyph }),
-          App.h('i', { text: phase.name })
+        var show = M.phaseShow(App.state, phase);
+        strip.appendChild(App.h('div', { class: 'screen-step tile-step' }, [
+          App.screenTile(show, shown, {
+            height: 70, cueSymbols: cueSymbols(),
+            title: phase.name + ' — ' + show + ': ' + showLabel(show, shown)
+          }),
+          App.h('i', { text: phase.name }),
+          App.h('small', { text: show })
         ]));
       });
       return strip;
@@ -325,6 +344,10 @@
 
     function renderPhases() {
       App.clear(phaseHost);
+      var shown = M.resolvedPresentation(App.state, App.boot);
+      var options = M.showOptions(App.state).map(function (show) {
+        return { value: show, label: show + ' — ' + showLabel(show, shown) };
+      });
       var rows = trial.phases.map(function (phase, index) {
         return [
           { text: String(index + 1), num: true },
@@ -332,28 +355,14 @@
             function () { return phase.name; },
             function (value) { editPhase(index, { name: String(value || '').trim() || 'Phase' }); }
           ), copy: phase.name },
+          /* What the screen does, picked from the screens designed in
+           * Conditions: each option names what it actually puts up, so the
+           * column answers "what will I see" in the row itself. */
           { node: selectInput(
-            function () { return M.normaliseRole(phase.role); },
-            function (value) { editPhase(index, { role: value }); },
-            M.PHASE_ROLES.map(function (role) {
-              return { value: role.id, label: role.label };
-            })
-          ), copy: M.normaliseRole(phase.role) },
-          /* What the screen does, which the regressor role only suggests.
-           * Every option names the thing it actually puts up, glyph and all,
-           * so the column answers "what will I see" in the row rather than
-           * in the documentation. */
-          { node: selectInput(
-            function () { return M.normaliseShow(phase.shows); },
+            function () { return M.phaseShow(App.state, phase); },
             function (value) { editPhase(index, { shows: value }); },
-            M.PHASE_SHOWS.map(function (show) {
-              return {
-                value: show.id,
-                label: show.id ? showLabel(show.id)
-                  : 'From the role \u2192 ' + showLabel(M.phaseShow({ role: phase.role }))
-              };
-            })
-          ), copy: M.phaseShow(phase) },
+            options
+          ), copy: M.phaseShow(App.state, phase) },
           { node: numberInput(
             function () { return H.round(H.num(phase.min), 2); },
             function (value) { editPhase(index, { min: Math.max(0, value) }); },
@@ -392,8 +401,7 @@
       });
 
       var table = App.dataTable(
-        [{ label: '#', num: true }, { label: 'Phase' }, { label: 'Role' },
-          { label: 'Shows' },
+        [{ label: '#', num: true }, { label: 'Phase' }, { label: 'Screen' },
           { label: 'Min (s)', num: true }, { label: 'Max (s)', num: true },
           { label: 'Jitter' }, { label: '' }],
         rows.map(function (row) {
@@ -422,9 +430,10 @@
       phaseHost.appendChild(App.h('div', { class: 'screen-head' }, [
         App.h('span', { text: 'On screen' }),
         App.h('span', { class: 'muted', text:
-          'what a participant sees, phase by phase - hover for why' })
+          'what a participant sees, phase by phase, drawn to scale - hover for what each is' })
       ]));
-      phaseHost.appendChild(renderScreen());
+      phaseHost.appendChild(stripHost);
+      renderStrip();
       phaseHost.appendChild(App.h('div', { class: 'btn-row mt' }, [
         App.iconButton('Add phase', 'Append a phase to the trial', function () {
           if (App.act('phase.add', { trial: trial.id })) renderPhases();
@@ -447,6 +456,13 @@
       ]));
     }
     renderPhases();
+    /* A screen renamed, restyled or added in Conditions changes what this
+     * table offers and what the strip draws. */
+    App.registerView(function () {
+      /* Not under a person still in the table: redraw only the strip. */
+      if (phaseHost.contains(global.document.activeElement)) renderStrip();
+      else renderPhases();
+    }, owner);
 
     var timingReadout = App.h('div', { class: 'readout' });
     App.registerView(function (report) {
@@ -463,21 +479,18 @@
     }, owner);
 
     host.appendChild(App.card('Trial phases',
-      'Order, duration and jitter; Role drives the regressor model, Shows drives the screen',
+      'Order, duration, jitter, and the screen each phase shows',
       [timingReadout,
-        /* The word that used to be in two panels at once.  A phase's role is
-         * a property of a slice of this timeline; what kind of trial this is
-         * lives in Conditions, and neither list is the other's. */
         App.h('div', { class: 'notice' }, [
           App.h('span', { html:
-            '<strong>Role</strong> here belongs to the phase - one slice of this trial - '
-            + 'and is what the regressor model reads. <strong>Shows</strong> is what the '
-            + 'screen does during it, which follows the role unless you say otherwise. '
-            + 'What kind of trial this <em>is</em> - its condition, and the shape it '
-            + 'wears - is a different list, in ' })
-        ].concat([App.h('a', { href: '#', text: 'Conditions',
-          onclick: function (event) { event.preventDefault(); App.go('conditions'); } }),
-          App.h('span', { text: '.' })])),
+            'Each phase shows one <strong>screen</strong>: the fixation, the question, the '
+            + 'trial\'s condition cue, nothing, or a screen of your own. What each one looks '
+            + 'like - symbol or picture, size, colour, place - is designed in ' }),
+          App.h('a', { href: '#', text: 'Conditions',
+            onclick: function (event) { event.preventDefault(); App.go('conditions'); } }),
+          App.h('span', { text: '. What the timing model counts a phase as is set in Trial '
+            + 'responses, below.' })
+        ]),
         phaseHost, App.slider({
         owner: owner, label: 'Embedded control / null trials',
         min: 0, max: 60, step: 1, unit: '%',
@@ -499,13 +512,13 @@
         empty: 'Add at least one phase to draw the timeline.'
       };
     }, function () { return App.fileStem(trial.name, 'trial-timeline'); }, [
-      App.iconButton('Copy sequence', 'Copy the phase sequence as text', function () {
+      App.exporting(App.iconButton('Copy sequence', 'Copy the phase sequence as text', function () {
         var trSeconds = M.representativeTr(App.state, App.boot, trial);
         var jitter = M.jitterSettings(App.state);
         App.copy(trial.phases.map(function (phase) {
           return H.phaseLabel(phase, trSeconds, jitter);
         }).join(' -> '), 'Trial sequence');
-      })
+      }))
     ], owner));
   }
 
@@ -519,6 +532,64 @@
     var readout = App.h('div', { class: 'readout' });
     var caption = App.h('div', { class: 'plot-caption' });
     var tableHost = App.h('div', { class: 'mt' });
+    var rolesHost = App.h('div', { class: 'mb' });
+
+    /* What the timing model counts each phase as.  It lives here rather than
+     * in the phase table because it is the model's business, not the
+     * screen's: the stimulus and the response are the two events this card
+     * draws and the separation solver separates; a delay is the wait between
+     * them it can size; baseline is the rest around them. */
+    function renderRoles() {
+      if (rolesHost.contains(global.document.activeElement)) return;
+      App.clear(rolesHost);
+      var rows = trial.phases.map(function (phase, index) {
+        return [
+          { text: String(index + 1), num: true },
+          { text: phase.name },
+          { text: M.phaseShow(App.state, phase) },
+          { node: selectInput(
+            function () { return M.normaliseRole(phase.role); },
+            function (value) {
+              App.write('phase.update', { trial: trial.id, phase: index, role: value });
+            },
+            M.PHASE_ROLES.map(function (role) {
+              return { value: role.id, label: role.label + (role.regressor ? '  - an event' : '') };
+            })
+          ), copy: M.normaliseRole(phase.role) }
+        ];
+      });
+      var table = App.dataTable(
+        [{ label: '#', num: true }, { label: 'Phase' }, { label: 'Shows' },
+          { label: 'Modelled as' }],
+        rows.map(function (row) {
+          return row.map(function (cell) {
+            return { text: cell.text, num: cell.num, className: cell.node ? 'cell' : '',
+              copy: cell.copy };
+          });
+        }),
+        { caption: trial.name + ' - what the timing model counts each phase as' }
+      );
+      var bodyRows = table.querySelectorAll('tbody tr');
+      rows.forEach(function (row, rowIndex) {
+        var tr = bodyRows[rowIndex];
+        if (!tr) return;
+        row.forEach(function (cell, cellIndex) {
+          if (!cell.node) return;
+          var td = tr.children[cellIndex];
+          App.clear(td);
+          td.appendChild(cell.node);
+        });
+      });
+      rolesHost.appendChild(App.h('div', { class: 'notice' }, [App.h('span', { html:
+        '<strong>Modelled as</strong> is what the timing model makes of each phase - '
+        + 'not what it shows. The <em>stimulus</em> and the <em>response</em> are the two '
+        + 'events: each drives a response curve below, and the separation solver keeps them '
+        + 'apart. A <em>delay</em> is the wait between them it can size, and '
+        + '<em>baseline</em> the rest around them.' })]));
+      rolesHost.appendChild(table);
+    }
+    App.registerView(renderRoles, owner);
+    renderRoles();
 
     function swatch(colour) {
       return '<span style="display:inline-block;width:9px;height:9px;border-radius:2px;'
@@ -534,8 +605,9 @@
       plot.render(model);
 
       if (!model || !model.traces.length) {
-        caption.textContent = 'Nothing in this trial drives a response yet. Give a phase the '
-          + 'Stimulus / cue or Response / probe window role above and its HRF is drawn here.';
+        caption.textContent = 'Nothing in this trial drives a response yet. Set a phase\'s '
+          + 'Modelled as to Stimulus / cue or Response / probe window above and its HRF is '
+          + 'drawn here.';
         return;
       }
 
@@ -581,8 +653,8 @@
     }, owner);
 
     return App.card('Trial responses',
-      'Every phase that drives an HRF, and how far apart the peaks land',
-      [plot.node, caption, readout, tableHost]);
+      'What the timing model counts each phase as, and how far apart the responses land',
+      [rolesHost, plot.node, caption, readout, tableHost]);
   }
 
   /* The separation solver: one slider that solves the delay and the tail from
@@ -602,8 +674,9 @@
       var result = solved();
       var objective = M.objectiveDef(App.state, trial.objective);
       if (!result) {
-        note.textContent = 'This solver needs one phase with the Stimulus role and one with '
-          + 'the Response role. Set those roles above and it comes alive.';
+        note.textContent = 'This solver needs one phase modelled as the stimulus and one as '
+          + 'the response. Set them under Trial responses > Modelled as, above, and it comes '
+          + 'alive.';
         return;
       }
       var index = M.phaseIndices(trial);
@@ -1857,24 +1930,117 @@
 
   /* --------------------------------------------------------- conditions */
 
-  /* Trial conditions: what a trial presents, and the shape that tells the
-   * participant which is which.  A study-wide list, like the jitter settings
-   * - every run design's PsychoPy config gets the same ones - and the
-   * builder's own word for them, which is also the YAML key they are written
-   * into.
+  /* The shape designer: everything a participant can see, in one place, all
+   * of it written into the PsychoPy config.
    *
-   * They were called trial roles until that collided with a *phase's* role,
-   * which is what the regressor model reads and is set in the Trials panel.
-   * Two lists, both called Role, is how a phase came to be expected to carry
-   * a condition.  The state and the API still say `role` (state.roles,
-   * role.add); only what anyone reads says condition. */
+   *   Screens     what a phase - or either end of a run - shows: the task's
+   *               fixation screen, screens the design adds (a line of text,
+   *               or a picture), the condition cue, the question, nothing.
+   *               Each trial phase picks one in the Trials panel.
+   *   Conditions  the kinds of trial, each with the cue symbol that tells the
+   *               participant which it is, and what it asks of them.
+   *
+   * Everything on screen lives in state.presentation, a sparse overlay in the
+   * config's own keys: only what the design sets is written, so the task's
+   * defaults still reach everything else.  The conditions were called trial
+   * roles until that collided with a phase's role; the state and the API
+   * still say `role` (state.roles, role.add), and only what anyone reads says
+   * condition. */
 
-  /* Offered in the shape box, not imposed: the field takes any text. */
-  var SHAPE_CHOICES = ['\u25CF', '\u25CB', '\u25C6', '\u25C7', '\u25B2', '\u25B3',
-    '\u25BC', '\u25BD', '\u25A0', '\u25A1', '\u2605', '\u2606', '\u2716', '\u271A',
-    '\u2B1F', '\u2B22'];
+  /* Offered in every symbol box, not imposed: the field takes any text. */
+  var SHAPE_CHOICES = ['+', '✚', '●', '○', '◆', '◇', '▲',
+    '△', '▼', '▽', '■', '□', '★', '☆', '✖',
+    '⬟', '⬢', '·'];
 
   var SHAPE_LIST_ID = 'role-shape-choices';
+
+  /* A path the task can draw as a picture.  What a symbol box holds is a
+   * picture when it looks like one, so pasting a path is all it takes. */
+  var PICTURE = /\.(png|jpe?g|gif|webp)$/i;
+
+  /* Glyphs a participant could mistake for one another, grouped by the shape
+   * they read as rather than by codepoint. */
+  var LOOKALIKES = [
+    ['+', '✚', '✖', '✕', '✗', '×', 'x', 'X', '╳'],
+    ['●', '○', '⬤', '◯', 'o', 'O', '0'],
+    ['■', '□', '⬛', '⬜'],
+    ['▲', '△', '▼', '▽'],
+    ['◆', '◇', '⬧', '⬦'],
+    ['★', '☆']
+  ];
+
+  function lookalikeGroup(glyph) {
+    for (var i = 0; i < LOOKALIKES.length; i += 1) {
+      if (LOOKALIKES[i].indexOf(glyph) >= 0) return i;
+    }
+    return -1;
+  }
+
+  /* What a participant repeats, in plain words.  `ready` is the older
+   * spelling of `constant`, and the task reads them the same way. */
+  var RESPONSE_WORDS = [
+    { value: 'answer', label: 'the answer' },
+    { value: 'opposite', label: 'the other answer' },
+    { value: 'none', label: 'nothing - silent' },
+    { value: 'constant', label: 'a fixed word' }
+  ];
+
+  /* A setting shown with the value the task will use: the design's own, or
+   * the task's default greyed until it is changed.  ↺ puts it back. */
+  function ownable(node, isOwn, reset) {
+    var wrap = App.h('span', { class: 'ownable' + (isOwn ? '' : ' inherited'),
+      title: isOwn ? null : 'The task\'s default - change it to set your own' }, [node]);
+    if (isOwn && reset) {
+      wrap.appendChild(App.iconButton('↺', 'Back to the task\'s default', reset));
+    }
+    return wrap;
+  }
+
+  function sizeInput(value, isOwn, set, reset) {
+    var input = App.h('input', { type: 'number', class: 'cell-input size-input', min: '0.1',
+      step: '0.5', title: 'How tall, as a % of the screen\'s height' });
+    input.value = H.round(H.num(value) * 100, 2);
+    input.addEventListener('change', function () {
+      var pct = parseFloat(input.value);
+      if (isFinite(pct) && pct > 0) set(H.round(pct / 100, 4));
+    });
+    return ownable(App.h('span', { class: 'with-unit' }, [input, App.h('small', { text: '%' })]),
+      isOwn, reset);
+  }
+
+  function colourInput(value, isOwn, set, reset) {
+    var input = App.h('input', { type: 'color', class: 'colour-input',
+      title: typeof value === 'string' ? value : null });
+    input.value = M.colorToHex(value);
+    input.addEventListener('change', function () { set(input.value); });
+    return ownable(input, isOwn, reset);
+  }
+
+  function posInput(value, isOwn, set, reset) {
+    var pos = value || [0, 0];
+    var x = App.h('input', { type: 'number', class: 'cell-input pos-input', step: '0.05',
+      title: 'x: screen heights right of the centre' });
+    var y = App.h('input', { type: 'number', class: 'cell-input pos-input', step: '0.05',
+      title: 'y: screen heights above the centre' });
+    x.value = H.round(H.num(pos[0]), 3);
+    y.value = H.round(H.num(pos[1]), 3);
+    function commit() { set([H.num(x.value), H.num(y.value)]); }
+    x.addEventListener('change', commit);
+    y.addEventListener('change', commit);
+    return ownable(App.h('span', { class: 'pos-pair' }, [x, y]), isOwn, reset);
+  }
+
+  function fontInput(value, isOwn, set, reset) {
+    var input = App.h('input', { type: 'text', class: 'cell-input font-input' });
+    input.value = value || '';
+    input.addEventListener('change', function () {
+      var text = input.value.trim();
+      if (text) set(text); else reset();
+    });
+    return ownable(input, isOwn, reset);
+  }
+
+  function muted(text) { return App.h('span', { class: 'muted', text: text }); }
 
   function buildRoles() {
     var owner = 'conditions';
@@ -1882,18 +2048,354 @@
     panel.appendChild(App.h('div', { class: 'panel-head' }, [
       App.h('h2', { text: 'Conditions' }),
       App.h('p', {
-        html: 'A condition is one of the things a trial can <em>be</em> - the primary task, '
-          + 'a passive-reading control, a catch trial - and each one wears its own shape so '
-          + 'the participant can tell them apart. This list is written straight into the '
-          + 'PsychoPy config\'s <code>conditions:</code> block, which is where the name '
-          + 'comes from. A condition belongs to a whole trial.<br>'
-          + 'It is not a <strong>phase</strong>\'s role, which belongs to one slice of the '
-          + 'trial\'s timeline and is what the regressor model reads; that is set per phase '
-          + 'in the Trials panel.'
+        html: 'Everything a participant sees, designed in one place and written straight into '
+          + 'the PsychoPy config. <strong>Screens</strong> are what a phase can show - the '
+          + 'fixation, screens of your own (a symbol, a word or a picture), the condition cue, '
+          + 'the question, or nothing - and each phase picks one in the Trials panel. '
+          + '<strong>Trial conditions</strong> are the kinds of trial, each with the cue symbol '
+          + 'that tells the participant which it is. Every setting shows the value the task '
+          + 'will use; a grey one is the task\'s own default, and only what you change is '
+          + 'written to the config.'
       })
     ]));
 
-    /* --- the list ------------------------------------------------------- */
+    /* The conditions any trial design can present, for what a cue draws. */
+    function everInPlay() {
+      var seen = {};
+      var out = [];
+      (App.state.trials || []).forEach(function (design) {
+        M.conditionsInPlay(App.state, H.num(design.controlPct)).forEach(function (role) {
+          if (seen[role.name]) return;
+          seen[role.name] = true;
+          out.push(role);
+        });
+      });
+      return out.length ? out : M.trialRoles(App.state).slice(0, 1);
+    }
+
+    /* Where a screen appears, trial by trial, and at which end of a run. */
+    function whereShown(entries) {
+      var byTrial = [];
+      var index = {};
+      var ends = [];
+      (entries || []).forEach(function (entry) {
+        if (entry.lead) {
+          ends.push(entry.lead === 'lead_in' ? 'lead-in' : 'lead-out');
+          return;
+        }
+        if (index[entry.trial] === undefined) {
+          index[entry.trial] = byTrial.length;
+          byTrial.push({ name: entry.trialName, phases: [] });
+        }
+        byTrial[index[entry.trial]].phases.push(entry.phaseName);
+      });
+      var parts = byTrial.map(function (group) {
+        return group.name + ': ' + group.phases.join(', ');
+      });
+      if (ends.length) parts.push('the ' + ends.join(' and ') + ' of every run');
+      return parts;
+    }
+
+    /* --- screens --------------------------------------------------------- */
+
+    var screensHost = App.h('div', {});
+
+    function updateScreen(name, fields) {
+      var out = App.act('screen.update', Object.assign({ screen: name }, fields));
+      renderScreens();
+      return out;
+    }
+
+    function updateDisplay(fields) {
+      App.act('display.update', fields);
+      renderScreens();
+    }
+
+    function renderScreens() {
+      App.clear(screensHost);
+      var shown = M.resolvedPresentation(App.state, App.boot);
+      var d = shown.defaults;
+      var own = shown.own;
+      var usage = M.screenUsage(App.state, App.boot);
+      var cues = everInPlay();
+      var cueSymbols = cues.map(function (role) { return role.shape; });
+      var ownText = own.text || {};
+
+      /* The ground everything is drawn on, and the text style anything that
+       * sets none of its own is drawn in. */
+      screensHost.appendChild(App.h('div', { class: 'screen-fields designer-display' }, [
+        App.h('label', { class: 'screen-field' }, [App.h('span', { text: 'Background' }),
+          colourInput(shown.background, !!own.window,
+            function (value) { updateDisplay({ background: value }); },
+            function () { updateDisplay({ background: null }); })]),
+        App.h('label', { class: 'screen-field' }, [App.h('span', { text: 'Font' }),
+          fontInput(shown.text.font, ownText.font !== undefined,
+            function (value) { updateDisplay({ font: value }); },
+            function () { updateDisplay({ font: null }); })]),
+        App.h('label', { class: 'screen-field' }, [App.h('span', { text: 'Text size' }),
+          sizeInput(shown.text.height, ownText.height !== undefined,
+            function (value) { updateDisplay({ height: value }); },
+            function () { updateDisplay({ height: null }); })]),
+        App.h('label', { class: 'screen-field' }, [App.h('span', { text: 'Text colour' }),
+          colourInput(shown.text.color, ownText.color !== undefined,
+            function (value) { updateDisplay({ color: value }); },
+            function () { updateDisplay({ color: null }); })])
+      ]));
+
+      /* One row per screen: fixation, the design's own, then the task's
+       * cue, question and blank.  Each has a tile drawn as the task draws
+       * it, which is the part worth looking at. */
+      var rows = [];
+      shown.screens.forEach(function (screen, index) {
+        var mine = screen.own;
+        var fixed = screen.builtin;
+        function set(fields) { updateScreen(screen.name, fields); }
+        function reset(key) {
+          return function () { var f = {}; f[key] = null; set(f); };
+        }
+        var draws = App.h('input', { type: 'text', class: 'cell-input draws-input',
+          list: SHAPE_LIST_ID, placeholder: 'a symbol, or screens/x.png',
+          'aria-label': 'What ' + screen.name + ' draws' });
+        draws.value = screen.look.image ? screen.look.image : (screen.look.text || '');
+        draws.addEventListener('change', function () {
+          var trimmed = draws.value.trim();
+          if (PICTURE.test(trimmed)) set({ image: trimmed });
+          else set({ text: draws.value });
+        });
+        var drawsOwn = mine.text !== undefined || mine.image !== undefined;
+        var drawsCell = App.h('div', { class: 'draws-cell' }, [
+          ownable(draws, drawsOwn, fixed ? function () { set({ text: null, image: null }); } : null),
+          App.h('small', { class: 'muted', text: screen.look.image ? 'a picture'
+            : (screen.look.text ? 'a symbol' : 'draws nothing') })
+        ]);
+        var usedBy = whereShown(usage[screen.name]);
+        rows.push({
+          show: screen.name, usedBy: usedBy,
+          cells: [
+            App.screenTile(screen.name, shown, { height: 96,
+              title: screen.name + ' - ' + describeShow(screen.name, shown, cues) }),
+            fixed
+              ? App.h('div', {}, [App.h('strong', { text: screen.name }),
+                App.h('div', { class: 'muted', text: 'the task\'s own' })])
+              : textInput(function () { return screen.name; },
+                function (value) { updateScreen(screen.name, { name: value }); }),
+            drawsCell,
+            sizeInput(screen.look.height, mine.height !== undefined,
+              function (value) { set({ height: value }); }, reset('height')),
+            screen.look.image ? muted('- (a picture)')
+              : colourInput(screen.look.color, mine.color !== undefined,
+                function (value) { set({ color: value }); }, reset('color')),
+            posInput(screen.look.pos, mine.pos !== undefined,
+              function (value) { set({ pos: value }); }, reset('pos')),
+            screen.look.image ? muted('-')
+              : fontInput(screen.look.font, mine.font !== undefined,
+                function (value) { set({ font: value }); }, reset('font')),
+            App.h('span', { class: usedBy.length ? '' : 'muted',
+              text: usedBy.length ? usedBy.join(' · ') : 'not shown anywhere' }),
+            fixed ? App.h('span', {}) : App.h('div', { class: 'btn-row tight' }, [
+              App.iconButton('↑', 'Move up', function () {
+                if (App.act('screen.move', { screen: screen.name, delta: -1 })) renderScreens();
+              }),
+              App.iconButton('↓', 'Move down', function () {
+                if (App.act('screen.move', { screen: screen.name, delta: 1 })) renderScreens();
+              }),
+              App.iconButton('×', 'Delete this screen', function () {
+                if (App.act('screen.remove', { screen: screen.name })) renderScreens();
+              }, 'danger')
+            ])
+          ]
+        });
+      });
+
+      var cueOwn = own.cue || {};
+      function setCue(fields) { updateScreen('cue', fields); }
+      function resetCue(key) { return function () { var f = {}; f[key] = null; setCue(f); }; }
+      rows.push({
+        show: 'cue', usedBy: whereShown(usage.cue),
+        cells: [
+          App.screenTile('cue', shown, { height: 96, cueSymbols: cueSymbols,
+            title: 'cue - ' + describeShow('cue', shown, cues) }),
+          App.h('div', {}, [App.h('strong', { text: 'cue' }),
+            App.h('div', { class: 'muted', text: 'the task\'s own' })]),
+          App.h('div', { class: 'draws-cell' }, [
+            App.h('span', { text: cues.map(function (role) {
+              return (role.shape || '(none)') + ' ' + role.name;
+            }).join(', ') }),
+            App.h('small', { class: 'muted', text: 'each condition\'s cue symbol - set below' })
+          ]),
+          sizeInput(shown.cue.height, cueOwn.height !== undefined,
+            function (value) { setCue({ height: value }); }, resetCue('height')),
+          colourInput(shown.cue.color, cueOwn.color !== undefined,
+            function (value) { setCue({ color: value }); }, resetCue('color')),
+          posInput(shown.cue.pos, cueOwn.pos !== undefined,
+            function (value) { setCue({ pos: value }); }, resetCue('pos')),
+          muted('the text font'),
+          null, App.h('span', {})
+        ]
+      });
+      [['question', 'the question, from the question bank',
+        'drawn in the text style above'],
+      ['blank', 'nothing', 'the background alone']].forEach(function (stock) {
+        rows.push({
+          show: stock[0], usedBy: whereShown(usage[stock[0]]),
+          cells: [
+            App.screenTile(stock[0], shown, { height: 96, title: stock[0] + ' - ' + stock[1] }),
+            App.h('div', {}, [App.h('strong', { text: stock[0] }),
+              App.h('div', { class: 'muted', text: 'the task\'s own' })]),
+            App.h('div', { class: 'draws-cell' }, [App.h('span', { text: stock[1] }),
+              App.h('small', { class: 'muted', text: stock[2] })]),
+            muted('-'), muted('-'), muted('-'), muted('-'), null, App.h('span', {})
+          ]
+        });
+      });
+      rows.forEach(function (row) {
+        if (row.cells[7] === null) {
+          row.cells[7] = App.h('span', { class: row.usedBy.length ? '' : 'muted',
+            text: row.usedBy.length ? row.usedBy.join(' · ') : 'not shown anywhere' });
+        }
+      });
+
+      var table = App.dataTable(
+        [{ label: 'Looks like' }, { label: 'Screen' }, { label: 'Draws' }, { label: 'Size' },
+          { label: 'Colour' }, { label: 'Position (x, y)' }, { label: 'Font' },
+          { label: 'Shown by' }, { label: '' }],
+        rows.map(function (row) {
+          return row.cells.map(function () { return { text: '', className: 'cell' }; });
+        }),
+        { caption: 'Screens - everything a phase can show' }
+      );
+      var bodyRows = table.querySelectorAll('tbody tr');
+      rows.forEach(function (row, rowIndex) {
+        var tr = bodyRows[rowIndex];
+        if (!tr) return;
+        row.cells.forEach(function (node, cellIndex) {
+          var td = tr.children[cellIndex];
+          if (!td || !node) return;
+          App.clear(td);
+          td.appendChild(node);
+        });
+      });
+      screensHost.appendChild(App.h('div', { class: 'table-scroll designer-table' }, [table]));
+
+      /* The two ends of a run have no trial, so no question and no cue. */
+      function endPicker(key, label, current) {
+        return App.h('label', { class: 'screen-field' }, [
+          App.h('span', { text: label }),
+          selectInput(
+            function () { return current; },
+            function (value) {
+              var args = {};
+              args[key] = value;
+              App.write('leads.update', args);
+              /* After the refresh this setter is part of, so "Shown by" follows. */
+              setTimeout(renderScreens, 0);
+            },
+            M.leadOptions(App.state).map(function (show) {
+              return { value: show, label: show + ' — ' + describeShow(show, shown, cues) };
+            })
+          )
+        ]);
+      }
+      screensHost.appendChild(App.h('div', { class: 'screen-fields mt' }, [
+        endPicker('leadIn', 'Lead-in shows', shown.leadIn),
+        endPicker('leadOut', 'Lead-out shows', shown.leadOut),
+        App.h('span', { class: 'muted', text: 'The quiet stretches that open and close every '
+          + 'run; each run design sets how long they are.' })
+      ]));
+
+      /* Anything drawn twice, or drawn as something easily mistaken for it. */
+      var drawn = [];
+      shown.screens.forEach(function (screen) {
+        if (!(usage[screen.name] || []).length || screen.look.image || !screen.look.text) return;
+        drawn.push({ glyph: screen.look.text, what: screen.name });
+      });
+      if ((usage.cue || []).length) {
+        cues.forEach(function (role) {
+          if (role.shape && !role.cueFromResponse) {
+            drawn.push({ glyph: role.shape, what: role.name + '\'s cue' });
+          }
+        });
+      }
+      var clashes = [];
+      drawn.forEach(function (a, i) {
+        drawn.slice(i + 1).forEach(function (b) {
+          if (a.glyph === b.glyph) {
+            clashes.push(a.glyph + ' is drawn by both ' + a.what + ' and ' + b.what);
+          } else {
+            var group = lookalikeGroup(a.glyph);
+            if (group >= 0 && group === lookalikeGroup(b.glyph)) {
+              clashes.push(a.glyph + ' (' + a.what + ') and ' + b.glyph + ' (' + b.what
+                + ') read as the same shape');
+            }
+          }
+        });
+      });
+      if (clashes.length) {
+        screensHost.appendChild(App.h('div', { class: 'notice warn mt' }, [
+          App.h('span', { text: 'On screen in the same study and hard to tell apart: '
+            + clashes.join('; ') + '. Fine if they mean the same thing; otherwise change one.' })
+        ]));
+      }
+      var empty = shown.screens.filter(function (screen) {
+        return (usage[screen.name] || []).length && !screen.look.image && !screen.look.text;
+      });
+      if (empty.length) {
+        screensHost.appendChild(App.h('div', { class: 'notice mt' }, [
+          App.h('span', { text: empty.map(function (screen) { return screen.name; }).join(', ')
+            + (empty.length === 1 ? ' draws' : ' draw') + ' nothing - '
+            + (empty.length === 1 ? 'its symbol is' : 'their symbols are') + ' empty - so '
+            + 'every phase showing ' + (empty.length === 1 ? 'it' : 'them')
+            + ' is a plain background. Type a symbol if that is not what you meant.' })
+        ]));
+      }
+
+      screensHost.appendChild(App.h('datalist', { id: SHAPE_LIST_ID },
+        SHAPE_CHOICES.map(function (shape) { return App.h('option', { value: shape }); })));
+      screensHost.appendChild(App.h('div', { class: 'btn-row mt' }, [
+        App.iconButton('Add screen', 'A screen of your own: a symbol, a word or a picture',
+          function () {
+            if (App.act('screen.add')) renderScreens();
+          }, ''),
+        App.iconButton('Reset everything to the task\'s defaults',
+          'Every setting on this card back to the task\'s own, and your own screens deleted',
+          function () {
+            if (!global.confirm('Put every screen setting back to the task\'s defaults and '
+              + 'delete your own screens? A phase that shows one goes back to what its role '
+              + 'implies.')) return;
+            var out = App.act('presentation.reset');
+            if (!out) return;
+            App.toast(out.moved.length
+              ? 'Back to the task\'s defaults; ' + out.moved.length + ' '
+                + (out.moved.length === 1 ? 'phase' : 'phases') + ' moved off your own screens'
+              : 'Back to the task\'s defaults', 'ok');
+            renderScreens();
+          })
+      ]));
+    }
+    App.registerView(function () {
+      if (!screensHost.contains(global.document.activeElement)) renderScreens();
+    }, owner);
+    renderScreens();
+
+    panel.appendChild(App.card('Screens',
+      'Everything a participant can see, and where each one appears', [
+      App.h('div', {
+        class: 'notice',
+        html: 'Each row is drawn the way the task draws it: the window\'s shape, the '
+          + 'background, and everything at its own size, colour and place. Type a symbol or a '
+          + 'word into <strong>Draws</strong>, or paste a picture\'s path - '
+          + '<code>screens/rest.png</code>, from the task\'s folder - and the row becomes a '
+          + 'picture. <strong>Size</strong> is a share of the screen\'s height, and '
+          + '<strong>Position</strong> is measured in screen heights from the centre: x to '
+          + 'the right, y up. A grey value is the task\'s default; ↺ puts a changed one '
+          + 'back. The demo player previews pictures from its question banks\' '
+          + '<code>screens/</code> folder; the task needs them at the same path on the '
+          + 'presentation computer.'
+      }),
+      screensHost
+    ]));
+
+    /* --- trial conditions ------------------------------------------------- */
 
     var tableHost = App.h('div', {});
 
@@ -1912,6 +2414,7 @@
       var roles = M.trialRoles(App.state);
 
       var rows = roles.map(function (role, index) {
+        var response = role.response === 'ready' ? 'constant' : role.response;
         return [
           { text: String(index + 1), num: true },
           { node: textInput(
@@ -1929,51 +2432,46 @@
             return input;
           }()), copy: role.shape },
           { node: (function () {
-            var box = App.h('input', { type: 'checkbox' });
+            var box = App.h('input', { type: 'checkbox',
+              title: 'Show the question on these trials. Off: the question phase stays blank' });
             box.checked = !!role.showQuestion;
             box.addEventListener('change', function () {
               editRole(index, { showQuestion: box.checked });
               App.refresh();
             });
             return box;
-          }()), copy: role.showQuestion ? 'yes' : 'no' },
+          }()), copy: role.showQuestion ? 'shown' : 'blank' },
           { node: selectInput(
-            function () { return role.response; },
+            function () { return response; },
             function (value) { editRole(index, { response: value }, true); },
-            M.RESPONSE_TOKENS.map(function (token) { return { value: token, label: token }; })
-          ), copy: role.response },
-          /* Only a response that repeats a fixed word has one; the others
-           * show what they repeat instead, which is not ours to set. */
+            RESPONSE_WORDS
+          ), copy: response },
           { node: M.needsWord(role)
             ? textInput(
               function () { return role.word || M.DEFAULT_CONSTANT_WORD; },
               function (value) { editRole(index, { word: value }, true); }
             )
-            : App.h('span', { class: 'muted', text:
-              role.response === 'none' ? 'silent'
-                : role.response === 'opposite' ? 'the other label' : 'the answer' }),
-            copy: M.needsWord(role) ? (role.word || M.DEFAULT_CONSTANT_WORD) : '' },
-          { node: (function () {
-            var box = App.h('input', { type: 'checkbox' });
-            box.checked = !!role.cueFromResponse;
-            box.addEventListener('change', function () {
-              editRole(index, { cueFromResponse: box.checked });
-              App.refresh();
-            });
-            return box;
-          }()), copy: role.cueFromResponse ? 'yes' : 'no' },
+            : muted('-'),
+          copy: M.needsWord(role) ? (role.word || M.DEFAULT_CONSTANT_WORD) : '' },
+          { node: selectInput(
+            function () { return role.cueFromResponse ? 'word' : 'symbol'; },
+            function (value) { editRole(index, { cueFromResponse: value === 'word' }, true); },
+            [{ value: 'symbol', label: 'its symbol' },
+              { value: 'word', label: 'the word to say' }]
+          ), copy: role.cueFromResponse ? 'the word to say' : 'its symbol' },
           { node: App.h('div', { class: 'btn-row tight' }, [
-            App.iconButton('\u2191', 'Move up; the first role is the primary one', function () {
-              if (index === 0) return;
-              App.act('role.move', { role: index, delta: -1 });
-              renderRoles();
-            }),
-            App.iconButton('\u2193', 'Move down', function () {
+            App.iconButton('↑', 'Move up; the first condition is the primary one',
+              function () {
+                if (index === 0) return;
+                App.act('role.move', { role: index, delta: -1 });
+                renderRoles();
+              }),
+            App.iconButton('↓', 'Move down', function () {
               if (index >= roles.length - 1) return;
               App.act('role.move', { role: index, delta: 1 });
               renderRoles();
             }),
-            App.iconButton('\u00D7', 'Remove this role', function () {
+            App.iconButton('×', 'Remove this condition', function () {
               if (App.act('role.remove', { role: index })) renderRoles();
             }, 'danger')
           ]), copy: '' }
@@ -1981,9 +2479,9 @@
       });
 
       var table = App.dataTable(
-        [{ label: '#', num: true }, { label: 'Condition' }, { label: 'Shape' },
-          { label: 'Shows question' }, { label: 'Response' }, { label: 'Repeats' },
-          { label: 'Cue from response' }, { label: '' }],
+        [{ label: '#', num: true }, { label: 'Condition' }, { label: 'Cue symbol' },
+          { label: 'Question' }, { label: 'Participant says' }, { label: 'Word' },
+          { label: 'Cue shows' }, { label: '' }],
         rows.map(function (row) {
           return row.map(function (cell) {
             return { text: cell.text, num: cell.num, className: cell.node ? 'cell' : '',
@@ -2007,10 +2505,6 @@
       });
 
       tableHost.appendChild(table);
-      /* A condition with no shape writes `cue: ""`, and a phase that shows
-       * the cue then paints nothing at all for those trials - which looks
-       * like a blank screen rather than a mistake.  Worth saying here, where
-       * it is fixed, rather than leaving it to be found on the stage. */
       /* A condition only comes up if some trial design withholds a control
        * share for it - the first one takes everything otherwise.  Adding one
        * and leaving every share at zero is silent today: it is written into
@@ -2030,28 +2524,26 @@
             + '</strong> ' + (idle.length === 1 ? 'is' : 'are')
             + ' written into every config at <code>per_run: 0</code>, so '
             + (idle.length === 1 ? 'it never comes up' : 'they never come up')
-            + ' and the shape is never drawn. The first condition takes every trial a '
+            + ' and the cue symbol is never drawn. The first condition takes every trial a '
             + 'trial design does not withhold as its <em>embedded control share</em>, and '
             + 'that share is 0% on every trial design here. Raise it in ' }),
           App.h('a', { href: '#', text: 'Trials',
             onclick: function (event) { event.preventDefault(); App.go('trials'); } }),
-          App.h('span', { text: ', or reorder these so the one you want is first.' })
+          App.h('span', { text: ', or reorder these so the one you want is first. A symbol '
+            + 'you want a phase to show belongs in Screens, above, not here.' })
         ]));
       }
 
       var unshaped = roles.filter(function (role) { return !role.shape; });
       if (unshaped.length) {
         tableHost.appendChild(App.h('div', { class: 'notice warn mt' }, [
-          (unshaped.length === 1 ? 'One condition has no shape: ' : 'These conditions have '
-            + 'no shape: ')
+          (unshaped.length === 1 ? 'One condition has no cue symbol: ' : 'These conditions '
+            + 'have no cue symbol: ')
             + unshaped.map(function (role) { return role.name; }).join(', ')
             + '. A phase that shows the cue paints nothing for those trials - a blank '
-            + 'screen, not a missing glyph. Give each one a shape, or leave it only if '
-            + 'those trials are meant to show nothing.'
+            + 'screen, not a missing glyph.'
         ]));
       }
-      tableHost.appendChild(App.h('datalist', { id: SHAPE_LIST_ID },
-        SHAPE_CHOICES.map(function (shape) { return App.h('option', { value: shape }); })));
       tableHost.appendChild(App.h('div', { class: 'btn-row mt' }, [
         App.iconButton('Add condition', 'Append a trial condition', function () {
           if (App.act('role.add')) renderRoles();
@@ -2067,259 +2559,107 @@
     }
     renderRoles();
 
-    panel.appendChild(App.card('Trial conditions',
-      'Name, shape and what each one presents; the first condition is the primary one', [
-      App.h('div', {
-        class: 'notice',
-        text: 'The first condition takes the trials the trial design does not withhold as '
-          + 'its embedded control share, and the rest split that share as evenly as the '
-          + 'count allows - so the up and down arrows decide which condition the primary '
-          + 'trials belong to. The counts themselves stay with the trial design, and which '
-          + 'trial comes when stays with the presentation software. Names are the config\'s '
-          + 'condition keys, so they are slugged and no two may be the same.'
-      }),
-      tableHost
-    ]));
+    /* --- answers ----------------------------------------------------------- */
 
-    /* --- screens --------------------------------------------------------- */
+    var answersHost = App.h('div', {});
 
-    /* Everything on screen that is not a condition's cue.  It sits on this
-     * page because planning a set of shapes means planning against all of
-     * them at once - and because `+` is spoken for before you start. */
+    function updateAnswers(fields) {
+      App.act('answers.update', fields);
+      renderAnswers();
+    }
 
-    var screenHost = App.h('div', {});
+    function renderAnswers() {
+      App.clear(answersHost);
+      var shown = M.resolvedPresentation(App.state, App.boot);
+      var own = shown.own;
+      var ownLabels = !!(own.responses && own.responses.labels);
+      var first = App.h('input', { type: 'text', class: 'cell-input label-input',
+        'aria-label': 'First answer label' });
+      var second = App.h('input', { type: 'text', class: 'cell-input label-input',
+        'aria-label': 'Second answer label' });
+      first.value = shown.labels[0];
+      second.value = shown.labels[1];
+      function commitLabels() { updateAnswers({ labels: [first.value, second.value] }); }
+      first.addEventListener('change', commitLabels);
+      second.addEventListener('change', commitLabels);
 
-    function renderScreens() {
-      App.clear(screenHost);
-      var held = M.screens(App.state);
-
-      var mark = App.h('input', {
-        type: 'text', class: 'cell-input', maxlength: '8',
-        list: SHAPE_LIST_ID, value: held.fixation,
-        'aria-label': 'The fixation mark'
-      });
-      mark.addEventListener('change', function () {
-        App.write('screen.update', { fixation: mark.value.trim() });
-        App.refresh();
+      var share = App.h('input', { type: 'number', class: 'cell-input size-input', min: '0',
+        max: '100', step: '5' });
+      share.value = shown.labelBalancePct;
+      share.addEventListener('change', function () {
+        var pct = parseFloat(share.value);
+        if (isFinite(pct)) updateAnswers({ labelBalancePct: Math.max(0, Math.min(100, pct)) });
       });
 
-      function endPicker(key, label) {
-        return App.h('label', { class: 'screen-field' }, [
-          App.h('span', { text: label }),
-          selectInput(
-            function () { return held[key]; },
-            function (value) {
-              var args = {};
-              args[key] = value;
-              App.write('screen.update', args);
-            },
-            M.LEAD_SHOWS.map(function (entry) {
-              return {
-                value: entry.id,
-                label: entry.id === 'fixation'
-                  ? 'The fixation mark  ' + (held.fixation || '(nothing)') : entry.label
-              };
-            })
-          )
-        ]);
-      }
+      var silent = App.h('input', { type: 'text', class: 'cell-input label-input' });
+      silent.value = shown.silentLabel;
+      silent.addEventListener('change', function () {
+        updateAnswers({ silentLabel: silent.value.trim() || null });
+      });
 
-      screenHost.appendChild(App.h('div', { class: 'screen-fields' }, [
+      var caseSelect = selectInput(
+        function () { return shown.tokenCase; },
+        function (value) {
+          App.write('answers.update', { tokenCase: value });
+          setTimeout(renderAnswers, 0);
+        },
+        M.TOKEN_CASES.map(function (entry) { return { value: entry.id, label: entry.label }; })
+      );
+
+      answersHost.appendChild(App.h('div', { class: 'screen-fields' }, [
         App.h('label', { class: 'screen-field' }, [
-          App.h('span', { text: 'Fixation mark' }), mark
+          App.h('span', { text: 'Answer labels' }),
+          ownable(App.h('span', { class: 'pos-pair' }, [first, second]), ownLabels,
+            function () { updateAnswers({ labels: null }); })
         ]),
-        endPicker('leadIn', 'Lead-in shows'),
-        endPicker('leadOut', 'Lead-out shows'),
-        App.iconButton('Reset', 'Put all three back to the lab template', function () {
-          if (App.act('screen.reset')) App.refresh();
-        })
+        App.h('label', { class: 'screen-field' }, [
+          App.h('span', { text: 'Share answered ' + shown.labels[0] }),
+          ownable(App.h('span', { class: 'with-unit' }, [share, App.h('small', { text: '%' })]),
+            !!(own.run && own.run.label_balance_pct !== undefined),
+            function () { updateAnswers({ labelBalancePct: null }); })
+        ]),
+        App.h('label', { class: 'screen-field' }, [
+          App.h('span', { text: 'Silent trials log as' }),
+          ownable(silent, !!(own.responses && own.responses.silent_label),
+            function () { updateAnswers({ silentLabel: null }); })
+        ]),
+        App.h('label', { class: 'screen-field' }, [
+          App.h('span', { text: 'A cue\'s word is written' }),
+          ownable(caseSelect, !!(own.cue && own.cue.token_case),
+            function () { updateAnswers({ tokenCase: null }); })
+        ])
       ]));
-
     }
-    App.registerView(renderScreens, owner);
-    renderScreens();
+    App.registerView(function () {
+      if (!answersHost.contains(global.document.activeElement)) renderAnswers();
+    }, owner);
+    renderAnswers();
 
-    panel.appendChild(App.card('Screens',
-      'Everything on screen that is not a condition\'s cue', [
+    panel.appendChild(App.card('Trial conditions',
+      'The kinds of trial, the cue symbol each wears, and what each asks for', [
       App.h('div', {
         class: 'notice',
-        html: 'The <strong>fixation mark</strong> is what every fixation phase draws, and '
-          + 'the task reads it as <code>fixation.text</code>. The <strong>lead-in and '
-          + 'lead-out</strong> are the quiet stretches at each end of a run, and each can '
-          + 'show the mark or nothing. Below them are the two <strong>answer labels</strong> '
-          + 'the question bank uses, how they are balanced within each condition, and how a '
-          + 'cue-from-response cue writes the token it shows. Each is written into the '
-          + 'config only when it differs from the task\'s own default.'
+        html: 'A <strong>condition</strong> is one of the things a trial can be - the primary '
+          + 'task, a passive-reading control, a catch trial. Its <strong>cue symbol</strong> is '
+          + 'what a phase showing the <em>cue</em> screen draws on those trials, so the '
+          + 'participant knows which it is. <strong>Question</strong> off leaves the question '
+          + 'phase blank on those trials. <strong>Participant says</strong> is what they repeat '
+          + 'in the response window: the true answer, the other one, nothing, or a fixed '
+          + '<strong>word</strong>. <strong>Cue shows</strong> <em>the word to say</em> writes '
+          + 'that word - YES, NO, READY - in place of the symbol.<br>'
+          + 'The first condition takes the trials the trial design does not withhold as its '
+          + 'embedded control share, and the rest split that share as evenly as the count '
+          + 'allows - so the up and down arrows decide which condition the primary trials '
+          + 'belong to. Names are the config\'s condition keys, so they are slugged and no two '
+          + 'may be the same.'
       }),
-      screenHost
-    ]));
-
-    /* --- every symbol on screen ----------------------------------------- */
-
-    /* One place to see the whole visual vocabulary of the study, because it
-     * is spread over three: the fixation mark comes from the lab template,
-     * the cues from this panel, and where each lands from the phase list in
-     * Trials.  Planning a set of shapes means knowing what is already taken
-     * - and `+` is taken before you start. */
-
-    /* Glyphs a participant could mistake for one another, grouped by the
-     * shape they read as rather than by codepoint. */
-    var LOOKALIKES = [
-      ['+', '\u271A', '\u2716', '\u2715', '\u2717', '\u00D7', 'x', 'X', '\u2573'],
-      ['\u25CF', '\u25CB', '\u25CF', '\u2B24', '\u25EF', 'o', 'O', '0'],
-      ['\u25A0', '\u25A1', '\u2B1B', '\u2B1C'],
-      ['\u25B2', '\u25B3', '\u25BC', '\u25BD'],
-      ['\u25C6', '\u25C7', '\u2B27', '\u2B26'],
-      ['\u2605', '\u2606']
-    ];
-
-    function lookalikeGroup(glyph) {
-      for (var i = 0; i < LOOKALIKES.length; i += 1) {
-        if (LOOKALIKES[i].indexOf(glyph) >= 0) return i;
-      }
-      return -1;
-    }
-
-    /* Every glyph the task can put up, what it is, and where it lands. */
-    function symbolRows() {
-      var roles = M.trialRoles(App.state);
-      var trials = App.state.trials || [];
-      var where = { fixation: [], question: [], cue: [], blank: [] };
-      var cueIn = {};
-
-      trials.forEach(function (design) {
-        var hasCue = false;
-        (design.phases || []).forEach(function (phase) {
-          var show = M.phaseShow(phase);
-          if (show === 'cue') hasCue = true;
-          (where[show] = where[show] || []).push(phase.name + ' \u2014 ' + design.name);
-        });
-        if (!hasCue) return;
-        M.conditionsInPlay(App.state, H.num(design.controlPct)).forEach(function (role) {
-          (cueIn[role.name] = cueIn[role.name] || []).push(design.name);
-        });
-      });
-
-      var ends = M.screens(App.state);
-      var endsAt = [];
-      if (ends.leadIn === 'fixation') endsAt.push('Lead-in of every run');
-      if (ends.leadOut === 'fixation') endsAt.push('Lead-out of every run');
-      var rows = [{
-        glyph: ends.fixation,
-        what: 'Fixation mark',
-        note: ends.fixation ? 'the config\'s fixation.text' : 'set to nothing, so a '
-          + 'fixation phase draws a blank screen',
-        where: endsAt.concat(where.fixation)
-      }];
-      ['leadIn', 'leadOut'].forEach(function (key) {
-        if (ends[key] === 'fixation') return;
-        rows.push({
-          glyph: '\u00b7',
-          what: (key === 'leadIn' ? 'Lead-in' : 'Lead-out') + ' \u2014 nothing',
-          note: 'set on the Screens card above',
-          where: ['Every run']
-        });
-      });
-
-      roles.forEach(function (role) {
-        /* cue_from_response replaces the shape with the token itself, so the
-         * shape on that row is never drawn. */
-        var token = role.cueFromResponse && role.response !== 'none';
-        rows.push({
-          glyph: token ? 'YES / NO' : role.shape,
-          what: role.name + ' \u2014 condition cue',
-          note: token
-            ? 'cue from response: the token is drawn, so this condition\'s shape '
-              + (role.shape ? '(' + role.shape + ') ' : '') + 'never appears'
-            : (role.shape ? null : 'no shape: a cue phase paints nothing for these trials'),
-          idle: !cueIn[role.name],
-          where: cueIn[role.name]
-            ? where.cue.filter(function (place) {
-              return cueIn[role.name].some(function (name) {
-                return place.indexOf('\u2014 ' + name) >= 0;
-              });
-            })
-            : []
-        });
-      });
-
-      rows.push({
-        glyph: 'Q',
-        what: 'The question itself',
-        note: 'text, shapes or an image, from the question bank; blank instead on a '
-          + 'condition that does not show the question',
-        where: where.question
-      });
-      rows.push({
-        glyph: '\u00b7',
-        what: 'Nothing \u2014 a blank screen',
-        note: null,
-        where: where.blank
-      });
-      return rows;
-    }
-
-    var symbolHost = App.h('div', {});
-
-    function renderSymbols() {
-      App.clear(symbolHost);
-      var rows = symbolRows();
-
-      /* Anything drawn twice, or drawn as something easily mistaken for it. */
-      var drawn = rows.filter(function (row) {
-        return row.glyph && !row.idle && row.where.length;
-      });
-      var clashes = [];
-      drawn.forEach(function (a, i) {
-        drawn.slice(i + 1).forEach(function (b) {
-          if (a.glyph === b.glyph) {
-            clashes.push(a.glyph + ' is used by both ' + a.what + ' and ' + b.what);
-          } else {
-            var group = lookalikeGroup(a.glyph);
-            if (group >= 0 && group === lookalikeGroup(b.glyph)) {
-              clashes.push(a.glyph + ' (' + a.what + ') and ' + b.glyph + ' (' + b.what
-                + ') read as the same shape');
-            }
-          }
-        });
-      });
-      if (clashes.length) {
-        symbolHost.appendChild(App.h('div', { class: 'notice warn' }, [
-          App.h('span', { text: 'On screen together and hard to tell apart: '
-            + clashes.join('; ') + '.' })
-        ]));
-      }
-
-      symbolHost.appendChild(App.dataTable(
-        [{ label: 'Symbol' }, { label: 'What it is' }, { label: 'Where it appears' }],
-        rows.map(function (row) {
-          var what = row.what + (row.note ? ' \u2014 ' + row.note : '');
-          var place = row.idle ? 'never presented: per_run 0 in every run'
-            : (row.where.length ? row.where.join(' \u00b7 ') : 'no phase shows it');
-          return [
-            { html: '<span class="glyph">' + App.escapeHtml(row.glyph || '\u2014')
-              + '</span>', copy: row.glyph },
-            { text: what },
-            { text: place }
-          ];
-        }),
-        { caption: 'Every symbol the task can put on screen' }
-      ));
-    }
-    App.registerView(renderSymbols, owner);
-    renderSymbols();
-
-    panel.appendChild(App.card('Every symbol on screen',
-      'The whole visual vocabulary of the study, in one place', [
-      App.h('div', {
-        class: 'notice',
-        html: 'Shapes are only half of what a participant sees. The fixation mark comes '
-          + 'from the lab template and is drawn during the <strong>lead-in and lead-out '
-          + 'of every run</strong> as well as every fixation phase, so it is taken before '
-          + 'you choose anything; the cues are this panel\'s; and which phase draws which '
-          + 'is set in Trials. Plan against the whole list, not just the rows above.'
-      }),
-      symbolHost
+      tableHost,
+      App.h('div', { class: 'screen-head' }, [
+        App.h('span', { text: 'Answers' }),
+        App.h('span', { class: 'muted', text: 'the two words a question can be answered with, '
+          + 'shared by every condition' })
+      ]),
+      answersHost
     ]));
 
     /* --- what the export gets ------------------------------------------- */
@@ -2336,10 +2676,38 @@
       })[0] || runs[0] || null;
     }
 
+    /* The parts of a config this panel decides, cut from the export's own
+     * text: every presentation section, the run's two ends, and the
+     * conditions with the comments that introduce them. */
+    function excerpt(yaml) {
+      var keep = ['window', 'text', 'fixation', 'screens', 'cue', 'responses', 'conditions'];
+      var out = [];
+      var section = null;
+      var comments = [];
+      yaml.split('\n').forEach(function (line) {
+        var top = /^([a-z_]+):/.exec(line);
+        if (top) {
+          section = top[1];
+          if (keep.indexOf(section) >= 0 || section === 'run') {
+            if (out.length) out.push('');
+            out = out.concat(keep.indexOf(section) >= 0 ? comments : []);
+            out.push(section === 'run' ? 'run:' : line);
+          }
+          comments = [];
+          return;
+        }
+        if (/^#/.test(line)) { comments.push(line); return; }
+        if (!line.trim()) { comments = []; return; }
+        if (keep.indexOf(section) >= 0) out.push(line);
+        else if (section === 'run' && /^\s+lead_(in|out):/.test(line)) out.push(line);
+      });
+      return out.join('\n');
+    }
+
     function renderPreview() {
       var run = previewRun();
       previewBox.textContent = run
-        ? M.psychopyRunConditions(App.report, run).join('\n')
+        ? excerpt(M.psychopyYaml(App.report, run))
         : 'Build a run design first; the counts come from one.';
     }
     previewPicker.addEventListener('change', renderPreview);
@@ -2358,18 +2726,19 @@
     }, owner);
 
     panel.appendChild(App.card('What the PsychoPy config gets',
-      'The conditions: block, exactly as the export writes it', [
+      'The screens, the two ends of a run and the conditions, as the export writes them', [
       App.h('div', {
         class: 'notice',
-        text: 'This is the export\'s own text, not a second rendering of it. The per_run '
-          + 'counts belong to the run design picked here; everything else on the line is '
-          + 'the condition above.'
+        text: 'This is the export\'s own text, cut to the parts this panel decides - not a '
+          + 'second rendering of it. Everything left out of the screen settings comes from the '
+          + 'task\'s config/defaults.yaml. The per_run counts belong to the run design picked '
+          + 'here.'
       }),
       App.h('div', { class: 'split-inline mb' }, [
         previewPicker,
-        App.iconButton('Copy block', 'Copy the shown conditions block', function () {
-          App.copy(previewBox.textContent, 'conditions block');
-        })
+        App.exporting(App.iconButton('Copy', 'Copy the text shown', function () {
+          App.copy(previewBox.textContent, 'config excerpt');
+        }))
       ]),
       previewBox
     ]));

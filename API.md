@@ -16,7 +16,7 @@ Reading is open: anyone may use every `GET`, except the exports. Every write (an
 including a batch of read-only actions) and every `GET .../export/<format>` needs an **API key**
 (or a person's session). Without one the answer is `401` with `"viewOnly": true`.
 
-Someone signed in makes the key: **People → API keys**, name it for what will use it
+An admin makes the key: **People → API keys**, name it for what will use it
 **Make a key**. It is shown once, so copy it then; only a hash is kept. Send
 it with every call:
 
@@ -26,12 +26,17 @@ curl -s -H "Authorization: Bearer $KEY" localhost:8761/api/auth/me
 # -> {"id": "key:3f9c...", "name": "req-1", "key": "3f9c...", "by": "asdf"}
 ```
 
-A key can do everything a person signed in can: change any design, run actions, change the
+A key can do everything the admin who made it can: change any design, run actions, change the
 acquisition cards, save and delete designs, and export. It cannot manage people, login links or
 keys (`/api/auth/*` answers `403`, except `GET /api/auth/me`), so revoking a key that got out
 is the end of it. A key does not expire. It stops working when someone revokes it in
 **People**, or when the person who made it is removed; the answer is then `401` saying the token
 is not recognised. Keys are only accepted in the `Authorization` header, never as a cookie.
+
+A key does what its maker may **now**. If they are made a viewer, the key can still read,
+export and play the demo, but every write answers `403` with `"viewOnly": true`, and a batch of
+actions runs only queries (and `"dryRun": true` batches); the first action that would change
+something is refused with `403`. `GET /api/auth/me` says which it is, in `role`.
 
 A person's session token (from spending a login link with `POST /api/auth/redeem`) works as a
 Bearer token too, but a key can be named, listed and revoked on its own, so prefer one.

@@ -32,6 +32,8 @@
     selection: {},     // panel -> { selected: id }, kept across rebuilds
     routing: false,    // true while following Back/Forward
     me: null,          // who is signed in, or null
+    isAdmin: false,    // signed in as an admin: may change things
+    canExport: false,  // signed in at all: may take exports and play demos
     readOnly: true     // view only until the server says otherwise
   };
 
@@ -488,10 +490,28 @@
     return node;
   }
 
+  /* A viewer is signed in but may not change anything: the page is locked
+   * just the same, except for what only takes the design away - downloads,
+   * copies, the demo.  Those are marked with this, and stay working for
+   * anyone signed in (the server lets a viewer have exports, not writes). */
+  function exporting(node) {
+    node.setAttribute('data-export', '');
+    return node;
+  }
+
+  /* Why something was refused, in the words for who is asking. */
+  function viewOnlyText() {
+    return App.me
+      ? 'View only: you can look, play the demos and download, but not change anything. '
+        + 'An admin can change that.'
+      : 'View only: sign in with a login link to make changes.';
+  }
+
   var LOCKABLE = 'button, input, select, textarea';
 
   function lockOne(node) {
     if (node.closest('[data-view]')) return;
+    if (App.canExport && node.closest('[data-export]')) return;
     node.setAttribute('data-locked', '');
     /* A text box keeps its words readable and selectable; the rest go grey. */
     if (node.tagName === 'TEXTAREA') node.readOnly = true;
@@ -544,7 +564,8 @@
   function signedOut() {
     if (leaving) return;
     leaving = true;
-    toast('You are no longer signed in; this page is view only now.', 'bad');
+    toast(App.me ? 'Your sign-in changed; loading the page again.'
+      : 'You are no longer signed in; this page is view only now.', 'bad');
     setTimeout(function () { global.location.reload(); }, 1600);
   }
 
@@ -591,11 +612,11 @@
     return h('div', { class: 'table-actions' }, [
       h('span', { class: 'table-caption', text: model.caption || '' }),
       h('div', { class: 'btn-row' }, [
-        iconButton('Copy Markdown', 'Copy this table as a GitHub-flavoured Markdown table',
-          function () { copy(tableMarkdown(model), model.caption || 'Table'); }),
-        iconButton('Copy for Word', 'Copy as rich text: pastes into Word, Google Docs or '
+        exporting(iconButton('Copy Markdown', 'Copy this table as a GitHub-flavoured Markdown table',
+          function () { copy(tableMarkdown(model), model.caption || 'Table'); })),
+        exporting(iconButton('Copy for Word', 'Copy as rich text: pastes into Word, Google Docs or '
           + 'LibreOffice as a real table',
-          function () { copyRichTable(model, model.caption || 'Table'); })
+          function () { copyRichTable(model, model.caption || 'Table'); }))
       ].concat(extra || []))
     ]);
   }
@@ -900,7 +921,7 @@
       context.fillStyle = '#6b767b';
       context.font = '12px "Inter", sans-serif';
       context.fillText(model && model.period > 0
-        ? 'No phase in this trial carries a regressor - set a phase to Stimulus or Response'
+        ? 'No phase is modelled as an event yet - set one to Stimulus or Response above'
         : 'Give the trial at least one phase with a duration', 14, height / 2);
       return null;
     }
@@ -2467,12 +2488,13 @@
     var node = card(title, note, [
       host, caption,
       h('div', { class: 'btn-row mt' }, [
-        iconButton('Download SVG', 'Vector figure for a manuscript or a grant page',
-          function () { downloadFigureSvg(markup, stem()); }),
-        iconButton('Download PNG', 'Raster figure at three times nominal size',
-          function () { downloadFigurePng(markup, stem()); }),
-        iconButton('Copy link', 'A link straight to this figure. Signed in, it also '
-          + 'publishes the picture you are looking at, so the link serves exactly that',
+        exporting(iconButton('Download SVG', 'Vector figure for a manuscript or a grant page',
+          function () { downloadFigureSvg(markup, stem()); })),
+        exporting(iconButton('Download PNG', 'Raster figure at three times nominal size',
+          function () { downloadFigurePng(markup, stem()); })),
+        exporting(iconButton('Copy link', 'A link straight to this figure. Signed in as an '
+          + 'admin, it also publishes the picture you are looking at, so the link serves '
+          + 'exactly that',
         function () {
           var url = figureLink(stem(), 'png');
           if (!url) { toast('Open a saved design to link its figures.', 'bad'); return; }
@@ -2480,7 +2502,7 @@
            * publishing is slow enough to lose it. */
           copy(url, 'Figure link');
           publishFigure(stem(), markup);
-        })
+        }))
       ].concat(extraButtons || []))
     ]);
 
@@ -3008,9 +3030,9 @@
       });
       host.appendChild(list);
       host.appendChild(h('div', { class: 'btn-row mt' }, [
-        iconButton('Copy constraint report', 'Copy the flags as Markdown', function () {
+        exporting(iconButton('Copy constraint report', 'Copy the flags as Markdown', function () {
           copy(App.report.markdownTables['Constraint report'] || '', 'Constraint report');
-        })
+        }))
       ]));
     });
     return node;
@@ -3199,7 +3221,7 @@
     { id: 'study', label: 'Study details', hint: 'Titles and identifiers', build: buildStudyPanel },
     { id: 'export', label: 'Report and export', hint: 'Markdown, PsychoPy, XLSX, zip',
       build: function () { return global.PlannerExport.build(); } },
-    { id: 'people', label: 'People', hint: 'Who can edit, and login links', signedIn: true,
+    { id: 'people', label: 'People', hint: 'Who can edit, and login links', admin: true,
       build: function () { return global.PlannerPeople.build(); } }
   ];
 
@@ -3207,7 +3229,7 @@
     var rail = document.getElementById('rail');
     clear(rail);
     PANELS.forEach(function (entry) {
-      if (entry.signedIn && App.readOnly) return;
+      if (entry.admin && !App.isAdmin) return;
       var button = h('button', { class: 'rail-item', type: 'button' }, [
         h('span', { class: 'label', text: entry.label }),
         h('span', { class: 'hint', text: entry.hint })
@@ -3227,7 +3249,7 @@
     clear(workspace);
     if (!App.panels[id]) {
       var entry = PANELS.filter(function (item) {
-        return item.id === id && !(item.signedIn && App.readOnly);
+        return item.id === id && !(item.admin && !App.isAdmin);
       })[0];
       App.panels[id] = entry ? entry.build() : h('div', { class: 'panel' });
     }
@@ -3235,6 +3257,80 @@
     workspace.appendChild(App.panels[id]);
     App.refresh();
     workspace.scrollTop = 0;
+  }
+
+  /* --------------------------------------------------------- screen tiles */
+
+  /* One screen drawn small, the way the task draws it: the window's
+   * proportions and background, and everything on it at its own height,
+   * colour and place in the window's `height` units - the stage's own CSS
+   * formula (static/player/style.css), so a tile and the demo player agree
+   * about what is big, what is off-centre and what cannot be told apart.
+   *
+   * `show` is what a phase shows; `shown` is M.resolvedPresentation.  A
+   * picture comes from the demo's question banks; one they do not have is
+   * drawn as a placeholder naming it, since the task needs it at that path
+   * on the presentation computer, not here. */
+  function fontStack(font) {
+    return '"' + String(font || 'Arial').replace(/["\\]/g, '') + '", "Helvetica Neue", '
+      + 'Helvetica, Arial, sans-serif';
+  }
+
+  function screenImageUrl(path) {
+    if (!App.designName) return '';
+    return designPath(App.designName) + '/demo/screen-image?path=' + encodeURIComponent(path);
+  }
+
+  function screenTile(show, shown, options) {
+    var opts = options || {};
+    var tall = opts.height || 60;
+    var size = shown.windowSize || [1280, 800];
+    var tile = h('div', {
+      class: 'tile' + (opts.className ? ' ' + opts.className : ''),
+      title: opts.title || null
+    });
+    tile.style.width = Math.round(tall * H.num(size[0], 1280) / H.num(size[1], 800)) + 'px';
+    tile.style.height = tall + 'px';
+    tile.style.setProperty('--u', tall + 'px');
+    tile.style.background = M.colorToCss(shown.background);
+
+    function place(node, look) {
+      var pos = look.pos || [0, 0];
+      node.style.setProperty('--x', String(H.num(pos[0])));
+      node.style.setProperty('--y', String(H.num(pos[1])));
+      node.style.setProperty('--h', String(H.num(look.height, 0.06)));
+      return node;
+    }
+    function write(text, look) {
+      var node = place(h('span', { class: 'tile-text', text: text }), look);
+      node.style.color = M.colorToCss(look.color);
+      node.style.fontFamily = fontStack(look.font);
+      tile.appendChild(node);
+    }
+
+    var screen = (shown.screens || []).filter(function (item) { return item.name === show; })[0];
+    if (screen && screen.look.image) {
+      var path = screen.look.image;
+      var img = place(h('img', { class: 'tile-img', alt: '' }), screen.look);
+      img.addEventListener('error', function () {
+        if (img.parentNode) img.parentNode.removeChild(img);
+        tile.classList.add('missing');
+        tile.appendChild(h('span', { class: 'tile-missing', text: path.split('/').pop() }));
+      });
+      img.src = screenImageUrl(path);
+      tile.appendChild(img);
+    } else if (screen) {
+      if (screen.look.text) write(screen.look.text, screen.look);
+    } else if (show === 'cue') {
+      var symbols = (opts.cueSymbols || []).filter(function (symbol) { return symbol; });
+      if (symbols.length) write(symbols.join(' '), shown.cue);
+    } else if (show === 'question') {
+      write('Q?', {
+        text: 'Q?', height: shown.text.height, color: shown.text.color, font: shown.text.font
+      });
+      tile.classList.add('stand-in');
+    }
+    return tile;
   }
 
   /* ------------------------------------------------------------ addresses */
@@ -3275,7 +3371,7 @@
 
   function panelAllowed(id) {
     return PANELS.some(function (entry) {
-      return entry.id === id && !(entry.signedIn && App.readOnly);
+      return entry.id === id && !(entry.admin && !App.isAdmin);
     });
   }
 
@@ -3433,8 +3529,17 @@
       })
     }).then(function (response) {
       return response.json().then(function (body) {
-        if (response.status === 401) {
+        if (response.status === 401 || (response.status === 403 && body.viewOnly)) {
+          /* Signed out, or made a viewer, while the page was open. */
           signedOut();
+        } else if (response.status === 426 && body.reload) {
+          /* The planner was updated since this page loaded, and the design
+           * already carries the newer shape: saving from here would write the
+           * old one back over it. */
+          if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+          App.gone = true;
+          toast('The planner has been updated since this page was opened - reloading.', 'bad');
+          setTimeout(function () { global.location.reload(); }, 1600);
         } else if (response.status === 410) {
           designGone();
         } else if (response.status === 409 && body.design) {
@@ -3553,7 +3658,7 @@
 
   function perform(name, args) {
     if (App.readOnly && changesDesign(name)) {
-      toast('View only: sign in with a login link to make changes.', 'bad');
+      toast(viewOnlyText(), 'bad');
       return null;
     }
     try {
@@ -3677,12 +3782,16 @@
         return;
       }
       App.me = boot.me || null;
-      App.readOnly = !App.me;
+      /* A viewer is signed in and still view only: the page locks the same,
+       * but leaves them the exports and the demos. */
+      App.isAdmin = !!App.me && App.me.role === 'admin';
+      App.canExport = !!App.me;
+      App.readOnly = !App.isAdmin;
       document.body.classList.toggle('view-only', App.readOnly);
       /* No session, but this browser kept one: its cookie went (a browser
        * drops one after 400 days, or they were cleared).  Hand it back and
        * load again, rather than showing a signed-in person the view-only page. */
-      if (App.readOnly && global.PlannerPeople) {
+      if (!App.me && global.PlannerPeople) {
         return global.PlannerPeople.resume().then(function (resumed) {
           if (!resumed) begin(boot, veil);
         });
@@ -3749,6 +3858,8 @@
   App.readoutCell = readoutCell;
   App.iconButton = iconButton;
   App.view = view;
+  App.exporting = exporting;
+  App.viewOnlyText = viewOnlyText;
   App.busySaving = busySaving;
   App.slider = slider;
   App.field = field;
@@ -3791,6 +3902,8 @@
   App.write = write;
   App.saveWorking = saveWorking;
   App.designPath = designPath;
+  App.screenTile = screenTile;
+  App.fontStack = fontStack;
   App.designGone = designGone;
   App.viewPath = viewPath;
   App.address = address;
@@ -3826,6 +3939,8 @@
         if (response.status === 401 && !App.readOnly) signedOut();
         return response.json();
       }).then(function (answer) {
+        /* Made a viewer while the page was open. */
+        if (answer.viewOnly && !App.readOnly) signedOut();
         if (!answer.saved) return answer;
         return pullDesign(false).then(function () { return answer; });
       });

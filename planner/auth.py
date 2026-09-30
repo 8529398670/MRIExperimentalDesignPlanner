@@ -6,9 +6,11 @@ card, a saved design - and taking anything away as an export needs a
 session.  A browser without one gets the planner in view-only mode, nothing
 more.
 
-Everybody who has a session can do everything.  There are no roles, only
-names: each person is somebody, and every one of them can add people, remove
-them, and make the links that let them in.
+Everybody who has a session is one of two things.  An admin can do
+everything: change the designs and the cards, add people, remove them, make
+the links that let them in and the keys that let agents in.  A viewer can
+look at everything, play every demo and take every export - and change
+nothing.  Somebody on the file from before there were viewers is an admin.
 
 The only way in for a person is one of those links.  It works once: the
 first browser to open it is signed in as that person for good, and the link
@@ -17,13 +19,14 @@ random bits.
 
 A script or an agent gets an API key instead: made by someone signed in,
 named for what will use it, sent as ``Authorization: Bearer <key>``.  It can
-change and export anything a person can, but it cannot add or remove people
+change and export anything its maker can, but it cannot add or remove people
 or make links or keys - so revoking a key that got out is the end of it.  A
-key is its maker's: when they are removed, their keys stop working too.
+key is its maker's: when they are removed, their keys stop working too, and
+when they are made a viewer, their keys can only look.
 
 What is kept, in ``<PLANNER_AUTH_DIR>/users.json``:
 
-    users     id -> name, and who added them
+    users     id -> name, admin or viewer, and who added them
     sessions  sha256(token) -> whose, since when, last seen
     links     sha256(token) -> whose, until when
     keys      sha256(key) -> whose, what it is called, since when, last used
@@ -104,6 +107,21 @@ TOKEN_SHAPE = re.compile(r"[A-Za-z0-9_-]{20,128}")
 KEY_PREFIX = "mrip_"
 KINDS = ("sessions", "links", "keys")
 
+# What a person may do.  An admin changes things and lets people in; a viewer
+# looks, plays and exports.
+ADMIN, VIEWER = "admin", "viewer"
+ROLES = (ADMIN, VIEWER)
+
+
+def role_of(user: dict) -> str:
+    """A person's role as the file has it.  Nobody on a file from before there
+    were roles had one, and every one of them could do everything; a role that
+    cannot be read counts for the least."""
+    role = user.get("role")
+    if role is None:
+        return ADMIN
+    return role if role in ROLES else VIEWER
+
 
 def log(message: str) -> None:
     print(f"  auth: {message}", flush=True)
@@ -161,6 +179,7 @@ def _clean(raw: object) -> dict:
         if isinstance(uid, str) and isinstance(user, dict) and clean_person(user.get("name")):
             data["users"][uid] = {
                 "name": clean_person(user.get("name")),
+                "role": role_of(user),
                 "createdAt": str(user.get("createdAt") or ""),
                 "createdBy": str(user.get("createdBy") or ""),
             }
@@ -312,16 +331,17 @@ class Accounts:
     def user_for(self, token: str) -> Optional[dict]:
         """Whose session this is, or None.  Asked on every request."""
         return self._lookup("sessions", token, lambda key, session, user: {
-            "id": session["user"], "name": user["name"]})
+            "id": session["user"], "name": user["name"], "role": user["role"]})
 
     def key_for(self, token: str) -> Optional[dict]:
         """The API key this is, as who is asking, or None.  It is named for
-        itself, not its maker: what it changes is the agent's doing."""
+        itself, not its maker: what it changes is the agent's doing.  What it
+        may do is its maker's, as they are now."""
         if not str(token or "").startswith(KEY_PREFIX):
             return None
         return self._lookup("keys", token, lambda key, entry, user: {
             "id": "key:" + key[:12], "name": entry["name"], "key": key[:12],
-            "by": user["name"]})
+            "by": user["name"], "role": user["role"]})
 
     def redeem(self, token: str, agent: str = "") -> Optional[Tuple[str, dict]]:
         """Spend a link.  A new session for whoever it was made for, or None."""
@@ -348,7 +368,8 @@ class Accounts:
             }
             _cap(data["sessions"], MAX_SESSIONS, "seenAt")
             user = data["users"][link["user"]]
-            return (session, {"id": link["user"], "name": user["name"]}), True
+            return (session, {"id": link["user"], "name": user["name"],
+                              "role": user["role"]}), True
 
         return self._change(spend)
 
@@ -372,7 +393,7 @@ class Accounts:
         with self.lock:
             self._fresh()
             now = now_iso()
-            people = {uid: {"id": uid, "name": user["name"],
+            people = {uid: {"id": uid, "name": user["name"], "role": user["role"],
                             "createdAt": user.get("createdAt") or "",
                             "createdBy": (self.data["users"].get(user.get("createdBy") or "")
                                           or {}).get("name", ""),
@@ -409,11 +430,13 @@ class Accounts:
                     return uid
         return None
 
-    def add(self, name: object, by: str = "") -> Tuple[Optional[dict], str]:
+    def add(self, name: object, by: str = "", role: object = ADMIN) -> Tuple[Optional[dict], str]:
         """Someone new.  Their record, or None and why not."""
         clean = clean_person(name)
         if not clean:
             return None, "a name needs a letter or a number in it"
+        if role not in ROLES:
+            return None, "a person is an admin or a viewer"
 
         def make(data):
             if any(u["name"].casefold() == clean.casefold() for u in data["users"].values()):
@@ -421,10 +444,28 @@ class Accounts:
             if len(data["users"]) >= MAX_USERS:
                 return (None, "that is as many people as this will hold"), False
             uid = secrets.token_hex(6)
-            data["users"][uid] = {"name": clean, "createdAt": now_iso(), "createdBy": by or ""}
-            return ({"id": uid, "name": clean}, ""), True
+            data["users"][uid] = {"name": clean, "role": role, "createdAt": now_iso(),
+                                  "createdBy": by or ""}
+            return ({"id": uid, "name": clean, "role": role}, ""), True
 
         return self._change(make)
+
+    def set_role(self, uid: str, role: object) -> Optional[str]:
+        """Make someone an admin or a viewer.  It holds from their next
+        request, in every browser they are signed in on and for every key they
+        made.  Their name, or None if there was nobody by that id."""
+        if role not in ROLES:
+            return None
+
+        def change(data):
+            user = data["users"].get(uid)
+            if not user:
+                return None, False
+            changed = user["role"] != role
+            user["role"] = role
+            return user["name"], changed
+
+        return self._change(change)
 
     def remove(self, uid: str) -> Optional[str]:
         """Take someone out, and every browser they are signed in on and every
@@ -564,17 +605,29 @@ class Throttle:
 
 def main(argv: List[str]) -> int:
     """Make a login link from outside the planner - the first one, or the one
-    that gets somebody back in when nobody left inside can make it for them."""
+    that gets somebody back in when nobody left inside can make it for them.
+
+    Somebody new is added as an admin, or as a viewer with ``--viewer``.
+    Somebody already there keeps the role they have: a link lets a person in,
+    it does not change what they may do."""
     accounts = Accounts(AUTH_DIR)
-    if len(argv) >= 2 and argv[0] == "link":
-        name = " ".join(argv[1:])
+    words = list(argv[1:])
+    role = ADMIN
+    if "--viewer" in words:
+        words.remove("--viewer")
+        role = VIEWER
+    if argv[:1] == ["link"] and words:
+        name = " ".join(words)
         uid = accounts.find(name)
         if uid is None:
-            user, why = accounts.add(name)
+            user, why = accounts.add(name, role=role)
             if not user:
                 print(why, file=sys.stderr)
                 return 1
             uid = user["id"]
+        elif role == VIEWER and next(p["role"] for p in accounts.users() if p["id"] == uid) != VIEWER:
+            print(f"{clean_person(name)} is already an admin; the link keeps them one. "
+                  "Make them a viewer in People.", file=sys.stderr)
         made = accounts.link(uid)
         if not made:
             print("could not make a link", file=sys.stderr)
@@ -585,12 +638,12 @@ def main(argv: List[str]) -> int:
         people = accounts.users()
         for person in people:
             seen = person["seenAt"] or "never"
-            print(f"{person['name']:<{NAME_MAX}}  {person['devices']} signed in"
+            print(f"{person['name']:<{NAME_MAX}}  {person['role']:<6}  {person['devices']} signed in"
                   f"  last seen {seen}  {len(person['links'])} unused link(s)")
         if not people:
             print("nobody yet - python -m planner.auth link <name>")
         return 0
-    print("usage: python -m planner.auth link <name>  |  python -m planner.auth users",
+    print("usage: python -m planner.auth link [--viewer] <name>  |  python -m planner.auth users",
           file=sys.stderr)
     return 2
 

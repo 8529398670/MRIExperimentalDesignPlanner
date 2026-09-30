@@ -35,15 +35,20 @@ text:                            # every piece of text; screens and messages sta
   align: center                  # center | left | right
   title_pos: [0, 0.30]           # where views that also show graphics put the text
 
-fixation:                        # the `fixation` screen
+fixation:                        # the `fixation` screen; `image:` works here too
   text: "+"
   height: 0.08
   color: [1, 1, 1]
 
 # More screens a phase (or the lead-in / lead-out) can `show`, besides fixation,
-# question, cue and blank. Each is a line of text; unset fields come from `text:`.
+# question, cue and blank. Each is a line of text, or a picture with `image:`;
+# unset fields come from `text:`.
 #   screens:
 #     rest: {text: "·", height: 0.05, color: [0.5, 0.5, 0.5], pos: [0, 0]}
+#     scene: {image: screens/rest.png, height: 0.3, pos: [0, 0]}
+# An `image` is a path from the project directory (by convention screens/); the
+# picture is drawn `height` tall, its width from its own aspect ratio, centred at
+# `pos`. `text`, `color` and `font` do not apply to it.
 screens: {}
 
 cue:

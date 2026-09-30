@@ -37,6 +37,7 @@ from flask import (
 
 from planner.access import install as install_access
 from planner.api import create_blueprint, render_docs
+from planner.builder import config as builder_config
 from planner.auth import AUTH_DIR, PUBLIC_URL, Accounts, Throttle
 from planner.bundle import build_bundle
 from planner.demo import (
@@ -170,8 +171,37 @@ def _acquisition_summary(protocols: Dict[str, Any]) -> Dict[str, Any]:
     return summary
 
 
+#: The parts of the task's config/defaults.yaml the Conditions panel shows a
+#: design's settings against: everything on screen, and the answers.
+TASK_DEFAULT_SECTIONS = ("window", "text", "fixation", "cue", "run", "responses",
+                         "condition_defaults")
+_task_defaults_cache: Dict[str, Any] = {"stamp": None, "value": {}}
+
+
+def _task_defaults() -> Dict[str, Any]:
+    """The task's own defaults, read from the vendored defaults.yaml - the
+    file every exported config is merged over - so the panel greys what a
+    design leaves to the task with the value the task will actually use.
+    Re-read when the file changes; empty if it cannot be read, and the page
+    falls back to its own copy."""
+    try:
+        stamp = os.stat(builder_config.DEFAULTS).st_mtime_ns
+    except OSError:
+        return {}
+    if _task_defaults_cache["stamp"] != stamp:
+        try:
+            loaded = builder_config.defaults() or {}
+        except Exception:  # noqa: BLE001 - a bad file must not stop the page
+            loaded = {}
+        _task_defaults_cache["value"] = {key: loaded[key] for key in TASK_DEFAULT_SECTIONS
+                                         if isinstance(loaded.get(key), dict)}
+        _task_defaults_cache["stamp"] = stamp
+    return _task_defaults_cache["value"]
+
+
 def _boot() -> Dict[str, Any]:
-    """What the solver needs to know about the cards, as the page gets it."""
+    """What the solver needs to know about the cards, as the page gets it,
+    and the task's defaults the Conditions panel shows a design against."""
     protocols = store.load_all()
     return {
         "manifest": store.manifest(),
@@ -179,6 +209,7 @@ def _boot() -> Dict[str, Any]:
         "acquisition": _acquisition_summary(protocols),
         "roles": ROLES,
         "roleLabels": ROLE_LABELS,
+        "taskDefaults": _task_defaults(),
     }
 
 
@@ -216,13 +247,13 @@ def _view_suffix(view: Optional[str], item: Optional[str]) -> str:
 
 @app.route("/")
 def index() -> Response:
-    """Every design, newest first, each a link to open it; and for someone
-    signed in, a way to start another from the defaults."""
+    """Every design, newest first, each a link to open it; and for an admin,
+    a way to start another from the defaults."""
     listed = sorted(designs.list(), key=lambda entry: entry["modified"], reverse=True)
     for entry in listed:
         entry["path"] = page_path(entry["name"])
         entry["changed"] = datetime.fromtimestamp(entry["modified"]).strftime("%Y-%m-%d %H:%M")
-    return _page("designs.html", designs=listed, me=g.user)
+    return _page("designs.html", designs=listed, me=g.user, can_edit=g.get("can_edit"))
 
 
 @app.route(f"/{VIEW}")
@@ -556,10 +587,24 @@ def demo_run(name: str, slug: str) -> Response:
 
 @app.route("/designs/<name>/demo/files/<bank>/<path:relative>")
 def demo_file(name: str, bank: str, relative: str) -> Response:
-    """One picture from one question bank, for a trial that shows an image."""
+    """One picture from one bank, by the path a config writes for it: a
+    trial's under ``questions/``, a picture screen's under ``screens/``."""
     if not designs.exists(name):
         abort(404)
-    found = banks.image(bank, relative)
+    found = banks.file(bank, relative)
+    if found is None:
+        abort(404)
+    return send_from_directory(found.parent, found.name, max_age=0)
+
+
+@app.route("/designs/<name>/demo/screen-image")
+def demo_screen_image(name: str) -> Response:
+    """A picture screen's file for the Conditions panel's preview,
+    ``?path=screens/rest.png``: from the first bank that has it, since the
+    panel is not playing any one bank.  Gated like the rest of the demo."""
+    if not designs.exists(name):
+        abort(404)
+    found = banks.find(request.args.get("path", ""))
     if found is None:
         abort(404)
     return send_from_directory(found.parent, found.name, max_age=0)
@@ -803,6 +848,12 @@ def design_rev() -> Response:
     return jsonify({"name": clean_name(name), "rev": designs.rev(name), "cardsRev": _cards_rev()})
 
 
+def _shape(design: Any) -> float:
+    """The shape a stored design is in (its ``version``), 0 when it says none."""
+    value = design.get("version") if isinstance(design, dict) else None
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else 0.0
+
+
 @app.post("/api/design")
 def post_design() -> Response:
     """Save a design.  With ``baseRev``, refuse (409) if the stored copy has
@@ -817,6 +868,18 @@ def post_design() -> Response:
     design = payload.get("design")
     if not isinstance(design, dict):
         return jsonify({"error": "design must be an object."}), 400
+    # A page still running an older planner reads a newer design wrongly -
+    # it would drop what it does not know - and its next autosave would
+    # write that back.  So a save in an older shape than the stored one is
+    # refused, and the page reloads onto the current planner.
+    try:
+        stored, _stored_rev = designs.read(name)
+    except (FileNotFoundError, OSError, ValueError):
+        stored = None
+    if _shape(design) < _shape(stored):
+        return jsonify({"error": "This page is running an older version of the planner than "
+                                 "the design it would save over. Reload it.",
+                        "reload": True}), 426
     try:
         rev = designs.write(name, design, base_rev=payload.get("baseRev"))
     except DesignGone:

@@ -75,7 +75,6 @@
   }
 
   var PHASE_ROLE_IDS = M.PHASE_ROLES.map(function (role) { return role.id; });
-  var PHASE_SHOW_IDS = M.PHASE_SHOWS.map(function (show) { return show.id; });
   var OBJECTIVE_IDS = M.OBJECTIVES.map(function (objective) { return objective.id; });
   var SOLVE_MODE_IDS = M.SOLVE_MODES.map(function (mode) { return mode.id; });
   var UNIT_IDS = M.ALLOCATION_UNITS.map(function (unit) { return unit.id; });
@@ -454,21 +453,35 @@
 
   var PHASE_FIELDS = {
     name: name('Phase name'),
-    role: choice(PHASE_ROLE_IDS, 'What the regressor model reads: baseline, stimulus, delay, '
-      + 'response or other'),
+    role: choice(PHASE_ROLE_IDS, 'What the timing model counts the phase as: baseline, '
+      + 'stimulus, delay, response or other. Stimulus and response are the events the HRF '
+      + 'model and the separation solver read; the interface sets it under Trials > Trial '
+      + 'responses > Modelled as'),
     min: number('Shortest duration in seconds', 0),
     max: number('Longest duration in seconds; equal to min means no jitter', 0),
     jitter: bool('Whether the wait varies trial to trial inside min..max'),
-    shows: choice(PHASE_SHOW_IDS, 'What the participant sees: fixation, question, cue or '
-      + 'blank. Empty - the default - follows the role, which is what the regressor model '
-      + 'reads; set it when the two differ, as an inter-trial interval does (a delay to '
-      + 'the model, a fixation cross on screen)')
+    shows: str('What the participant sees during it, as the config\'s `show:`: fixation, '
+      + 'question, cue, blank, or one of the design\'s own screens (screen.add). Empty puts '
+      + 'back what the phase\'s role implies (baseline fixation, stimulus question, response '
+      + 'cue, anything else blank)')
   };
+
+  /* A phase's `shows`, checked against what this design can put up. */
+  function checkShow(state, value, label, role) {
+    var key = String(value === undefined || value === null ? '' : value).trim();
+    if (!key) return M.legacyShow({ role: role });
+    var options = M.showOptions(state);
+    if (options.indexOf(key) < 0) {
+      fail(label + ' "' + key + '" is nothing this design can show. It can show: '
+        + options.join(', ') + '. Add a screen of your own with screen.add.');
+    }
+    return key;
+  }
 
   /* One phase of a whole list.  `position` is where it sits: trial.inspect
    * numbers its phases, and a phase sent back with that `index` is taken if the
    * number still matches where it is. */
-  function cleanPhase(raw, label, position) {
+  function cleanPhase(state, raw, label, position) {
     if (!raw || typeof raw !== 'object') fail(label + ' must be an object.');
     Object.keys(raw).forEach(function (key) {
       if (key === 'index' && position !== undefined) {
@@ -498,18 +511,17 @@
       role: raw.role === undefined ? 'baseline'
         : checkValue(PHASE_FIELDS.role, raw.role, label + ' role')
     };
-    /* Only when it says something: a phase that follows its role carries no
-     * `shows` at all, so a design written before the field existed saves back
-     * exactly as it was read. */
-    var shows = raw.shows === undefined ? ''
-      : checkValue(PHASE_FIELDS.shows, raw.shows, label + ' shows');
-    if (shows) phase.shows = shows;
+    /* Always said: left out, it is what the role implies, written down. */
+    phase.shows = checkShow(state, raw.shows === undefined ? ''
+      : checkValue(PHASE_FIELDS.shows, raw.shows, label + ' shows'), label + ' shows', phase.role);
     return phase;
   }
 
-  function cleanPhases(rows, label) {
+  function cleanPhases(state, rows, label) {
     if (!rows.length) fail('A trial needs at least one phase.');
-    return rows.map(function (raw, index) { return cleanPhase(raw, label + ' ' + index, index); });
+    return rows.map(function (raw, index) {
+      return cleanPhase(state, raw, label + ' ' + index, index);
+    });
   }
 
   /* A phase by 0-based position, or by a name only one phase carries. */
@@ -1189,7 +1201,7 @@
       if (has(args, 'name')) claimName(ctx.state, 'trial', args.name, trial);
       var changed = assign(trial, args, fields);
       if (has(args, 'phases')) {
-        var phases = cleanPhases(args.phases, 'phase');
+        var phases = cleanPhases(ctx.state, args.phases, 'phase');
         if (!same(phases, trial.phases)) {
           trial.phases = phases;
           changed.push('phases');
@@ -1223,8 +1235,8 @@
   action({
     name: 'trial.setPhases', group: 'Trials',
     ui: 'Trials > Trial phases (the whole table at once)',
-    summary: 'Replace every phase. Each phase is {name, role, min, max, jitter}; max defaults to '
-      + 'min and jitter to max > min',
+    summary: 'Replace every phase. Each phase is {name, role, min, max, jitter, shows}; max '
+      + 'defaults to min, jitter to max > min, and shows to what the role implies',
     args: {
       trial: subject('trial', 'Which trial design'),
       phases: required(list('The phases in order, at least one'))
@@ -1233,7 +1245,7 @@
     target: function (ctx, args) { return M.byId(ctx.state.trials, args.trial); },
     run: function (ctx, args) {
       var trial = M.byId(ctx.state.trials, args.trial);
-      trial.phases = cleanPhases(args.phases, 'phase');
+      trial.phases = cleanPhases(ctx.state, args.phases, 'phase');
       return { id: trial.id, phases: H.deepCopy(trial.phases) };
     }
   });
@@ -1367,7 +1379,7 @@
         if (has(args, key)) raw[key] = args[key];
       });
       if (!has(args, 'name')) raw.name = 'Phase ' + (trial.phases.length + 1);
-      var phase = cleanPhase(raw, 'phase.add');
+      var phase = cleanPhase(ctx.state, raw, 'phase.add');
       var at = insertAt(trial.phases, phase, args.index);
       return { id: trial.id, index: at, phase: H.deepCopy(phase) };
     }
@@ -1375,7 +1387,8 @@
 
   action({
     name: 'phase.update', group: 'Trials',
-    ui: 'Trials > Trial phases (a row\'s name, role, shows, min, max and jitter)',
+    ui: 'Trials > Trial phases (a row\'s name, screen, min, max and jitter), and Trials > '
+      + 'Trial responses > Modelled as (its role)',
     summary: 'Edit one phase. As in the table, max is lifted to min if it would fall below it '
       + '(the result notes it)',
     args: {
@@ -1406,11 +1419,9 @@
       if (max < min) { max = min; notes.push('max set to ' + min + ' so it is not below min'); }
       if (has(args, 'name')) phase.name = args.name;
       if (has(args, 'role')) phase.role = args.role;
-      /* Empty puts the phase back to following its role, and takes the key
-       * out with it rather than leaving "" behind. */
+      /* Empty writes down what the role implies, rather than leaving "". */
       if (has(args, 'shows')) {
-        if (args.shows) phase.shows = args.shows;
-        else delete phase.shows;
+        phase.shows = checkShow(ctx.state, args.shows, 'phase.update shows', phase.role);
       }
       if (has(args, 'jitter')) phase.jitter = args.jitter;
       phase.min = min;
@@ -1572,64 +1583,477 @@
     });
   }
 
-  /* --- screens ----------------------------------------------------------
+  /* --- screens: the shape designer --------------------------------------
    *
-   * What is on screen when no condition is: the fixation mark itself, and
-   * what each end of a run puts up.  One of each per config, so they live on
-   * the design rather than on a trial or a run design. */
-
-  var LEAD_SHOW_IDS = M.LEAD_SHOWS.map(function (entry) { return entry.id; });
+   * Everything on screen that is not a condition's own symbol: the fixation
+   * screen, any screens the design adds, the cue's look, the background and
+   * text style, what each end of a run shows, and the answer labels.  One of
+   * each per config, so they live on the design, in `state.presentation` -
+   * a sparse overlay in the config's own keys (see M.cleanPresentation).
+   * Every setting is written only once it is set, and `null` takes one back
+   * to the task's default. */
 
   var TOKEN_CASE_IDS = M.TOKEN_CASES.map(function (entry) { return entry.id; });
 
-  var SCREEN_FIELDS = {
-    fixation: str('The mark a fixation phase draws, as the text to draw: "+", "\u25CF", '
-      + '"" for nothing. The builder reads it as fixation.text'),
-    leadIn: choice(LEAD_SHOW_IDS, 'What the lead-in shows: the fixation mark, or nothing'),
-    leadOut: choice(LEAD_SHOW_IDS, 'What the lead-out shows: the fixation mark, or nothing'),
-    labels: list('The two answers a question may carry, as ["yes", "no"]: the first is the '
-      + 'one `label_balance_pct` counts, and `opposite` swaps them. The question bank has '
-      + 'to use the same two words, or the task refuses it'),
-    labelBalancePct: number('Share of each condition\'s trials answered with the first '
-      + 'label; 50 is the even split the task uses by default', 0, 100),
-    tokenCase: choice(TOKEN_CASE_IDS, 'How a cue_from_response cue writes the token it '
-      + 'shows: upper, lower or as_is')
+  /* A new picture starts this tall, as the task's own example does; the text
+   * size a screen would otherwise inherit makes a picture a speck. */
+  var IMAGE_HEIGHT = 0.3;
+
+  var SCREEN_REF = str('Which screen: fixation, cue, or one of the design\'s own by name',
+    { nonEmpty: true });
+
+  var LOOK_FIELDS = {
+    text: str('What it writes: "+", "■", "REST" - anything, "" for nothing. Setting it '
+      + 'takes the place of a picture', { nullable: true }),
+    image: str('A picture instead of text: its path from the task\'s folder, as '
+      + '"screens/rest.png". Drawn this tall, as wide as its own proportions make it. Setting '
+      + 'it takes the place of the text; a first picture starts ' + IMAGE_HEIGHT + ' tall',
+      { nullable: true }),
+    height: number('How tall, as a share of the screen\'s height: 0.08 is 8%', 0.0001, 4,
+      { nullable: true }),
+    color: spec('color', 'Colour: [r, g, b] on the task\'s -1..1 scale, "#rrggbb", or a colour '
+      + 'name', { nullable: true }),
+    pos: list('Where its centre sits, [x, y] in screen heights from the middle: [0, 0.25] is '
+      + 'a quarter of the screen\'s height above it', { nullable: true }),
+    font: str('Font name, as PsychoPy and the browser know it (default: the text font)',
+      { nullable: true })
   };
-  var SCREEN_FIELD_NAMES = Object.keys(SCREEN_FIELDS);
+  var LOOK_FIELD_NAMES = Object.keys(LOOK_FIELDS);
+
+  function colorArg(value, label) {
+    var clean = M.cleanColor(value);
+    if (clean === undefined) {
+      fail(label + ' must be [r, g, b] on the -1..1 scale, "#rrggbb", or a colour name.');
+    }
+    return clean;
+  }
+
+  function posArg(value, label) {
+    var clean = M.cleanPos(value);
+    if (clean === undefined) fail(label + ' must be [x, y]: two numbers.');
+    return clean;
+  }
+
+  /* Write look arguments onto one sparse look.  `null` (or an empty font or
+   * picture) takes a setting back to the task's default; a text and a
+   * picture take each other's place.  Returns the keys that changed. */
+  function applyLook(look, args, label, keys) {
+    var changed = [];
+    function clear(key) {
+      if (hasOwn(look, key)) { delete look[key]; changed.push(key); }
+    }
+    (keys || LOOK_FIELD_NAMES).forEach(function (key) {
+      if (!has(args, key)) return;
+      var value = args[key];
+      if (value === null) { clear(key); return; }
+      if (key === 'color') value = colorArg(value, label + ' color');
+      else if (key === 'pos') value = posArg(value, label + ' pos');
+      else if (key === 'text') value = String(value).replace(/[\u0000-\u001F\u007F]/g, '');
+      else if (key === 'image' || key === 'font') {
+        value = String(value).trim();
+        if (!value) { clear(key); return; }
+      }
+      if (same(look[key], value)) return;
+      /* A line taking a picture's place does not keep the picture's
+       * starting size: 0.3 of the screen is a picture's height, not a
+       * symbol's. */
+      if (key === 'text' && hasOwn(look, 'image') && look.height === IMAGE_HEIGHT) clear('height');
+      look[key] = value;
+      changed.push(key);
+      if (key === 'text') clear('image');
+      if (key === 'image') clear('text');
+    });
+    if (hasOwn(look, 'image') && !hasOwn(look, 'height')) {
+      look.height = IMAGE_HEIGHT;
+      changed.push('height');
+    }
+    return changed;
+  }
+
+  function claimScreenName(screens, wanted, current) {
+    var slug = M.screenSlug(wanted);
+    if (!slug) fail('A screen name needs at least one letter or digit.');
+    if (M.RESERVED_SCREENS.indexOf(slug) >= 0) {
+      fail('"' + slug + '" is the task\'s own. Call the screen something else.');
+    }
+    if (slug !== current && screens && hasOwn(screens, slug)) {
+      fail('There is already a screen called "' + slug + '". Screen names are what a phase '
+        + 'shows, so no two may share one.');
+    }
+    return slug;
+  }
+
+  /* One of the design's own screens, by name. */
+  function ownScreen(state, own, value, entry) {
+    var slug = M.screenSlug(value);
+    if (slug === 'fixation' || slug === 'cue') {
+      fail(entry + ': ' + slug + ' is the task\'s own screen; screen.update changes how it looks.');
+    }
+    if (slug === 'question' || slug === 'blank') {
+      fail(entry + ': the ' + slug + ' is the task\'s own, not a screen of the design\'s.');
+    }
+    if (!own.screens || !hasOwn(own.screens, slug)) {
+      fail('There is no screen "' + slug + '". The design\'s screens: '
+        + M.screenNames(state).join(', ') + '.');
+    }
+    return slug;
+  }
+
+  /* Where a screen appears, in words, for a refusal. */
+  function usedBy(state, boot, show) {
+    return (M.screenUsage(state, boot)[show] || []).map(function (entry) {
+      return entry.lead ? 'the ' + (entry.lead === 'lead_in' ? 'lead-in' : 'lead-out')
+        : '"' + entry.phaseName + '" in "' + entry.trialName + '"';
+    });
+  }
+
+  /* The design's own screens in a new order, or with one renamed - an
+   * object's keys are its order, so both rebuild it. */
+  function rebuildScreens(own, names, rename) {
+    var out = {};
+    names.forEach(function (key) {
+      out[rename && key === rename.from ? rename.to : key] = own.screens[key];
+    });
+    own.screens = out;
+  }
+
+  function renameScreen(state, own, from, to) {
+    rebuildScreens(own, Object.keys(own.screens), { from: from, to: to });
+    (state.trials || []).forEach(function (trial) {
+      (trial.phases || []).forEach(function (phase) {
+        if (phase.shows === from) phase.shows = to;
+      });
+    });
+    ['lead_in', 'lead_out'].forEach(function (key) {
+      if (own.run && own.run[key] && own.run[key].show === from) own.run[key].show = to;
+    });
+  }
+
+  function writePresentation(ctx, own) {
+    ctx.state.presentation = M.cleanPresentation(own);
+    return H.deepCopy(ctx.state.presentation);
+  }
 
   action({
-    name: 'screen.update', group: 'Conditions',
-    ui: 'Conditions > Screens',
-    summary: 'Set the fixation mark, what each end of a run shows, the two answer labels, '
-      + 'how they are balanced, and how a cue writes a response token. Each is written to '
-      + 'the config only when it differs from the task\'s own default',
-    args: SCREEN_FIELDS,
+    name: 'screen.add', group: 'Conditions',
+    ui: 'Conditions > Screens > Add screen',
+    summary: 'Add a screen a phase or a run\'s end can show: a line of text or a picture, with '
+      + 'its own size, colour, position and font. Default: named "screen_<n>", writing nothing',
+    args: Object.assign({
+      name: name('Its name - what a phase shows: lower_case_with_underscores, unique, and not '
+        + 'fixation, question, cue or blank'),
+      index: integer('0-based position among the design\'s own screens (default: the end)', 0)
+    }, LOOK_FIELDS),
     run: function (ctx, args) {
-      nothingToChange('screen.update', args, SCREEN_FIELD_NAMES);
-      var held = M.screens(ctx.state);
-      SCREEN_FIELD_NAMES.forEach(function (key) {
-        if (has(args, key)) held[key] = args[key];
-      });
-      if (has(args, 'labels')) {
-        var given = args.labels.map(function (word) { return String(word).trim(); });
-        if (given.length !== 2 || !given[0] || !given[1] || given[0] === given[1]) {
-          fail('screen.update "labels" must be two different words, as ["yes", "no"].');
-        }
-        held.labels = given;
+      var own = M.presentation(ctx.state);
+      var screens = own.screens || {};
+      var count = Object.keys(screens).length;
+      var wanted = has(args, 'name') ? args.name : 'screen_' + (count + 1);
+      for (var n = count + 2; !has(args, 'name') && hasOwn(screens, M.screenSlug(wanted)); n += 1) {
+        wanted = 'screen_' + n;
       }
-      ctx.state.screens = M.screens({ screens: held });
-      return { screens: H.deepCopy(ctx.state.screens) };
+      var slug = claimScreenName(screens, wanted, null);
+      var look = {};
+      applyLook(look, args, 'screen.add');
+      if (!hasOwn(look, 'text') && !hasOwn(look, 'image')) look = Object.assign({ text: '' }, look);
+      var names = Object.keys(screens);
+      var at = has(args, 'index') ? Math.max(0, Math.min(names.length, args.index)) : names.length;
+      names.splice(at, 0, slug);
+      screens[slug] = look;
+      own.screens = screens;
+      rebuildScreens(own, names);
+      writePresentation(ctx, own);
+      return { name: slug, index: at, screen: H.deepCopy(ctx.state.presentation.screens[slug]) };
     }
   });
 
   action({
-    name: 'screen.reset', group: 'Conditions',
-    ui: 'Conditions > Screens > Reset',
-    summary: 'Put the fixation mark, both ends of a run, the labels, their balance and the '
-      + 'token case back to the task\'s defaults',
+    name: 'screen.update', group: 'Conditions',
+    ui: 'Conditions > Screens (a row\'s name, symbol or picture, size, colour, position and font)',
+    summary: 'Change one screen: fixation (the task\'s own), cue (its size, colour and position; '
+      + 'the symbol is each condition\'s own), or one of the design\'s. null takes a setting back '
+      + 'to the task\'s default, and a rename follows into every phase and run end that shows it',
+    args: Object.assign({
+      screen: required(SCREEN_REF),
+      name: name('New name, for one of the design\'s own screens')
+    }, LOOK_FIELDS),
+    locate: ['screen'],
+    target: function (ctx, args) {
+      var own = M.presentation(ctx.state);
+      var key = M.screenSlug(args.screen);
+      if (key === 'fixation') return own.fixation || {};
+      if (key === 'cue') return own.cue || {};
+      return (own.screens && own.screens[key]) || null;
+    },
+    run: function (ctx, args) {
+      nothingToChange('screen.update', args, ['name'].concat(LOOK_FIELD_NAMES));
+      var own = M.presentation(ctx.state);
+      var key = M.screenSlug(args.screen);
+      var changed;
+      if (key === 'cue') {
+        ['name', 'text', 'image', 'font'].forEach(function (field) {
+          if (has(args, field) && !same((own.cue || {})[field], args[field])) {
+            fail('screen.update: the cue takes height, color and pos. Its symbol is each '
+              + 'condition\'s own (role.update shape), and it writes in the text font '
+              + '(display.update font).');
+          }
+        });
+        own.cue = own.cue || {};
+        changed = applyLook(own.cue, args, 'screen.update', ['height', 'color', 'pos']);
+      } else if (key === 'fixation') {
+        if (has(args, 'name') && M.screenSlug(args.name) !== 'fixation') {
+          fail('screen.update: fixation is the task\'s own screen and keeps its name.');
+        }
+        own.fixation = own.fixation || {};
+        changed = applyLook(own.fixation, args, 'screen.update');
+      } else if (key === 'question' || key === 'blank') {
+        return fail('screen.update: the ' + key + ' has no settings of its own. '
+          + (key === 'question' ? 'The question is drawn in the text style (display.update) '
+            + 'from the question bank.' : 'Blank is nothing at all.'));
+      } else {
+        var slug = ownScreen(ctx.state, own, args.screen, 'screen.update');
+        changed = applyLook(own.screens[slug], args, 'screen.update');
+        if (!hasOwn(own.screens[slug], 'text') && !hasOwn(own.screens[slug], 'image')) {
+          own.screens[slug].text = '';
+        }
+        if (has(args, 'name')) {
+          var next = claimScreenName(own.screens, args.name, slug);
+          if (next !== slug) {
+            renameScreen(ctx.state, own, slug, next);
+            changed.push('name');
+            key = next;
+          }
+        }
+      }
+      var stored = writePresentation(ctx, own);
+      return {
+        screen: key, changed: changed,
+        look: key === 'cue' ? (stored.cue || {}) : key === 'fixation' ? (stored.fixation || {})
+          : stored.screens[key]
+      };
+    }
+  });
+
+  action({
+    name: 'screen.move', group: 'Conditions',
+    ui: 'Conditions > Screens > up / down arrows',
+    summary: 'Reorder the design\'s own screens. The task\'s fixation, question, cue and blank '
+      + 'stay where they are',
+    args: Object.assign({ screen: required(SCREEN_REF) }, MOVE_ARGS),
+    run: function (ctx, args) {
+      var own = M.presentation(ctx.state);
+      var slug = ownScreen(ctx.state, own, args.screen, 'screen.move');
+      var names = Object.keys(own.screens);
+      var moved = move(names, names.indexOf(slug), args);
+      rebuildScreens(own, names);
+      writePresentation(ctx, own);
+      return moved;
+    }
+  });
+
+  action({
+    name: 'screen.remove', group: 'Conditions',
+    ui: 'Conditions > Screens > x',
+    summary: 'Delete one of the design\'s own screens. Refused while a phase or a run\'s end '
+      + 'shows it: point those somewhere else first',
+    args: { screen: required(SCREEN_REF) },
+    run: function (ctx, args) {
+      var own = M.presentation(ctx.state);
+      var slug = ownScreen(ctx.state, own, args.screen, 'screen.remove');
+      var users = usedBy(ctx.state, ctx.boot, slug);
+      if (users.length) {
+        fail('"' + slug + '" is still shown by ' + users.join(', ') + '. Point '
+          + (users.length === 1 ? 'it' : 'them') + ' at another screen first (phase.update '
+          + 'shows, leads.update).');
+      }
+      var removed = own.screens[slug];
+      delete own.screens[slug];
+      writePresentation(ctx, own);
+      return { removed: slug, screen: removed };
+    }
+  });
+
+  action({
+    name: 'display.update', group: 'Conditions',
+    ui: 'Conditions > Screens > Display',
+    summary: 'The background, and the text style the question, the messages and every screen '
+      + 'without its own use. null takes one back to the task\'s default',
+    args: {
+      background: spec('color', 'The screen\'s background colour (window.color), as a colour is '
+        + 'given anywhere here', { nullable: true }),
+      font: str('The font (text.font)', { nullable: true }),
+      height: number('Text size, as a share of the screen\'s height (text.height)', 0.0001, 4,
+        { nullable: true }),
+      color: spec('color', 'Text colour (text.color)', { nullable: true })
+    },
+    run: function (ctx, args) {
+      nothingToChange('display.update', args, ['background', 'font', 'height', 'color']);
+      var own = M.presentation(ctx.state);
+      var changed = [];
+      if (has(args, 'background')) {
+        var background = args.background === null ? undefined
+          : colorArg(args.background, 'display.update background');
+        var current = own.window && own.window.color;
+        if (!same(current, background)) {
+          if (background === undefined) delete own.window;
+          else own.window = { color: background };
+          changed.push('background');
+        }
+      }
+      own.text = own.text || {};
+      changed = changed.concat(applyLook(own.text, args, 'display.update',
+        ['font', 'height', 'color']));
+      var stored = writePresentation(ctx, own);
+      return { changed: changed, window: stored.window || {}, text: stored.text || {} };
+    }
+  });
+
+  action({
+    name: 'leads.update', group: 'Conditions',
+    ui: 'Conditions > Screens > Lead-in shows / Lead-out shows',
+    summary: 'What the lead-in and the lead-out show: fixation, one of the design\'s own '
+      + 'screens, or blank - no question or cue, since no trial is running. Their lengths are '
+      + 'each run design\'s. null takes one back to the task\'s default',
+    args: {
+      leadIn: str('What the lead-in shows', { nullable: true }),
+      leadOut: str('What the lead-out shows', { nullable: true })
+    },
+    run: function (ctx, args) {
+      nothingToChange('leads.update', args, ['leadIn', 'leadOut']);
+      var own = M.presentation(ctx.state);
+      own.run = own.run || {};
+      var options = M.leadOptions(ctx.state);
+      [['leadIn', 'lead_in'], ['leadOut', 'lead_out']].forEach(function (pair) {
+        if (!has(args, pair[0])) return;
+        if (args[pair[0]] === null) { delete own.run[pair[1]]; return; }
+        var show = String(args[pair[0]]).trim();
+        if (options.indexOf(show) < 0) {
+          fail('leads.update ' + pair[0] + ' "' + show + '" cannot open or close a run. It can '
+            + 'be: ' + options.join(', ') + '.');
+        }
+        own.run[pair[1]] = { show: show };
+      });
+      writePresentation(ctx, own);
+      return { leadIn: M.leadShow(ctx.state, 'lead_in', ctx.boot),
+        leadOut: M.leadShow(ctx.state, 'lead_out', ctx.boot) };
+    }
+  });
+
+  action({
+    name: 'answers.update', group: 'Conditions',
+    ui: 'Conditions > Trial conditions > Answers',
+    summary: 'The two answers a question may carry, how each condition\'s trials split between '
+      + 'them, how a silent trial reads in the log, and how a cue that shows the word to say '
+      + 'writes it. null takes one back to the task\'s default',
+    args: {
+      labels: list('The two answers, as ["yes", "no"]: the first is the one labelBalancePct '
+        + 'counts, and `opposite` swaps them. The question bank has to use the same two words, '
+        + 'or the task refuses it', { nullable: true }),
+      labelBalancePct: number('Share of each condition\'s trials answered with the first label '
+        + '(run.label_balance_pct); the task splits evenly, 50, by default', 0, 100,
+        { nullable: true }),
+      silentLabel: str('How a trial whose response is nothing reads in the log and the console '
+        + '(responses.silent_label)', { nullable: true }),
+      tokenCase: choice(TOKEN_CASE_IDS, 'How a cue that shows the word to say writes it '
+        + '(cue.token_case): upper, lower or as_is', { nullable: true })
+    },
+    run: function (ctx, args) {
+      nothingToChange('answers.update', args,
+        ['labels', 'labelBalancePct', 'silentLabel', 'tokenCase']);
+      var own = M.presentation(ctx.state);
+      own.responses = own.responses || {};
+      own.run = own.run || {};
+      own.cue = own.cue || {};
+      if (has(args, 'labels')) {
+        if (args.labels === null) delete own.responses.labels;
+        else {
+          var labels = M.cleanLabels(args.labels);
+          if (!labels) fail('answers.update "labels" must be two different words, as ["yes", "no"].');
+          own.responses.labels = labels;
+        }
+      }
+      if (has(args, 'labelBalancePct')) {
+        if (args.labelBalancePct === null) delete own.run.label_balance_pct;
+        else own.run.label_balance_pct = args.labelBalancePct;
+      }
+      if (has(args, 'silentLabel')) {
+        var silent = args.silentLabel === null ? '' : String(args.silentLabel).trim();
+        if (silent) own.responses.silent_label = silent;
+        else delete own.responses.silent_label;
+      }
+      if (has(args, 'tokenCase')) {
+        if (args.tokenCase === null) delete own.cue.token_case;
+        else own.cue.token_case = args.tokenCase;
+      }
+      writePresentation(ctx, own);
+      var shown = M.resolvedPresentation(ctx.state, ctx.boot);
+      return { labels: shown.labels, labelBalancePct: shown.labelBalancePct,
+        silentLabel: shown.silentLabel, tokenCase: shown.tokenCase };
+    }
+  });
+
+  action({
+    name: 'presentation.set', group: 'Conditions',
+    ui: 'Conditions (everything on the Screens card at once)',
+    summary: 'Replace everything on screen at once, as design.get returns it under '
+      + '"presentation": {window, text, fixation, screens, cue, run, responses}, in the config\'s '
+      + 'own keys. Only what is set is written; refused if a phase or a run\'s end would lose '
+      + 'the screen it shows',
+    args: { presentation: required(object('The whole overlay, as design.get returns it')) },
+    run: function (ctx, args) {
+      var known = ['window', 'text', 'fixation', 'screens', 'cue', 'run', 'responses'];
+      Object.keys(args.presentation).forEach(function (key) {
+        if (known.indexOf(key) < 0) {
+          fail('presentation.set: "' + key + '" is not something the planner sets. It takes: '
+            + known.join(', ') + '.');
+        }
+      });
+      var clean = M.cleanPresentation(args.presentation);
+      var after = Object.assign({}, ctx.state, { presentation: clean });
+      var options = M.showOptions(after);
+      var lost = [];
+      (ctx.state.trials || []).forEach(function (trial) {
+        (trial.phases || []).forEach(function (phase) {
+          if (options.indexOf(M.phaseShow(ctx.state, phase)) < 0) {
+            lost.push('"' + phase.name + '" in "' + trial.name + '" (' + phase.shows + ')');
+          }
+        });
+      });
+      ['lead_in', 'lead_out'].forEach(function (key) {
+        var asked = args.presentation.run && args.presentation.run[key];
+        if (asked && asked.show !== undefined && !(clean.run && clean.run[key])) {
+          lost.push('the ' + (key === 'lead_in' ? 'lead-in' : 'lead-out') + ' ('
+            + asked.show + ')');
+        }
+      });
+      if (lost.length) {
+        fail('presentation.set would leave nothing to show for ' + lost.join(', ')
+          + '. Keep those screens, or point what shows them somewhere else first.');
+      }
+      ctx.state.presentation = clean;
+      return { presentation: H.deepCopy(clean) };
+    }
+  });
+
+  action({
+    name: 'presentation.reset', group: 'Conditions',
+    ui: 'Conditions > Screens > Reset everything to the task\'s defaults',
+    summary: 'Put everything on screen back to the task\'s defaults and delete the design\'s own '
+      + 'screens. A phase that showed one goes back to what its role implies (the result names '
+      + 'them)',
     run: function (ctx) {
-      ctx.state.screens = M.defaultScreens();
-      return { screens: H.deepCopy(ctx.state.screens) };
+      var own = M.screenNames(ctx.state).slice(1);
+      var moved = [];
+      (ctx.state.trials || []).forEach(function (trial) {
+        (trial.phases || []).forEach(function (phase) {
+          if (own.indexOf(phase.shows) < 0) return;
+          var before = phase.shows;
+          phase.shows = M.legacyShow({ role: phase.role });
+          moved.push({ trial: trial.id, phase: phase.name, from: before, to: phase.shows });
+        });
+      });
+      ctx.state.presentation = {};
+      return { presentation: {}, moved: moved };
     }
   });
 

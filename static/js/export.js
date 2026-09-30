@@ -186,7 +186,7 @@
       }));
     }
     runs.forEach(function (run) {
-      psychopyButtons.appendChild(App.h('span', { class: 'btn-pair' }, [
+      psychopyButtons.appendChild(App.exporting(App.h('span', { class: 'btn-pair' }, [
         App.h('button', {
           class: 'btn sm', type: 'button', text: run.name,
           title: 'Download ' + M.psychopyFileName(run) + ' for ' + run.name,
@@ -198,7 +198,7 @@
             + 'builder\'s own loader - a config it refuses is refused here',
           onclick: function () { demoPsychopy(run); }
         })
-      ]));
+      ])));
     });
 
     var previous = psychopyPicker.value;
@@ -368,8 +368,9 @@
           App.copy(App.designLink(preset.name), 'Link for "' + preset.name + '"');
         }))
       ]);
-      actions.appendChild(App.iconButton('Download', 'Write this design out as a JSON file',
-        function () { downloadPreset(preset.name); }));
+      actions.appendChild(App.exporting(App.iconButton('Download',
+        'Write this design out as a JSON file',
+        function () { downloadPreset(preset.name); })));
       actions.appendChild(App.iconButton('Delete', here
         ? 'Delete this design, the one open here; its link stops working'
         : 'Delete this design; its link stops working', function () {
@@ -476,7 +477,7 @@
     });
 
     var bundleCard = App.card('Download everything', 'One zip with the whole design', [
-      App.h('div', { class: 'btn-row' }, [
+      App.exporting(App.h('div', { class: 'btn-row' }, [
         App.h('button', {
           class: 'btn gold', type: 'button', text: 'Download everything (.zip)',
           onclick: downloadBundle
@@ -484,7 +485,7 @@
         App.iconButton('XLSX only', 'Just the workbook', downloadXlsx),
         App.iconButton('Design JSON', 'The state plus the solved report', downloadJson),
         App.iconButton('Markdown only', 'The whole report as one .md file', downloadMarkdown)
-      ]),
+      ])),
       bundleManifest,
       bundleStatus
     ]);
@@ -547,8 +548,8 @@
           title: 'Draw each figure the way Download PNG draws it and hand it to the server',
           onclick: function () { publishAllFigures(this); }
         }),
-        App.iconButton('Copy the index link', 'The address of this page of figures',
-          function () { App.copy(global.location.origin + figuresPath(), 'Figure index link'); })
+        App.exporting(App.iconButton('Copy the index link', 'The address of this page of figures',
+          function () { App.copy(global.location.origin + figuresPath(), 'Figure index link'); }))
       ]),
       publishStatus,
       App.h('p', { class: 'muted', text: 'A figure can be named by its file name, which is '
@@ -564,10 +565,10 @@
     var methodsCard = App.card('Methods text', 'Regenerated from the solved design', [
       methodsBox,
       App.h('div', { class: 'btn-row mt' }, [
-        App.h('button', {
+        App.exporting(App.h('button', {
           class: 'btn', type: 'button', text: 'Copy methods text',
           onclick: function () { App.copy(methodsBox.value, 'Methods text'); }
-        }),
+        })),
         App.iconButton('Regenerate', 'Discard edits and rebuild from the design', function () {
           methodsBox.value = App.report.methodsText;
           App.toast('Methods text regenerated');
@@ -586,16 +587,17 @@
     var markdownCard = App.card('Tables', 'Markdown, or straight into Word', [
       App.h('div', { class: 'split-inline mb' }, [
         markdownPicker,
-        App.h('button', {
+        App.exporting(App.h('button', {
           class: 'btn', type: 'button', text: 'Copy Markdown',
           onclick: function () { App.copy(markdownBox.textContent, 'Markdown table'); }
-        }),
-        App.iconButton('Copy for Word',
-          'Puts the shown table on the clipboard as rich text', copyShownForWord),
-        App.iconButton('Copy every table', 'The whole report as Markdown', function () {
+        })),
+        App.exporting(App.iconButton('Copy for Word',
+          'Puts the shown table on the clipboard as rich text', copyShownForWord)),
+        App.exporting(App.iconButton('Copy every table', 'The whole report as Markdown', function () {
           App.copy(M.allMarkdown(App.report), 'Full Markdown report');
-        }),
-        App.iconButton('Download .md', 'Write the report out as a file', downloadMarkdown)
+        })),
+        App.exporting(App.iconButton('Download .md', 'Write the report out as a file',
+          downloadMarkdown))
       ]),
       markdownBox
     ]);
@@ -626,18 +628,18 @@
       psychopyButtons,
       App.h('div', { class: 'split-inline mt mb' }, [
         psychopyPicker,
-        App.iconButton('Copy YAML', 'Copy the shown config', function () {
+        App.exporting(App.iconButton('Copy YAML', 'Copy the shown config', function () {
           App.copy(psychopyBox.textContent, 'PsychoPy config');
-        }),
-        App.iconButton('Download shown', 'Write the shown config out', function () {
+        })),
+        App.exporting(App.iconButton('Download shown', 'Write the shown config out', function () {
           var run = currentPsychopyRun();
           if (run) downloadPsychopy(run);
-        }),
-        App.iconButton('\u25b6 Demo shown', 'Play the shown config in the browser',
+        })),
+        App.exporting(App.iconButton('\u25b6 Demo shown', 'Play the shown config in the browser',
           function () {
             var run = currentPsychopyRun();
             if (run) demoPsychopy(run);
-          })
+          }))
       ]),
       psychopyBox
     ]);
@@ -681,13 +683,14 @@
         App.iconButton('Import JSON file',
           'Make a new design from a design file, named above or after the file, and open it',
           function () { importPicker.click(); }),
-        App.iconButton('Download this design', 'Write the design as it stands to a file',
+        App.exporting(App.iconButton('Download this design',
+          'Write the design as it stands to a file',
           function () {
             var blob = new Blob([JSON.stringify(App.state, null, 2)],
               { type: 'application/json' });
             download(blob, fileStem(App.designName) + '.json');
             App.toast('Design downloaded', 'ok');
-          }),
+          })),
         importPicker,
         App.h('span', {
           class: 'muted',

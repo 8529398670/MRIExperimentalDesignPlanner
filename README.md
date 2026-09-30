@@ -58,8 +58,18 @@ copy buttons are gone, the fields are greyed out, and the server refuses every w
 export with 401.
 
 The only way in is a **one-time login link**. The first browser to open it is signed in for
-good, and after that the link is spent. There are no passwords and no roles: everyone signed in
-can do everything, including adding and removing people.
+good, and after that the link is spent. There are no passwords. Each person is one of two things:
+
+- **Admin**: can do everything: change designs and acquisition cards, add and delete designs,
+  export, and add, remove and manage people.
+- **Viewer**: can look at everything, **play every demo**, and take every export (the zip, the
+  workbook, PsychoPy configs, figures, copied tables), but cannot change anything. The page
+  locks the same way it does for someone not signed in, except that the download, copy and ▶
+  buttons keep working. The server refuses a viewer's writes with 403, and viewers never see
+  the People panel.
+
+Anyone not signed in can still look, but cannot export or play the demo. People who could
+sign in before viewers existed are admins.
 
 - **The first link** comes from the shell:
 
@@ -68,23 +78,29 @@ can do everything, including adding and removing people.
   python3 -m planner.auth link "Your Name"          # a checkout run with ./run.sh
   ```
 
-  The same command gets somebody back in if nobody left inside can make them a link.
+  Someone new is added as an admin; `./dockerRun.sh --viewer-link "Name"` (or
+  `python3 -m planner.auth link --viewer "Name"`) adds them as a viewer instead. A link never
+  changes the role of someone already there. The same command gets somebody back in if nobody
+  left inside can make them a link.
   `./dockerRun.sh --users` (or `python3 -m planner.auth users`) lists who can sign in.
-- **Every other link** comes from the **People** panel, which is only there when signed in.
-  There you can add someone (their first link comes straight up), make anyone a new link,
-  cancel an unused one, remove someone (their browsers are signed out at once), and sign out
-  of this browser. Nobody can remove themselves.
+- **Every other link** comes from the **People** panel, which only admins see. There you can
+  add someone as a viewer or an admin (their first link comes straight up), switch anyone
+  between the two with **Make admin** / **Make viewer** (it applies from their next click),
+  make anyone a new link, cancel an unused one, remove someone (their browsers are signed out
+  at once), and sign out of this browser. Nobody can remove themselves or change their own
+  role.
 - **Scripts and agents** get an **API key** instead, also from **People**: name it for what
   will use it, copy it (it is shown once), and the agent sends `Authorization: Bearer <key>`.
-  A key can change and export anything a person can, but cannot add or remove people or make
+  A key can change and export anything its maker can, but cannot add or remove people or make
   links or keys. Each key is listed with who made it and when it was last used, and can be
-  revoked on its own; removing the person who made it revokes it too. See [API.md](API.md).
+  revoked on its own; removing the person who made it revokes it too, and making them a viewer
+  makes the key read-only. See [API.md](API.md).
 - Unopened links stop working after 7 days (`PLANNER_LINK_DAYS`).
 - When the planner is reached through a proxy or a tunnel, set
   `PLANNER_PUBLIC_URL=https://planner.example.org` so that links are built on that address
   rather than on whatever address the person making them is using.
 
-`accounts/users.json` (`PLANNER_AUTH_DIR`) keeps people, sessions, links and API keys. It
+`accounts/users.json` (`PLANNER_AUTH_DIR`) keeps people (with their role), sessions, links and API keys. It
 stores only sha256 hashes of the tokens and keys, so a copy of the file lets nobody in. The
 session cookie is `HttpOnly` and `SameSite=Lax`, and it is renewed each time the planner is
 opened. Writes from another origin, including another port on the same host, are refused.
@@ -127,8 +143,8 @@ version starts, that file is renamed after its study title (for example
 |---|---|
 | `server.py` | Flask application and waitress entry point |
 | `planner/api.py` | The agent-facing design API under `/api/v1` |
-| `planner/auth.py` | People, sessions, one-time login links and API keys; `python3 -m planner.auth link <name>` |
-| `planner/access.py` | Who may do what: view-only for everyone, a session for writes and exports; `/login`, `/api/auth/*` |
+| `planner/auth.py` | People (admin or viewer), sessions, one-time login links and API keys; `python3 -m planner.auth link [--viewer] <name>` |
+| `planner/access.py` | Who may do what: view-only for everyone, a sign-in for exports and the demo, an admin's for writes; `/login`, `/api/auth/*` |
 | `planner/engine.py` | Runs the planner's own JavaScript on the server, in QuickJS |
 | `planner/designs.py` | The designs, with revisions so the page and the API cannot overwrite each other, and the old working design renamed on first start |
 | `planner/protocols.py` | Loading, validation, atomic writes and backups for the acquisition cards |
@@ -141,7 +157,7 @@ version starts, that file is renamed after its study title (for example
 | `static/js/library.js` | The trial, run, session, experiment, roles, jitter and HRF panels |
 | `static/js/protocols.js` | Acquisition card editor |
 | `static/js/export.js` | Clipboard, Markdown, PsychoPy, workbook and zip export |
-| `static/js/people.js` | The People panel: login links, API keys, removing people, signing out |
+| `static/js/people.js` | The People panel (admins only): roles, login links, API keys, removing people, signing out |
 | `static/js/designs.js` | Adding a design from the defaults and deleting one; the list at `/` (`templates/designs.html`) |
 | `static/js/login.js` | The page a login link opens |
 | `scanner-parameters/*.json` | The acquisition cards, edited in place |
@@ -601,7 +617,8 @@ fetch each `url` it hands back. However a config is addressed, the download is n
 run design, so one fetched as `0.yaml` still lands as
 `run-aim-1-block-localizer-run.yaml`.
 
-Unlike a figure, a config is an **export**, so all of this needs a sign-in or an API key. A
+Unlike a figure, a config is an **export**, so all of this needs a sign-in (an admin's or a
+viewer's) or an API key. A
 token never goes in the address — it would end up in server logs and in referers — so a script
 sends `Authorization: Bearer <key>` and a browser is let in by its cookie:
 
@@ -685,7 +702,7 @@ Each such directory is offered by name in the **Questions** picker, with how man
 holds; one that will not load is listed too, saying so. Drop-in banks are gitignored and
 mounted read-only — the planner only ever reads them.
 
-Like a config download, the demo needs a sign-in or an API key: it hands the page the whole
+Like a config download, the demo needs a sign-in (a viewer's is enough) or an API key: it hands the page the whole
 config, which is the same thing the `.yaml` address hands over, so gating one and not the other
 would only mean the config left by the quieter door.
 
@@ -695,7 +712,8 @@ To build or change a design from a script or an agent, use the design API: see
 **[API.md](API.md)**, or `GET /api/v1` on a running planner. The interface's own endpoints are
 below. Anyone may use the GETs (the `/api/v1` exports excepted). Everything else needs a session,
 either the cookie a login link sets or `Authorization: Bearer <token>`; without one the answer
-is 401.
+is 401. A viewer's session may only use the export POSTs, `/api/auth/me`, `/api/auth/logout`
+and query-only `/api/v1` action batches; anything else it sends is 403 with `"viewOnly": true`.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -727,7 +745,8 @@ is 401.
 | POST | `/api/auth/resume` | Hand back a session a browser kept, when its cookie went |
 | GET | `/api/auth/me` | Who is signed in |
 | POST | `/api/auth/logout` | Sign this browser out |
-| GET/POST | `/api/auth/users` | List people; add someone (answers with their first link) |
+| GET/POST | `/api/auth/users` | List people; add someone, `{"name", "role": "admin"\|"viewer"}` (answers with their first link) |
+| POST | `/api/auth/users/<id>/role` | Make someone an admin or a viewer: `{"role"}`. Not yourself |
 | POST | `/api/auth/users/<id>/link` | A new one-time link for someone |
 | DELETE | `/api/auth/users/<id>` | Remove someone, and every session they have |
 | DELETE | `/api/auth/links/<id>` | Cancel a link nobody has opened |

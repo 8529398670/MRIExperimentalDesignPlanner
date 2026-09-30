@@ -39,6 +39,19 @@ function css(colour) {
 
 const round4 = (x) => Math.round(x * 1e4) / 1e4;
 
+/** An `image` screen: the picture `height` tall at `pos`, width from its own
+ *  aspect ratio, as session.py sizes its ImageStim. `--u` scales with the screen. */
+function screenImage(s) {
+  const img = document.createElement('img');
+  img.className = 'screen-image';
+  img.alt = '';
+  img.style.setProperty('--x', s.pos[0]);
+  img.style.setProperty('--y', s.pos[1]);
+  img.style.setProperty('--h', s.height);
+  if (s.image_url) img.src = s.image_url;      // missing: _preload warns, nothing is drawn
+  return img;
+}
+
 /** Python's str.format for plain `{name}` fields, as the config's messages use. */
 const format = (template, vars) => String(template).replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m));
 
@@ -180,8 +193,9 @@ export class Stage {
       return e;
     };
     const t = cfg.text;
-    // fixation and every other `screens:` entry
+    // fixation and every other `screens:` entry: a line of text, or a picture
     this.screens = Object.fromEntries(Object.entries(cfg.screens).map(([name, s]) => {
+      if (s.image) return [name, screenImage(s)];
       const e = el(s.pos, s.height, s.color, null, s.font);
       e.textContent = s.text;
       return [name, e];
@@ -240,6 +254,11 @@ export class Stage {
     for (const t of this.trials) {
       if (t.view === 'image' && !t.image_url) {
         this.feed.emit('warn', { text: `image not found for "${t.text}": ${t.params.image} (PsychoPy would stop here)` });
+      }
+    }
+    for (const [name, s] of Object.entries(this.cfg.screens)) {
+      if (s.image && !s.image_url) {
+        this.feed.emit('warn', { text: `image not found for screen "${name}": ${s.image} (PsychoPy would stop here)` });
       }
     }
   }

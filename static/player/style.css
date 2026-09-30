@@ -196,6 +196,11 @@ body.on-stage { overflow: hidden; background: #111; }
 }
 .screen svg.shapes { position: absolute; inset: 0; width: 100%; height: 100%; }
 .screen img.image { position: absolute; transform: translate(-50%, -50%); image-rendering: auto; }
+/* an `image` screen: `height` tall, width from the picture's own aspect ratio */
+.screen img.screen-image {
+  position: absolute; left: calc(50% + var(--x, 0) * var(--u)); top: calc(50% - var(--y, 0) * var(--u));
+  transform: translate(-50%, -50%); height: calc(var(--h, 0.06) * var(--u)); width: auto;
+}
 .hud {
   position: fixed; top: 10px; left: 10px; z-index: 22; font: 12px/1.45 var(--mono); color: #d7dadc;
   background: rgb(0 0 0 / 55%); border: 1px solid rgb(255 255 255 / 12%); border-radius: 8px;

@@ -162,28 +162,39 @@
    * nothing to read during the retention - and the other wants the fixation
    * cross, as the lab's own configs do with their `fixation_post`.
    *
-   * So a phase may say so.  Unset - the first entry - means follow the role,
-   * which is what every design did before this field existed, so nothing
-   * moves until someone sets it.  The four after that are the only values
-   * the builder knows: `config._validate` refuses a file with any other. */
-  var PHASE_SHOWS = [
-    { id: '', label: 'From the role' },
-    { id: 'fixation', label: 'Fixation cross' },
-    { id: 'question', label: 'The question' },
-    { id: 'cue', label: 'The role\'s cue' },
-    { id: 'blank', label: 'Blank screen' }
-  ];
+   * So a phase names what it shows, `shows`, in the config's own word for
+   * it: one of the task's four - the fixation screen, the trial's question,
+   * the trial's condition cue, or nothing - or a screen the design adds in
+   * the Conditions panel.  The phase and its `show:` in the export say the
+   * same thing.
+   *
+   * Designs saved before a phase had to say left it to the role, through
+   * LEGACY_SHOW.  migrateState writes that answer into every phase, so
+   * nothing moves on screen and every phase says what it shows. */
+  var BUILTIN_SHOWS = ['fixation', 'question', 'cue', 'blank'];
 
-  function normaliseShow(show) {
-    var key = String(show === undefined || show === null ? '' : show).toLowerCase().trim();
-    return PHASE_SHOWS.some(function (entry) { return entry.id === key; }) ? key : '';
+  var LEGACY_SHOW = {
+    baseline: 'fixation',
+    stimulus: 'question',
+    delay: 'blank',
+    response: 'cue',
+    other: 'blank'
+  };
+
+  /* What a phase showed before it had to say: its own `shows` when that was
+   * one of the four, else what its role implied. */
+  function legacyShow(phase) {
+    var own = String((phase && phase.shows) || '').toLowerCase().trim();
+    if (BUILTIN_SHOWS.indexOf(own) >= 0) return own;
+    return LEGACY_SHOW[normaliseRole(phase && phase.role)] || 'blank';
   }
 
-  /* What one phase shows: its own answer if it has one, else its role's. */
-  function phaseShow(phase) {
-    var own = normaliseShow(phase && phase.shows);
-    if (own) return own;
-    return PSYCHOPY_SHOW[normaliseRole(phase && phase.role)] || 'blank';
+  /* What one phase shows, as the config's `show:` - its own answer when it
+   * names something this design has, else what its role used to imply. */
+  function phaseShow(state, phase) {
+    var own = String((phase && phase.shows) || '').trim();
+    if (own && showOptions(state).indexOf(own) >= 0) return own;
+    return legacyShow(phase);
   }
 
   /* --- trial conditions -------------------------------------------------
@@ -346,25 +357,25 @@
    */
   var RECOMMENDED_TIMING = {
     detection: [
-      { name: 'Fixation', min: 2, max: 6, jitter: true, role: 'baseline' },
-      { name: 'Stimulus', min: 4, max: 4, jitter: false, role: 'stimulus' },
-      { name: 'Delay', min: 1, max: 2, jitter: true, role: 'delay' },
-      { name: 'Response', min: 3, max: 3, jitter: false, role: 'response' },
-      { name: 'Fixation', min: 2, max: 6, jitter: true, role: 'baseline' }
+      { name: 'Fixation', min: 2, max: 6, jitter: true, role: 'baseline', shows: 'fixation' },
+      { name: 'Stimulus', min: 4, max: 4, jitter: false, role: 'stimulus', shows: 'question' },
+      { name: 'Delay', min: 1, max: 2, jitter: true, role: 'delay', shows: 'blank' },
+      { name: 'Response', min: 3, max: 3, jitter: false, role: 'response', shows: 'cue' },
+      { name: 'Fixation', min: 2, max: 6, jitter: true, role: 'baseline', shows: 'fixation' }
     ],
     estimation: [
-      { name: 'Fixation', min: 2, max: 6, jitter: true, role: 'baseline' },
-      { name: 'Stimulus', min: 4, max: 4, jitter: false, role: 'stimulus' },
-      { name: 'Delay', min: 6, max: 10, jitter: true, role: 'delay' },
-      { name: 'Response cue', min: 3, max: 3, jitter: false, role: 'response' },
-      { name: 'Fixation', min: 10, max: 14, jitter: true, role: 'baseline' }
+      { name: 'Fixation', min: 2, max: 6, jitter: true, role: 'baseline', shows: 'fixation' },
+      { name: 'Stimulus', min: 4, max: 4, jitter: false, role: 'stimulus', shows: 'question' },
+      { name: 'Delay', min: 6, max: 10, jitter: true, role: 'delay', shows: 'blank' },
+      { name: 'Response cue', min: 3, max: 3, jitter: false, role: 'response', shows: 'cue' },
+      { name: 'Fixation', min: 10, max: 14, jitter: true, role: 'baseline', shows: 'fixation' }
     ],
     separation: [
-      { name: 'Fixation', min: 2, max: 6, jitter: true, role: 'baseline' },
-      { name: 'Stimulus', min: 4, max: 4, jitter: false, role: 'stimulus' },
-      { name: 'Delay', min: 14, max: 16, jitter: true, role: 'delay' },
-      { name: 'Response cue', min: 3, max: 3, jitter: false, role: 'response' },
-      { name: 'Fixation', min: 24, max: 28, jitter: true, role: 'baseline' }
+      { name: 'Fixation', min: 2, max: 6, jitter: true, role: 'baseline', shows: 'fixation' },
+      { name: 'Stimulus', min: 4, max: 4, jitter: false, role: 'stimulus', shows: 'question' },
+      { name: 'Delay', min: 14, max: 16, jitter: true, role: 'delay', shows: 'blank' },
+      { name: 'Response cue', min: 3, max: 3, jitter: false, role: 'response', shows: 'cue' },
+      { name: 'Fixation', min: 24, max: 28, jitter: true, role: 'baseline', shows: 'fixation' }
     ]
   };
 
@@ -871,8 +882,8 @@
     expSeparation.plan = [{ session: sessionSeparation.id, count: 1 }];
 
     return {
-      version: 2,
-      screens: defaultScreens(),
+      version: STATE_VERSION,
+      presentation: {},
       meta: {
         studyTitle: 'MRI Experimental Design',
         investigator: '',
@@ -1234,13 +1245,19 @@
     return state;
   }
 
+  /* The shape a saved design is in.  3: every phase says what it shows, and
+   * everything on screen lives in `presentation`.  The server refuses a save
+   * from a page older than the design it would overwrite (server.py), so a
+   * tab left open across an upgrade cannot write the old shape back. */
+  var STATE_VERSION = 3;
+
   /* Bring any saved design up to the current shape. */
   function migrateState(state) {
     if (!state || typeof state !== 'object') return defaultState();
     if (state.aims && !state.experiments) return migrateFromAims(state);
 
     var fresh = defaultState();
-    state.version = 2;
+    state.version = STATE_VERSION;
     state.meta = Object.assign({}, fresh.meta, state.meta || {});
     state.budget = Object.assign({}, fresh.budget, state.budget || {});
     state.caps = Object.assign({}, fresh.caps, state.caps || {});
@@ -1248,9 +1265,12 @@
     delete state.aims;
     delete state.session;
 
-    /* Designs saved before the screens block existed come back with the lab
-     * template's own marks, which is exactly what their exports said. */
-    state.screens = screens(state);
+    /* Everything on screen, as the overlay the export writes.  A design from
+     * before it kept a few marks in `screens`; those move across, and only
+     * the ones that differ from the task's defaults, which is exactly what
+     * their exports already said. */
+    state.presentation = migratePresentation(state);
+    delete state.screens;
     state.hrf = Object.assign(defaultHrf(), state.hrf || {});
     state.hrf.objectives = Object.assign(defaultHrf().objectives, state.hrf.objectives || {});
     /* Designs saved before geometric jitter existed come back uniform, which is
@@ -1269,19 +1289,16 @@
     state.trials.forEach(function (trial) {
       if (!trial.id) trial.id = makeId('trial');
       trial.phases = (trial.phases || []).map(function (phase) {
-        var clean = {
+        return {
           name: String(phase.name || 'Phase'),
           min: num(phase.min),
           max: Math.max(num(phase.min), num(phase.max)),
           jitter: !!phase.jitter,
-          role: normaliseRole(phase.role)
+          role: normaliseRole(phase.role),
+          /* Always said, never left to the role any more: a design saved
+           * before gets what it showed then, so nothing moves on screen. */
+          shows: phaseShow(state, phase)
         };
-        /* Only when the phase has something of its own to say: a phase that
-         * follows its role carries no `shows`, so a design saved before the
-         * field existed comes back exactly as it went in. */
-        var shows = normaliseShow(phase.shows);
-        if (shows) clean.shows = shows;
-        return clean;
       });
       if (trial.controlPct === undefined) trial.controlPct = 0;
       if (!trial.objective) trial.objective = 'estimation';
@@ -2618,114 +2635,449 @@
 
   /* ------------------------------------------------------------ psychopy */
 
-  /* The lab template - the builder's own config, section for section.  Its
-   * loader refuses a file without `paths.bank`, and a `show` outside
-   * fixation / question / cue / blank, so these are not cosmetic. */
-  /* The mark a `show: fixation` phase puts up, when a design has not said
-   * otherwise.  The builder reads it as `fixation.text`. */
-  var FIXATION_GLYPH = '+';
+  /* ---------------------------------------------------------- presentation
+   *
+   * Everything on screen that the task's config can set - since the lab's
+   * f141c38 and c4deb46 that is all of it: the background, the text style,
+   * the fixation screen, any screens a design adds (a line of text, or a
+   * picture), the cue's look, what the two ends of a run show, and the
+   * answer labels.  The Conditions panel is where it is all designed.
+   *
+   * A design keeps only what it changes.  `state.presentation` is a sparse
+   * overlay in the config's own keys and shapes, and the export writes it as
+   * it stands: every key left out comes from the task's config/defaults.yaml,
+   * so a default the lab changes later still reaches a design that never
+   * touched it.
+   *
+   *   window:    {color}
+   *   text:      {font, height, color}
+   *   fixation:  {text | image, height, color, pos, font}
+   *   screens:   {name: {text | image, height, color, pos, font}, ...}
+   *   cue:       {height, color, pos, token_case}
+   *   run:       {lead_in: {show}, lead_out: {show}, label_balance_pct}
+   *   responses: {labels, silent_label}
+   *
+   * Colours are the task's -1..1 RGB triples (a colour name or #hex also
+   * works: PsychoPy and the browser stage both read one).  Heights and
+   * positions are in the window's `height` units: 0.08 is 8% of the screen's
+   * height, and [0, 0] is its centre. */
 
-  /* What the lead-in and the lead-out can put up.  There is no trial yet (or
-   * any more) at either end of a run, so a cue and a question have nothing to
-   * draw from: the mark, or nothing. */
-  var LEAD_SHOWS = [
-    { id: 'fixation', label: 'The fixation mark' },
-    { id: 'blank', label: 'Nothing - a blank screen' }
-  ];
+  /* The task's own defaults, for a caller with no boot - a test, an old
+   * page.  The server parses planner/config/defaults.yaml and sends it as
+   * boot.taskDefaults, and that is the copy that counts. */
+  var TASK_DEFAULTS = {
+    window: { color: [-1, -1, -1], size: [1280, 800] },
+    text: { font: 'Arial', height: 0.06, color: [1, 1, 1] },
+    fixation: { text: '+', height: 0.08, color: [1, 1, 1] },
+    cue: { height: 0.12, color: [1, 1, 1], pos: [0, 0], token_case: 'upper' },
+    run: {
+      lead_in: { name: 'lead_in', show: 'fixation' },
+      lead_out: { name: 'lead_out', show: 'fixation' },
+      label_balance_pct: 50
+    },
+    responses: { labels: ['yes', 'no'], silent_label: 'SILENT' }
+  };
 
-  function normaliseLeadShow(value) {
-    var key = String(value || '').toLowerCase().trim();
-    return LEAD_SHOWS.some(function (entry) { return entry.id === key; }) ? key : 'fixation';
+  function taskDefaults(boot) {
+    var given = (boot && boot.taskDefaults) || {};
+    var out = deepCopy(TASK_DEFAULTS);
+    Object.keys(out).forEach(function (section) {
+      var from = given[section];
+      if (!from || typeof from !== 'object' || Array.isArray(from)) return;
+      Object.keys(from).forEach(function (key) {
+        if (from[key] !== undefined && from[key] !== null) out[section][key] = deepCopy(from[key]);
+      });
+    });
+    return out;
   }
 
-  /* How a cue-from-response cue writes the token it shows. */
+  /* How a cue_from_response cue writes the token it shows. */
   var TOKEN_CASES = [
     { id: 'upper', label: 'UPPER CASE' },
     { id: 'lower', label: 'lower case' },
     { id: 'as_is', label: 'As the label is written' }
   ];
 
-  var DEFAULT_LABELS = ['yes', 'no'];
+  /* The task keeps these names for itself: `fixation` is its own screen, and
+   * a screen may not be called question, cue or blank. */
+  var RESERVED_SCREENS = BUILTIN_SHOWS;
 
-  function defaultScreens() {
-    return {
-      fixation: FIXATION_GLYPH, leadIn: 'fixation', leadOut: 'fixation',
-      labels: DEFAULT_LABELS.slice(), labelBalancePct: 50, tokenCase: 'upper'
-    };
+  /* One screen's settings, in the config's order. */
+  var LOOK_KEYS = ['text', 'image', 'height', 'color', 'pos', 'font'];
+
+  function screenSlug(value) {
+    return String(value === undefined || value === null ? '' : value)
+      .toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  }
+
+  function numberOf(value) {
+    if (typeof value === 'number') return value;
+    return typeof value === 'string' && value.trim() !== '' ? Number(value) : NaN;
+  }
+
+  /* A colour as the task takes it: an RGB triple on its -1..1 scale, which
+   * is how the lab's own configs write one - a #hex becomes one - or a
+   * colour name, which PsychoPy and the browser stage both read. */
+  function cleanColor(value) {
+    if (Array.isArray(value)) {
+      if (value.length !== 3) return undefined;
+      var rgb = value.map(numberOf);
+      if (!rgb.every(function (v) { return isFinite(v); })) return undefined;
+      return rgb.map(function (v) { return round(clamp(v, -1, 1), 4); });
+    }
+    if (typeof value !== 'string' || !value.trim()) return undefined;
+    return hexToColor(value) || value.trim();
+  }
+
+  function cleanHeight(value) {
+    var n = numberOf(value);
+    return isFinite(n) && n > 0 ? round(Math.min(n, 4), 4) : undefined;
+  }
+
+  function cleanPos(value) {
+    if (!Array.isArray(value) || value.length !== 2) return undefined;
+    var xy = value.map(numberOf);
+    if (!xy.every(function (v) { return isFinite(v); })) return undefined;
+    return xy.map(function (v) { return round(clamp(v, -4, 4), 4); });
+  }
+
+  /* A font, a picture's path, a label: text that has to say something. */
+  function cleanWord(value) {
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+  }
+
+  /* What a screen writes: anything, nothing included, on one line. */
+  function cleanText(value) {
+    if (value === undefined || value === null) return undefined;
+    return String(value).replace(/[\u0000-\u001F\u007F]/g, '');
+  }
+
+  var LOOK_CLEAN = {
+    text: cleanText, image: cleanWord, height: cleanHeight,
+    color: cleanColor, pos: cleanPos, font: cleanWord
+  };
+
+  /* The usable, set keys of one look, in the config's order. */
+  function cleanLook(raw, keys) {
+    var held = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    var out = {};
+    (keys || LOOK_KEYS).forEach(function (key) {
+      var value = LOOK_CLEAN[key](held[key]);
+      if (value !== undefined) out[key] = value;
+    });
+    return out;
+  }
+
+  function cleanTokenCase(value) {
+    var key = String(value === undefined || value === null ? '' : value).toLowerCase().trim();
+    return TOKEN_CASES.some(function (entry) { return entry.id === key; }) ? key : undefined;
   }
 
   /* The two answers a question may carry.  They have to differ, and a blank
-   * one would make a question the bank could never match, so an unusable
-   * pair falls back to the task's own. */
-  function answerLabels(held) {
-    var given = (held && held.labels) || [];
-    var first = String(given[0] === undefined ? '' : given[0]).trim();
-    var second = String(given[1] === undefined ? '' : given[1]).trim();
-    if (!first || !second || first === second) return DEFAULT_LABELS.slice();
-    return [first, second];
+   * one would make a question the bank could never match. */
+  function cleanLabels(value) {
+    if (!Array.isArray(value) || value.length !== 2) return undefined;
+    var pair = value.map(function (word) {
+      return String(word === undefined || word === null ? '' : word).trim();
+    });
+    return pair[0] && pair[1] && pair[0] !== pair[1] ? pair : undefined;
   }
 
-  /* Everything on screen that is not a condition's cue: the fixation mark
-   * itself, and what the two ends of a run put up.  Study-wide, like the
-   * conditions, because one config carries one of each. */
-  function screens(state) {
-    var held = (state && state.screens) || {};
-    var mark = held.fixation === undefined || held.fixation === null
-      ? FIXATION_GLYPH : String(held.fixation);
-    var token = String(held.tokenCase || '').toLowerCase().trim();
+  function hasKey(object, key) {
+    return !!object && Object.prototype.hasOwnProperty.call(object, key);
+  }
+
+  function filled(object) { return Object.keys(object).length > 0; }
+
+  /* A design's presentation overlay, cleaned: only keys the task reads, only
+   * usable values, no empty sections - so what is stored is exactly what the
+   * export writes. */
+  function cleanPresentation(raw) {
+    var held = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    var out = {};
+
+    var background = cleanColor(held.window && held.window.color);
+    if (background !== undefined) out.window = { color: background };
+
+    var text = cleanLook(held.text, ['font', 'height', 'color']);
+    if (filled(text)) out.text = text;
+
+    var fixation = cleanLook(held.fixation);
+    if (filled(fixation)) out.fixation = fixation;
+
+    var screens = {};
+    var ownScreens = held.screens && typeof held.screens === 'object' && !Array.isArray(held.screens)
+      ? held.screens : {};
+    Object.keys(ownScreens).forEach(function (key) {
+      var slug = screenSlug(key);
+      if (!slug || RESERVED_SCREENS.indexOf(slug) >= 0 || hasKey(screens, slug)) return;
+      var look = cleanLook(ownScreens[key]);
+      /* The task refuses a screen that is neither a line nor a picture. */
+      if (look.text === undefined && look.image === undefined) look = Object.assign({ text: '' }, look);
+      screens[slug] = look;
+    });
+    if (filled(screens)) out.screens = screens;
+
+    var cue = cleanLook(held.cue, ['height', 'color', 'pos']);
+    var tokenCase = cleanTokenCase(held.cue && held.cue.token_case);
+    if (tokenCase !== undefined) cue.token_case = tokenCase;
+    if (filled(cue)) out.cue = cue;
+
+    var run = {};
+    var heldRun = held.run && typeof held.run === 'object' ? held.run : {};
+    ['lead_in', 'lead_out'].forEach(function (key) {
+      var end = heldRun[key] && typeof heldRun[key] === 'object' ? heldRun[key] : {};
+      var show = String(end.show === undefined || end.show === null ? '' : end.show).trim();
+      /* The ends of a run have no trial, so no question and no cue: the
+       * fixation screen, a screen of the design's, or nothing. */
+      if (show === 'fixation' || show === 'blank' || hasKey(screens, show)) run[key] = { show: show };
+    });
+    var pct = numberOf(heldRun.label_balance_pct);
+    if (isFinite(pct)) run.label_balance_pct = round(clamp(pct, 0, 100), 1);
+    if (filled(run)) out.run = run;
+
+    var responses = {};
+    var heldResponses = held.responses && typeof held.responses === 'object' ? held.responses : {};
+    var labels = cleanLabels(heldResponses.labels);
+    if (labels) responses.labels = labels;
+    var silent = cleanWord(heldResponses.silent_label);
+    if (silent !== undefined) responses.silent_label = silent;
+    if (filled(responses)) out.responses = responses;
+
+    return out;
+  }
+
+  /* A design from before the overlay kept a handful of marks in `screens`,
+   * every one filled in whether or not it differed.  Only the ones that
+   * differ from the task's defaults come across - which is exactly what the
+   * export already wrote for them. */
+  function migratePresentation(state) {
+    if (state.presentation && typeof state.presentation === 'object'
+      && !Array.isArray(state.presentation)) {
+      return cleanPresentation(state.presentation);
+    }
+    var old = state.screens && typeof state.screens === 'object' && !Array.isArray(state.screens)
+      ? state.screens : {};
+    var d = TASK_DEFAULTS;
+    var out = { run: {}, responses: {}, cue: {} };
+    if (old.fixation !== undefined && old.fixation !== null
+      && String(old.fixation) !== d.fixation.text) {
+      out.fixation = { text: String(old.fixation) };
+    }
+    [['leadIn', 'lead_in'], ['leadOut', 'lead_out']].forEach(function (pair) {
+      if (String(old[pair[0]] || '').toLowerCase().trim() === 'blank') {
+        out.run[pair[1]] = { show: 'blank' };
+      }
+    });
+    var pct = numberOf(old.labelBalancePct);
+    if (isFinite(pct) && round(clamp(pct, 0, 100), 1) !== d.run.label_balance_pct) {
+      out.run.label_balance_pct = pct;
+    }
+    var labels = cleanLabels(old.labels);
+    if (labels && (labels[0] !== d.responses.labels[0] || labels[1] !== d.responses.labels[1])) {
+      out.responses.labels = labels;
+    }
+    var tokenCase = cleanTokenCase(old.tokenCase);
+    if (tokenCase && tokenCase !== d.cue.token_case) out.cue.token_case = tokenCase;
+    return cleanPresentation(out);
+  }
+
+  /* The overlay as stored, cleaned - a copy, safe to read from. */
+  function presentation(state) {
+    return cleanPresentation(state && state.presentation);
+  }
+
+  /* The screens with a look of their own: the task's fixation screen, then
+   * the design's, in order. */
+  function screenNames(state) {
+    return ['fixation'].concat(Object.keys(presentation(state).screens || {}));
+  }
+
+  /* Everything a phase can show, as the config's `show:` values. */
+  function showOptions(state) {
+    return screenNames(state).concat(['question', 'cue', 'blank']);
+  }
+
+  /* What a run's ends can show: no trial is running, so there is no question
+   * and no cue to draw from - a screen, or nothing. */
+  function leadOptions(state) {
+    return screenNames(state).concat(['blank']);
+  }
+
+  /* What the lead-in (`lead_in`) or lead-out shows. */
+  function leadShow(state, key, boot) {
+    var run = presentation(state).run || {};
+    var fallback = (taskDefaults(boot).run[key] || {}).show;
+    return (run[key] && run[key].show) || fallback || 'fixation';
+  }
+
+  /* What the task will use for everything on screen: the overlay over the
+   * task's defaults, every screen filled in from `text:` exactly as the
+   * task's own config._resolve fills it.  `own` on each part says which keys
+   * the design set, so the panel can grey the rest. */
+  function resolvedPresentation(state, boot) {
+    var d = taskDefaults(boot);
+    var own = presentation(state);
+    var text = Object.assign({}, d.text, own.text || {});
+    var style = { font: text.font, height: text.height, color: text.color, pos: [0, 0] };
+    var screens = [{
+      name: 'fixation', builtin: true,
+      look: Object.assign({}, style, d.fixation, own.fixation || {}),
+      own: own.fixation || {}
+    }];
+    Object.keys(own.screens || {}).forEach(function (name) {
+      screens.push({
+        name: name, builtin: false,
+        look: Object.assign({}, style, own.screens[name]),
+        own: own.screens[name]
+      });
+    });
+    var cue = Object.assign({}, d.cue, own.cue || {});
+    cue.font = text.font;
+    var responses = own.responses || {};
+    var run = own.run || {};
     return {
-      fixation: mark,
-      leadIn: normaliseLeadShow(held.leadIn),
-      leadOut: normaliseLeadShow(held.leadOut),
-      labels: answerLabels(held),
-      labelBalancePct: round(clamp(num(held.labelBalancePct, 50), 0, 100), 1),
-      tokenCase: TOKEN_CASES.some(function (c) { return c.id === token; }) ? token : 'upper'
+      defaults: d,
+      own: own,
+      background: (own.window && own.window.color) || d.window.color,
+      windowSize: Array.isArray(d.window.size) ? d.window.size : [1280, 800],
+      text: text,
+      screens: screens,
+      cue: cue,
+      leadIn: leadShow(state, 'lead_in', boot),
+      leadOut: leadShow(state, 'lead_out', boot),
+      labelBalancePct: run.label_balance_pct !== undefined
+        ? run.label_balance_pct : d.run.label_balance_pct,
+      labels: responses.labels || d.responses.labels,
+      silentLabel: responses.silent_label || d.responses.silent_label,
+      tokenCase: cue.token_case
     };
   }
 
-  /* The glyph a `show` puts up for this design, or '' when it draws nothing.
-   * `cue` needs a trial to know which condition, so it is not answered here. */
-  function screenGlyph(state, show) {
-    if (show === 'fixation') return screens(state).fixation;
-    return '';
+  /* Where each `show` appears: every phase that shows it, by trial, and each
+   * end of every run that does. */
+  function screenUsage(state, boot) {
+    var used = {};
+    function add(show, entry) { (used[show] = used[show] || []).push(entry); }
+    ((state && state.trials) || []).forEach(function (trial) {
+      (trial.phases || []).forEach(function (phase, index) {
+        add(phaseShow(state, phase), {
+          trial: trial.id, trialName: trial.name, phase: index, phaseName: phase.name
+        });
+      });
+    });
+    ['lead_in', 'lead_out'].forEach(function (key) { add(leadShow(state, key, boot), { lead: key }); });
+    return used;
   }
 
-  /* What a config has to say about presentation, which since the task grew
-   * a `config/defaults.yaml` is almost nothing.  Every key left out comes
-   * from there, so writing the lab's own values back into every export would
-   * pin them: a later change to a default could never reach a design the
-   * planner produced.  So only the mark is written, and only when the design
-   * has moved it. */
+  /* The task's -1..1 RGB and the #rrggbb a colour picker speaks. */
+  var NAMED_COLOURS = {
+    white: '#ffffff', black: '#000000', red: '#ff0000', green: '#008000', blue: '#0000ff',
+    yellow: '#ffff00', grey: '#808080', gray: '#808080', orange: '#ffa500'
+  };
+
+  function colorToHex(color) {
+    if (Array.isArray(color) && color.length === 3) {
+      return '#' + color.map(function (v) {
+        var byte = Math.round(clamp((num(v) + 1) / 2, 0, 1) * 255);
+        return (byte < 16 ? '0' : '') + byte.toString(16);
+      }).join('');
+    }
+    var text = String(color || '').trim().toLowerCase();
+    if (/^#[0-9a-f]{6}$/.test(text)) return text;
+    if (/^#[0-9a-f]{3}$/.test(text)) {
+      return '#' + text.slice(1).split('').map(function (c) { return c + c; }).join('');
+    }
+    return NAMED_COLOURS[text] || '#ffffff';
+  }
+
+  function hexToColor(hex) {
+    var text = String(hex || '').trim();
+    var short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(text);
+    if (short) text = '#' + short[1] + short[1] + short[2] + short[2] + short[3] + short[3];
+    var match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(text);
+    if (!match) return undefined;
+    return [match[1], match[2], match[3]].map(function (pair) {
+      return round(parseInt(pair, 16) / 255 * 2 - 1, 4);
+    });
+  }
+
+  /* A colour as CSS, the way the browser stage's own css() turns one. */
+  function colorToCss(color) {
+    if (Array.isArray(color)) {
+      return 'rgb(' + color.map(function (v) {
+        return Math.round(Math.min(1, Math.max(0, (num(v) + 1) / 2)) * 255);
+      }).join(' ') + ')';
+    }
+    return String(color || 'white');
+  }
+
+  /* A value in the config's own style: numbers trimmed, lists in brackets,
+   * text quoted (a bare yes / no would be a boolean to YAML). */
+  function yamlValue(value) {
+    if (Array.isArray(value)) return '[' + value.map(yamlValue).join(', ') + ']';
+    if (typeof value === 'number') return String(round(value, 4));
+    return yamlQuoted(value);
+  }
+
+  /* What a config says about presentation: the overlay, section by section,
+   * in defaults.yaml's order, and nothing the design left to the task. */
   function psychopyPresentation(state) {
-    var held = screens(state);
+    var own = presentation(state);
     var lines = [];
-    if (held.fixation !== FIXATION_GLYPH) {
-      lines.push('', 'fixation:',
-        '  text: ' + yamlQuoted(held.fixation)
-          + (held.fixation ? '' : '   # nothing: a blank screen'));
+
+    if (own.window) {
+      lines.push('', 'window:', '  color: ' + yamlValue(own.window.color) + '   # the background');
     }
-    if (held.tokenCase !== 'upper') {
-      lines.push('', 'cue:', yamlSetting('token_case', held.tokenCase,
-        'how a cue_from_response cue writes the token'));
+    if (own.text) {
+      lines.push('', 'text:');
+      Object.keys(own.text).forEach(function (key) {
+        lines.push('  ' + key + ': ' + yamlValue(own.text[key]));
+      });
     }
-    if (held.labels[0] !== DEFAULT_LABELS[0] || held.labels[1] !== DEFAULT_LABELS[1]) {
+    if (own.fixation) {
+      lines.push('', 'fixation:');
+      Object.keys(own.fixation).forEach(function (key) {
+        var value = own.fixation[key];
+        lines.push('  ' + key + ': ' + yamlValue(value)
+          + (key === 'text' && !value && !own.fixation.image ? '   # nothing: a blank screen' : ''));
+      });
+    }
+    if (own.screens) {
+      var names = Object.keys(own.screens);
+      var width = 0;
+      names.forEach(function (screen) { width = Math.max(width, screen.length + 2); });
+      lines.push('', 'screens:');
+      names.forEach(function (screen) {
+        var look = own.screens[screen];
+        lines.push('  ' + padRight(screen + ':', width) + '{' + Object.keys(look).map(function (key) {
+          return key + ': ' + yamlValue(look[key]);
+        }).join(', ') + '}');
+      });
+    }
+    if (own.cue) {
+      lines.push('', 'cue:');
+      Object.keys(own.cue).forEach(function (key) {
+        lines.push(key === 'token_case'
+          ? yamlSetting('token_case', own.cue.token_case, 'how a cue_from_response cue writes the token')
+          : '  ' + key + ': ' + yamlValue(own.cue[key]));
+      });
+    }
+    if (own.responses) {
       lines.push('', 'responses:');
-      /* Quoted on purpose: bare yes / no are booleans in YAML, and the
-       * task's loader says so when it gets one. */
-      lines.push('  labels: [' + held.labels.map(yamlQuoted).join(', ') + ']'
-        + '   # the two answers in the question bank');
+      if (own.responses.labels) {
+        /* Quoted on purpose: bare yes / no are booleans in YAML, and the
+         * task's loader says so when it gets one. */
+        lines.push('  labels: [' + own.responses.labels.map(yamlQuoted).join(', ') + ']'
+          + '   # the two answers in the question bank');
+      }
+      if (own.responses.silent_label) {
+        lines.push('  silent_label: ' + yamlQuoted(own.responses.silent_label)
+          + '   # how a silent trial\'s token reads in the log');
+      }
     }
     return lines;
   }
-
-  /* What the screen shows during a phase, by the phase's planner role. */
-  var PSYCHOPY_SHOW = {
-    baseline: 'fixation',
-    stimulus: 'question',
-    delay: 'blank',
-    response: 'cue',
-    other: 'blank'
-  };
 
   var PSYCHOPY_COMMENT_COLUMN = 31;
 
@@ -2992,12 +3344,11 @@
     /* The two ends of a run are phases like any other: a name, what they
      * show, and how long.  A bare number would set only the duration and
      * leave `show` at the template's fixation mark. */
-    var ends = screens(report.state);
-    ['leadIn', 'leadOut'].forEach(function (key) {
-      var name = key === 'leadIn' ? 'lead_in' : 'lead_out';
+    var shown = presentation(report.state);
+    ['lead_in', 'lead_out'].forEach(function (name) {
       lines.push('  ' + padRight(name + ':', 10) + '{name: ' + padRight(name + ',', 10)
-        + 'show: ' + padRight(ends[key] + ',', 10)
-        + 'dur: ' + yamlSeconds(key === 'leadIn' ? structure.leadIn : structure.leadOut)
+        + 'show: ' + padRight(leadShow(report.state, name) + ',', 10)
+        + 'dur: ' + yamlSeconds(name === 'lead_in' ? structure.leadIn : structure.leadOut)
         + '}');
     });
     lines.push('  n_blocks: ' + blocksPerRun);
@@ -3007,9 +3358,11 @@
       'rest between blocks, inside the run'));
     lines.push(yamlSetting('inter_trial_gap', yamlSeconds(structure.interTrialGap),
       'dead time between successive trials'));
-    if (ends.labelBalancePct !== 50) {
-      lines.push(yamlSetting('label_balance_pct', trim(ends.labelBalancePct, 1),
-        'share of each condition\'s trials answered ' + ends.labels[0]));
+    if (shown.run && shown.run.label_balance_pct !== undefined) {
+      var firstLabel = ((shown.responses && shown.responses.labels)
+        || TASK_DEFAULTS.responses.labels)[0];
+      lines.push(yamlSetting('label_balance_pct', trim(shown.run.label_balance_pct, 1),
+        'share of each condition\'s trials answered ' + firstLabel));
     }
 
     lines.push('');
@@ -3063,7 +3416,7 @@
             + yamlSeconds(lo) + ' s'
           : null,
         text: '    - {name: ' + padRight(names[index] + ',', nameWidth)
-          + 'show: ' + padRight(phaseShow(phase) + ',', 10)
+          + 'show: ' + padRight(phaseShow(report.state, phase) + ',', 10)
           + 'dur: ' + (jittered ? '[' + yamlSeconds(lo) + ', ' + yamlSeconds(hi) + ']' : yamlSeconds(lo))
           /* A ranged phase the planner sizes as uniform inside a geometric
            * design (its Jitter box is off) has to say so, or it inherits
@@ -3794,7 +4147,8 @@
 
   global.PlannerModel = {
     PHASE_ROLES: PHASE_ROLES,
-    PHASE_SHOWS: PHASE_SHOWS,
+    BUILTIN_SHOWS: BUILTIN_SHOWS,
+    STATE_VERSION: STATE_VERSION,
     RESPONSE_TOKENS: RESPONSE_TOKENS,
     OBJECTIVES: OBJECTIVES,
     SOLVE_MODES: SOLVE_MODES,
@@ -3824,7 +4178,7 @@
     runDesign: runDesign,
     unitOf: unitOf,
     normaliseRole: normaliseRole,
-    normaliseShow: normaliseShow,
+    legacyShow: legacyShow,
     phaseShow: phaseShow,
     objectiveDef: objectiveDef,
     applyHrf: applyHrf,
@@ -3833,16 +4187,31 @@
     psychopyConditions: psychopyConditions,
     conditionCounts: conditionCounts,
     conditionsInPlay: conditionsInPlay,
-    FIXATION_GLYPH: FIXATION_GLYPH,
-    LEAD_SHOWS: LEAD_SHOWS,
     TOKEN_CASES: TOKEN_CASES,
-    DEFAULT_LABELS: DEFAULT_LABELS,
     DEFAULT_CONSTANT_WORD: DEFAULT_CONSTANT_WORD,
     needsWord: needsWord,
-    defaultScreens: defaultScreens,
-    normaliseLeadShow: normaliseLeadShow,
-    screens: screens,
-    screenGlyph: screenGlyph,
+    TASK_DEFAULTS: TASK_DEFAULTS,
+    RESERVED_SCREENS: RESERVED_SCREENS,
+    LOOK_KEYS: LOOK_KEYS,
+    taskDefaults: taskDefaults,
+    screenSlug: screenSlug,
+    cleanColor: cleanColor,
+    cleanHeight: cleanHeight,
+    cleanPos: cleanPos,
+    cleanLook: cleanLook,
+    cleanLabels: cleanLabels,
+    cleanTokenCase: cleanTokenCase,
+    cleanPresentation: cleanPresentation,
+    presentation: presentation,
+    resolvedPresentation: resolvedPresentation,
+    screenNames: screenNames,
+    showOptions: showOptions,
+    leadOptions: leadOptions,
+    leadShow: leadShow,
+    screenUsage: screenUsage,
+    colorToHex: colorToHex,
+    hexToColor: hexToColor,
+    colorToCss: colorToCss,
     psychopyRunConditions: psychopyRunConditions,
     truncGeometric: truncGeometric,
     phaseSpan: phaseSpan,

@@ -10,7 +10,7 @@ that produced it.
 Upstream
 --------
 ``https://github.com/2634367/fMRIInnerSpeechPsychoPy``, ``V1/``, commit
-``f141c3875d843e2cde050d7de977d6c0f9defbe3``, copied 2026-09-30.
+``c4deb464e6df8934a8b4dba7eab34f663da9da62``, copied 2026-09-30.
 
 * ``builder/config.py`` <- ``V1/innerspeech/config.py`` - ``load`` (merge over the
   defaults, required keys, resolve, ``_validate``), ``ignored``, ``timed_phases``,
@@ -22,6 +22,8 @@ Upstream
   ``Path(__file__).parent.parent / "config" / "defaults.yaml"``, so that is where the
   vendored module looks, and putting it there is what lets ``config.py`` stay untouched.
   Every config is merged over it, so an export only needs the keys the design decides.
+  The planner reads it too (``server.py``, ``_task_defaults``), so the Conditions panel
+  can show the value of everything a design leaves to the task.
 
 **Verbatim: do not edit these two files.**  They need only ``yaml``, ``json``,
 ``math`` and ``pathlib`` - no PsychoPy, no numpy - so they drop in whole.  When
@@ -33,6 +35,10 @@ check; anything the planner needs on top goes in ``planner/demo.py`` instead.
     curl -sSf "$base/innerspeech/bank.py"   -o planner/builder/bank.py
     curl -sSf "$base/config/defaults.yaml"  -o planner/config/defaults.yaml
 
+The browser player is the lab's too, in ``static/player/``: ``stage.js``, ``feed.js``,
+``debug.js`` and ``style.css`` <- ``V1/web/``, verbatim, and ``planner/demo.py`` mirrors
+``V1/innerspeech/web.py``'s ``plan()`` and ``/files/`` rules.
+
 Then update the commit above, and check every run of a design still plays:
 ``/designs/<name>/demo/<run>``.
 
@@ -41,5 +47,5 @@ nothing in them.  What the planner needs on top lives in ``planner/demo.py``.
 """
 
 UPSTREAM = "https://github.com/2634367/fMRIInnerSpeechPsychoPy"
-COMMIT = "f141c3875d843e2cde050d7de977d6c0f9defbe3"
+COMMIT = "c4deb464e6df8934a8b4dba7eab34f663da9da62"
 COPIED = "2026-09-30"

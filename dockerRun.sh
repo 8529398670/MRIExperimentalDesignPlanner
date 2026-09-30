@@ -8,12 +8,14 @@
 #   ./dockerRun.sh --bind 0.0.0.0  expose beyond localhost (see the warning below)
 #   ./dockerRun.sh --logs          follow the running container's logs
 #   ./dockerRun.sh --stop          stop and remove the container
-#   ./dockerRun.sh --link NAME     a one-time login link for NAME (added if new)
+#   ./dockerRun.sh --link NAME     a one-time login link for NAME (added as an admin if new)
+#   ./dockerRun.sh --viewer-link NAME  the same, but a new NAME is added as a viewer
 #   ./dockerRun.sh --users         who can sign in
 #
 # Anyone who can reach the planner can look at every design.  Changing
 # anything, or exporting it, needs a sign-in, and the only way in is a
 # one-time login link: the first from --link, the rest from the People panel.
+# A viewer's sign-in exports and plays the demos but changes nothing.
 # Set PLANNER_PUBLIC_URL=https://... when it is reached through a proxy or a
 # tunnel, so the links work for whoever they are sent to.
 #
@@ -41,6 +43,7 @@ ACTION="run"
 
 usage() { sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; }
 LINK_NAME=""
+LINK_ROLE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -56,6 +59,7 @@ while [ $# -gt 0 ]; do
     --logs)        ACTION="logs" ;;
     --shell)       ACTION="shell" ;;
     --link)        ACTION="link"; LINK_NAME="${2:-}"; [ $# -gt 1 ] && shift ;;
+    --viewer-link) ACTION="link"; LINK_ROLE="--viewer"; LINK_NAME="${2:-}"; [ $# -gt 1 ] && shift ;;
     --users)       ACTION="users" ;;
     -h|--help)     usage; exit 0 ;;
     *) echo "unknown option: $1" >&2; usage; exit 2 ;;
@@ -115,10 +119,10 @@ lan_ip() {
 # server uses, so it works a request later.  This is how the first person gets
 # in, and how anyone gets back in when nobody inside can make them a link.
 link() {
-  [ -n "$LINK_NAME" ] || { echo "usage: ./dockerRun.sh --link NAME" >&2; exit 2; }
+  [ -n "$LINK_NAME" ] || { echo "usage: ./dockerRun.sh --link NAME | --viewer-link NAME" >&2; exit 2; }
   need_running
   local path
-  path="$($ENGINE exec "$CONTAINER" python -m planner.auth link "$LINK_NAME" | tail -n 1)" || exit 1
+  path="$($ENGINE exec "$CONTAINER" python -m planner.auth link ${LINK_ROLE:-} "$LINK_NAME" | tail -n 1)" || exit 1
   case "$path" in
     /login#*) ;;
     *) echo "could not make a link" >&2; exit 1 ;;

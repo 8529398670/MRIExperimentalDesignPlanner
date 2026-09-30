@@ -397,10 +397,11 @@
         title: 'Write the solved dynamics, dummies and duration into this card',
         onclick: function () { applyDerived(solved.run.id); }
       }) : null,
-      App.iconButton('Copy card as Markdown', 'Every page and parameter, as a Markdown table',
-        function () { App.copy(cardMarkdown(slug), 'Acquisition card'); }),
-      App.iconButton('Copy card for Word', 'Paste into Word as real tables',
-        function () { copyCardForWord(slug); }),
+      App.exporting(App.iconButton('Copy card as Markdown',
+        'Every page and parameter, as a Markdown table',
+        function () { App.copy(cardMarkdown(slug), 'Acquisition card'); })),
+      App.exporting(App.iconButton('Copy card for Word', 'Paste into Word as real tables',
+        function () { copyCardForWord(slug); })),
       App.iconButton('Backups', 'Restore a timestamped snapshot',
         function () { showBackups(slug); })
     ]);

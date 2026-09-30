@@ -21,7 +21,7 @@ import re
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, g, jsonify, request
 
 from planner.bundle import build_bundle
 from planner.designs import DesignStore, clean_name, page_path
@@ -269,18 +269,29 @@ def create_blueprint(
     def wants_figures(actions: List[Any]) -> bool:
         return any(isinstance(a, dict) and a.get("action") == "export.figures" for a in actions)
 
-    def run_actions(name: str, actions: List[Any], dry_run: bool, include: List[str]):
+    def run_actions(name: str, actions: List[Any], dry_run: bool, include: List[str],
+                    read_only: bool = False):
+        """Run a batch.  `read_only` is a viewer's sign-in: queries, and dry
+        runs, which change nothing, and a refusal at the first action that
+        would change something."""
         with designs.lock(name):
             state, rev = load(name)
             ctx = engine.open(state, boot(), figures=wants_figures(actions))
             results: List[Dict[str, Any]] = []
             error: Optional[Dict[str, Any]] = None
             changed = False
+            viewer_refused = False
             for index, raw in enumerate(actions):
                 label = raw.get("action") if isinstance(raw, dict) else None
                 try:
                     prepared = ctx.prepare(raw)
                     label = prepared["action"]
+                    if read_only and not dry_run and not prepared["query"]:
+                        viewer_refused = True
+                        raise ActionRefused(
+                            f"{label} changes the design, and this sign-in is view only. "
+                            "Send the batch with \"dryRun\": true to see what it would do."
+                        )
                     if prepared["host"] == "js":
                         value = ctx.run(prepared)
                     else:
@@ -313,6 +324,8 @@ def create_blueprint(
             }
             if error:
                 answer["error"] = error
+                if viewer_refused:
+                    answer["viewOnly"] = True
                 answer["hint"] = (
                     "Actions before the failed one were applied"
                     + (" and saved" if saved else "")
@@ -326,7 +339,7 @@ def create_blueprint(
                 report = dict(done["report"])
                 report.pop("state", None)
                 answer["report"] = report
-            return answer, (200 if error is None else 422)
+            return answer, (200 if error is None else 403 if viewer_refused else 422)
 
     # -------------------------------------------------------------- routes
 
@@ -377,10 +390,12 @@ def create_blueprint(
                               "changes made here within a few seconds.",
                     "auth": "GETs are open to anyone (exports excepted). Every write and "
                             "every export needs an API key: send Authorization: Bearer "
-                            "<key>, a key someone signed in made under People -> API "
-                            "keys. Without one the answer is 401. A key can do everything "
-                            "a person can except manage people and keys (/api/auth/* is "
-                            "403, bar GET /api/auth/me).",
+                            "<key>, a key an admin made under People -> API keys. Without "
+                            "one the answer is 401. A key can do what its maker can except "
+                            "manage people and keys (/api/auth/* is 403, bar GET "
+                            "/api/auth/me). A viewer's key - its maker was made a viewer - "
+                            "reads and exports only: writes are 403 with viewOnly, and a "
+                            "batch runs queries and dry runs only.",
                 },
                 "endpoints": [
                     {"method": method, "path": path, "summary": summary}
@@ -470,7 +485,10 @@ def create_blueprint(
             raise ApiError(400, "\"actions\" must be a non-empty list.")
         if len(actions) > MAX_ACTIONS:
             raise ApiError(400, f"At most {MAX_ACTIONS} actions per call.")
-        answer, status = run_actions(name, actions, dry_run, include)
+        # The guard lets a viewer this far (planner/access.py, VIEWER_WRITES):
+        # what they may run is decided action by action.
+        answer, status = run_actions(name, actions, dry_run, include,
+                                     read_only=not g.get("can_edit", False))
         return jsonify(answer), status
 
     @bp.get("/designs/<name>/report")

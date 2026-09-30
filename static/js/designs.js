@@ -20,7 +20,9 @@
         if (!response.ok) {
           var error = new Error(response.status === 401
             ? 'Sign in with a login link to add or delete designs.'
-            : payload.error || ('The server said ' + response.status));
+            : response.status === 403 && payload.viewOnly
+              ? 'View only: an admin can add or delete designs.'
+              : payload.error || ('The server said ' + response.status));
           error.status = response.status;
           throw error;
         }

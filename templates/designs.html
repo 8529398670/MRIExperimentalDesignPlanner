@@ -26,7 +26,7 @@
       Anyone with the link sees the same design.</p>
   </div>
 
-  {% if me %}
+  {% if can_edit %}
   <div class="card">
     <div class="card-head"><h3>Add new</h3><span class="head-note">Starts from the default settings</span></div>
     <div class="card-body">
@@ -45,15 +45,16 @@
     <div class="card-body">
       {% if designs %}
       <table class="data">
-        <thead><tr><th>Name</th><th>Study title</th><th class="num"></th><th class="num">Last changed</th>{% if me %}<th></th>{% endif %}</tr></thead>
+        <thead><tr><th>Name</th><th>Study title</th><th class="num"></th><th class="num">Last changed</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
         <tbody>
           {% for design in designs %}
           <tr>
             <td class="level"><a href="{{ design.path }}">{{ design.name }}</a></td>
             <td class="seq">{{ design.title }}</td>
-            <td class="num"><a href="{{ design.path }}/figures/">Figures</a></td>
+            <td class="num"><a href="{{ design.path }}/figures/">Figures</a>{% if me %}
+              · <a href="{{ design.path }}/demo/">Demo</a>{% endif %}</td>
             <td class="num">{{ design.changed }}</td>
-            {% if me %}
+            {% if can_edit %}
             <td class="num"><button class="btn sm danger" type="button" data-delete="{{ design.name }}">Delete</button></td>
             {% endif %}
           </tr>
@@ -61,13 +62,16 @@
         </tbody>
       </table>
       {% else %}
-      <div class="notice home-empty">No designs yet.{% if me %} Add one above.{% endif %}</div>
+      <div class="notice home-empty">No designs yet.{% if can_edit %} Add one above.{% endif %}</div>
       {% endif %}
     </div>
   </div>
 
   {% if not me %}
   <p class="muted home-note">View only: sign in with a login link to add or delete designs.</p>
+  {% elif not can_edit %}
+  <p class="muted home-note">Signed in as {{ me.name }}, view only: open, run and download any
+    design. An admin can add or delete them.</p>
   {% endif %}
 </main>
 

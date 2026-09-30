@@ -3,10 +3,11 @@
  *
  * Anyone can look at the planner.  Changing anything, or exporting it, needs
  * a session, and the only way to get one is a link made here and opened
- * once - or, for an agent, a key made here.  Everybody signed in can do all
- * of it - add someone, remove someone, make anyone a link, make or revoke a
- * key - so it is a panel for everyone rather than something behind a role
- * nobody has. */
+ * once - or, for an agent, a key made here.  Each person is an admin or a
+ * viewer.  An admin can do all of it - change the designs, add someone,
+ * remove someone, make anyone a link, make or revoke a key - and this panel
+ * is theirs.  A viewer can look, play the demos and download, and never
+ * sees this panel. */
 
 (function (global) {
   'use strict';
@@ -100,6 +101,11 @@
     return Date.now() - new Date(iso).getTime() < 60000 ? 'active now' : 'active ' + ago(iso);
   }
 
+  var ROLE_WORDS = {
+    admin: 'Admin: changes designs and cards, manages people',
+    viewer: 'Viewer: looks, plays the demos and downloads; changes nothing'
+  };
+
   function used(iso) {
     if (!iso) return 'never used';
     return Date.now() - new Date(iso).getTime() < 60000 ? 'used just now' : 'used ' + ago(iso);
@@ -121,6 +127,15 @@
       type: 'text', placeholder: 'Their name', maxlength: 32, autocomplete: 'off',
       spellcheck: 'false', 'aria-label': 'Name of the person to add'
     });
+    /* Viewer first: most people let in are let in to look. */
+    var roleBox = h('select', { 'aria-label': 'What the person added may do' }, [
+      h('option', { value: 'viewer', text: 'Viewer' }),
+      h('option', { value: 'admin', text: 'Admin' })
+    ]);
+    var roleHint = h('p', { class: 'people-hint' });
+    function describeRole() { roleHint.textContent = ROLE_WORDS[roleBox.value] + '.'; }
+    roleBox.addEventListener('change', describeRole);
+    describeRole();
     var addButton = h('button', { class: 'btn sm', type: 'button', text: 'Add and make a link' });
 
     var keyBox = h('input', {
@@ -140,7 +155,8 @@
         keys.forEach(function (made) { keyHost.appendChild(keyRow(made)); });
         if (!keys.length) keyHost.appendChild(h('div', { class: 'muted', text: 'No API keys yet.' }));
       }).catch(function (error) {
-        if (error.status === 401) { global.location.reload(); return; }
+        /* Signed out, or made a viewer, since the page was loaded. */
+        if (error.status === 401 || error.status === 403) { global.location.reload(); return; }
         App.clear(listHost);
         listHost.appendChild(h('div', { class: 'notice bad', text: error.message }));
       });
@@ -167,6 +183,7 @@
 
     function row(person) {
       var isMe = person.id === mine;
+      var isAdmin = person.role === 'admin';
       var meta = [person.devices
         ? 'signed in on ' + plural(person.devices, 'browser', 'browsers')
         : 'not signed in yet'];
@@ -190,6 +207,10 @@
           h('div', { class: 'people-main' }, [
             h('div', { class: 'people-name' }, [
               h('span', { text: person.name }),
+              h('span', {
+                class: 'pill ' + (isAdmin ? 'gold' : 'grey'),
+                text: isAdmin ? 'admin' : 'viewer', title: ROLE_WORDS[person.role]
+              }),
               isMe ? h('span', { class: 'pill', text: 'you' }) : null
             ]),
             h('div', { class: 'people-meta', text: meta.join(' · ') })
@@ -197,6 +218,13 @@
           h('div', { class: 'btn-row' }, [
             App.iconButton('Login link', 'A new one-time link that signs a browser in as '
               + person.name, function (event) { makeLink(person, event.target); }),
+            /* Nor your own role, for the same reason as Remove: the last admin
+             * would be one click from nobody being able to change anything. */
+            isMe ? null : App.iconButton(isAdmin ? 'Make viewer' : 'Make admin',
+              isAdmin ? person.name + ' keeps looking, playing and downloading, and stops '
+                + 'being able to change anything'
+                : person.name + ' can change the designs and cards, and manage people',
+              function (event) { setRole(person, isAdmin ? 'viewer' : 'admin', event.target); }),
             /* You cannot take yourself out: somebody else has to, which is also
              * what stops the last person in locking everybody out by accident. */
             isMe ? null : App.iconButton('Remove', 'Take ' + person.name + ' out', function () {
@@ -211,10 +239,10 @@
       var wanted = nameBox.value.trim();
       if (!wanted) { nameBox.focus(); return; }
       addButton.disabled = true;
-      api('POST', '/api/auth/users', { name: wanted }).then(function (got) {
+      api('POST', '/api/auth/users', { name: wanted, role: roleBox.value }).then(function (got) {
         nameBox.value = '';
         /* Somebody is added to be let in, so the link comes straight up. */
-        if (got.link) showLink(got.user.name, got.link);
+        if (got.link) showLink(got.user.name, got.link, got.user.role);
         return load();
       }).catch(function (error) {
         App.toast(error.message, 'bad');
@@ -224,11 +252,30 @@
     function makeLink(person, button) {
       if (button) button.disabled = true;
       api('POST', '/api/auth/users/' + encodeURIComponent(person.id) + '/link').then(function (made) {
-        showLink(person.name, made);
+        showLink(person.name, made, person.role);
         return load();
       }).catch(function (error) {
         App.toast(error.message, 'bad');
       }).then(function () { if (button) button.disabled = false; });
+    }
+
+    function setRole(person, role, button) {
+      if (role === 'viewer') {
+        var made = keysMadeBy(person);
+        var theirKeys = !made ? ''
+          : made === 1 ? ' The API key they made can then only read, too.'
+            : ' The ' + made + ' API keys they made can then only read, too.';
+        if (!global.confirm('Make ' + person.name + ' a viewer?\n\nFrom their next click they '
+          + 'can look, play the demos and download, but not change anything or manage people.'
+          + theirKeys)) return;
+      }
+      if (button) button.disabled = true;
+      api('POST', '/api/auth/users/' + encodeURIComponent(person.id) + '/role', { role: role })
+        .then(function () {
+          App.toast(person.name + ' is ' + (role === 'admin' ? 'an admin' : 'a viewer') + ' now', 'ok');
+        }).catch(function (error) {
+          App.toast(error.message, 'bad');
+        }).then(load);
     }
 
     function removePerson(person) {
@@ -240,7 +287,8 @@
         : made === 1 ? 'The API key they made stops working too. '
           : 'The ' + made + ' API keys they made stop working too. ';
       if (!global.confirm('Remove ' + person.name + '?\n\n' + where + 'Any link made for them '
-        + 'stops working. ' + theirKeys + 'They can still look at the planner, like anyone. '
+        + 'stops working. ' + theirKeys + 'They can still look at the planner, like anyone '
+        + 'who is not signed in. '
         + 'Nothing in the designs changes.')) return;
       api('DELETE', '/api/auth/users/' + encodeURIComponent(person.id)).then(function () {
         App.toast(person.name + ' removed', 'ok');
@@ -298,17 +346,19 @@
           }),
           App.iconButton('Done', doneTip, function () { App.clear(host); })
         ])
-      ].concat(hints.map(function (hint) {
+      ].concat(hints.filter(Boolean).map(function (hint) {
         return h('p', { class: 'people-hint', text: hint });
       }))));
       box.focus();
     }
 
-    function showLink(name, made) {
+    function showLink(name, made, role) {
       showSecret(linkHost, 'Login link for ' + name, made.url,
         'Put the link away; it keeps working until it is used', [
           'It works once: whoever opens it first is signed in as ' + name + ' on that '
             + 'browser, for good. Unopened, it stops working ' + ago(made.expiresAt) + '.',
+          role ? name + ' is ' + (role === 'admin' ? 'an admin' : 'a viewer') + ': '
+            + ROLE_WORDS[role].replace(/^\w+: /, '') + '.' : null,
           'Do not open it yourself: it would sign this browser in as ' + name + '.'
         ]);
     }
@@ -318,9 +368,10 @@
         'Put the key away; it keeps working until it is revoked', [
           'Send it with every call to the API, as the header Authorization: Bearer <key>. '
             + 'API.md, or /api/v1/docs on this server, has the rest.',
-          'It can change and export anything, like someone signed in, but cannot add or remove '
-            + 'people or make links or keys. It works until it is revoked here, or until '
-            + App.me.name + ' is removed.',
+          'It can do what ' + App.me.name + ' can - change and export anything - but cannot '
+            + 'add or remove people or make links or keys. It works until it is revoked here, '
+            + 'or until ' + App.me.name + ' is removed; if they are made a viewer, it can only '
+            + 'read.',
           'This is the only time it is shown: only a hash of it is kept. If it is lost, make '
             + 'another and revoke this one.'
         ]);
@@ -355,15 +406,17 @@
     panel.appendChild(h('div', { class: 'panel-head' }, [
       h('h2', { text: 'People' }),
       h('p', {
-        text: 'Everyone listed here can change the designs and the acquisition cards and take '
-          + 'exports, and can add and remove people. So can a script or an agent given an API '
-          + 'key, except for managing people and keys. Anyone else who opens the planner can '
-          + 'only look.'
+        text: 'Admins can change the designs and the acquisition cards, take exports, and add '
+          + 'and remove people. Viewers can look at everything, play the demos and take '
+          + 'exports, but cannot change anything. A script or an agent given an API key can '
+          + 'do what the admin who made it can, except manage people and keys. Anyone else '
+          + 'who opens the planner can only look.'
       })
     ]));
     panel.appendChild(App.card('People', 'Everyone who can sign in', [listHost]));
     panel.appendChild(App.card('Add someone', 'They get a one-time login link', [
-      h('div', { class: 'split-inline people-add' }, [nameBox, addButton])
+      h('div', { class: 'split-inline people-add' }, [nameBox, roleBox, addButton]),
+      roleHint
     ]));
     panel.appendChild(linkHost);
     panel.appendChild(App.card('API keys', 'For scripts and agents', [
